@@ -27,6 +27,23 @@ Add support for any AI CLI tool through simple wrapper scripts. Standard stdin/s
 ### Mixed Teams
 Combine multiple AI agents with human observers or participants. Perfect for AI-assisted brainstorming, code review, or complex problem-solving.
 
+## System Requirements
+
+- **Node.js**: Version 18 or higher
+- **Operating System**:
+  - macOS (fully supported)
+  - Linux (fully supported)
+  - Windows (requires WSL or Git Bash for wrapper scripts)
+- **At least one AI CLI tool**: Claude Code, OpenAI Codex, or Google Gemini CLI
+
+### Platform Notes
+
+- **macOS & Linux**: All features work natively
+- **Windows**: For using wrapper scripts (Codex, Gemini), you need:
+  - Option 1 (Recommended): Windows Subsystem for Linux (WSL)
+  - Option 2: Git Bash
+  - Option 3: Use `.bat` wrapper scripts (included for Windows)
+
 ## Installation
 
 ### Prerequisites
@@ -203,7 +220,9 @@ Configure agents with different specializations:
 
 ### Custom AI Wrapper Scripts
 
-Integrate any CLI tool by creating a wrapper script:
+#### For macOS/Linux
+
+Create a bash wrapper script:
 
 ```bash
 #!/bin/bash
@@ -214,12 +233,30 @@ echo ""
 echo "[DONE]"
 ```
 
-Reference it in your config:
+#### For Windows
+
+Create a batch wrapper script:
+
+```batch
+@echo off
+REM my-ai-wrapper.bat
+setlocal enabledelayedexpansion
+set "prompt="
+for /f "delims=" %%i in ('more') do set "prompt=!prompt!%%i"
+my-ai-tool --prompt "%prompt%" 2>nul
+echo.
+echo [DONE]
+endlocal
+```
+
+#### Configuration
+
+Reference the wrapper in your config (use appropriate extension for your platform):
 
 ```json
 {
   "name": "my-ai",
-  "command": "./wrappers/my-ai-wrapper.sh",
+  "command": "./wrappers/my-ai-wrapper.sh",  // or .bat for Windows
   "args": [],
   "endMarker": "[DONE]"
 }

@@ -83,6 +83,45 @@
 **用户反馈：**
 用户不需要手动检查依赖，应用会主动告知系统状态。
 
+## 平台兼容性
+
+**实现时间：** 2025-11-16
+
+### 跨平台支持状态
+
+- ✅ **macOS**：完全支持，所有功能正常工作
+- ✅ **Linux**：完全支持，bash脚本原生兼容
+- ⚠️ **Windows**：部分支持，wrapper脚本需要特殊处理
+
+### Windows平台的挑战
+
+**问题：** Wrapper脚本最初只有bash版本（`.sh`），Windows不能直接运行
+
+**解决方案：**
+1. 创建了对应的Windows批处理脚本（`.bat`）
+   - `wrappers/codex-wrapper.bat`
+   - `wrappers/gemini-wrapper.bat`
+
+2. Windows用户的三种选项：
+   - 使用WSL (Windows Subsystem for Linux) - 推荐
+   - 使用Git Bash
+   - 直接使用`.bat`脚本
+
+**技术细节：**
+- Node.js代码（`spawn`, `exec`）是跨平台的
+- Wrapper脚本需要平台特定的实现
+- 批处理脚本使用`more`读取stdin，使用`enabledelayedexpansion`处理变量
+
+### 用户需要安装的依赖
+
+**必需：**
+1. Node.js 18+
+2. npm（随Node.js安装）
+3. 至少一个AI CLI工具（Claude Code / Codex / Gemini）
+
+**Windows额外要求（可选）：**
+- WSL或Git Bash（如果使用.sh wrapper）
+
 ## 未来考虑
 
 作为闭源软件，需要考虑：
