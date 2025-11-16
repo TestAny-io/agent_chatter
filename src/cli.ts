@@ -19,6 +19,7 @@ import { MockStorageService } from './infrastructure/StorageService';
 import { Team } from './models/Team';
 import { ConversationMessage } from './models/ConversationMessage';
 import * as readline from 'readline';
+import { detectAllTools, ToolStatus } from './utils/ToolDetector';
 
 const program = new Command();
 
@@ -37,6 +38,51 @@ const colors = {
 
 function colorize(text: string, color: keyof typeof colors): string {
     return `${colors[color]}${text}${colors.reset}`;
+}
+
+/**
+ * 显示工具状态
+ */
+function displayToolStatus(tools: ToolStatus[], showHeader: boolean = true): void {
+    if (showHeader) {
+        console.log(colorize('\n=== AI CLI 工具检测 ===\n', 'bright'));
+    }
+
+    const installed: ToolStatus[] = [];
+    const notInstalled: ToolStatus[] = [];
+
+    tools.forEach(tool => {
+        if (tool.installed) {
+            installed.push(tool);
+        } else {
+            notInstalled.push(tool);
+        }
+    });
+
+    if (installed.length > 0) {
+        console.log(colorize('✓ 已安装的工具:', 'green'));
+        installed.forEach(tool => {
+            const version = tool.version ? colorize(` (v${tool.version})`, 'dim') : '';
+            console.log(`  ${colorize('●', 'green')} ${tool.displayName}${version}`);
+        });
+        console.log();
+    }
+
+    if (notInstalled.length > 0) {
+        console.log(colorize('✗ 未安装的工具:', 'yellow'));
+        notInstalled.forEach(tool => {
+            console.log(`  ${colorize('○', 'dim')} ${tool.displayName}`);
+            if (tool.installHint) {
+                console.log(colorize(`    安装方式: ${tool.installHint}`, 'dim'));
+            }
+        });
+        console.log();
+    }
+
+    if (installed.length === 0) {
+        console.log(colorize('⚠ 警告: 没有检测到任何 AI CLI 工具', 'yellow'));
+        console.log(colorize('  请先安装至少一个 AI CLI 工具才能使用 Agent Chatter\n', 'yellow'));
+    }
 }
 
 // CLI 配置接口
@@ -270,6 +316,11 @@ program
     .option('-s, --speaker <name>', '第一个发言者的名称')
     .action(async (options) => {
         try {
+            // 检测已安装的工具
+            console.log(colorize('正在检测系统中的 AI CLI 工具...', 'cyan'));
+            const tools = await detectAllTools();
+            displayToolStatus(tools, true);
+
             // 加载配置
             const config = loadConfig(options.config);
 
@@ -327,6 +378,24 @@ program
 
         fs.writeFileSync(options.output, JSON.stringify(exampleConfig, null, 2));
         console.log(colorize(`示例配置文件已生成: ${options.output}`, 'green'));
+    });
+
+program
+    .command('status')
+    .description('检测系统中已安装的 AI CLI 工具')
+    .action(async () => {
+        try {
+            console.log(colorize('正在检测系统中的 AI CLI 工具...', 'cyan'));
+            const tools = await detectAllTools();
+            displayToolStatus(tools, true);
+
+            console.log(colorize('提示:', 'cyan'));
+            console.log('  - 使用 ' + colorize('agent-chatter start', 'bright') + ' 启动对话');
+            console.log('  - 使用 ' + colorize('agent-chatter config-example', 'bright') + ' 生成示例配置文件\n');
+        } catch (error) {
+            console.error(colorize(`Error: ${error}`, 'red'));
+            process.exit(1);
+        }
     });
 
 // 解析命令行参数
