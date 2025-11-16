@@ -1,0 +1,20 @@
+{
+  "name": "agent-chatter",
+  "description": "A CLI application for orchestrating multi-agent conversations between different AI assistants",
+  "version": "0.0.1",
+  "bin": {
+    "agent-chatter": "./out/cli.js"
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^14.0.2"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "agents": [
+    {
+      "name": "claude",
+      "command": "claude",
+      "args": [
+        "--append-system-prompt",
+        "Always end your response with the exact text [DONE] on a new line. Keep responses concise."
+      ],
+      "endMarker": "[DONE]",
+      "usePty": false
+    }
+  ],
+  "team": {
+    "name": "Claude Code Test Team",
+    "description": "A team with Claude Code CLI agent and human observer",
+    "roles": [
+      {
+        "title": "Claude",
+        "name": "claude",
+        "type": "ai",
+        "agentName": "claude",
+        "systemInstruction": "You are a helpful AI assistant."
+      },
+      {
+        "title": "Observer",
+        "name": "observer",
+        "type": "human"
+      }
+    ]
+  },
+  "maxRounds": 10
+}

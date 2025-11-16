@@ -1,0 +1,58 @@
+{
+  "agents": [
+    {
+      "name": "claude",
+      "command": "claude",
+      "args": [
+        "--append-system-prompt",
+        "Always end your response with the exact text [DONE] on a new line. Keep responses concise."
+      ],
+      "endMarker": "[DONE]"
+    },
+    {
+      "name": "codex",
+      "command": "./wrappers/codex-wrapper.sh",
+      "args": [],
+      "endMarker": "[DONE]"
+    },
+    {
+      "name": "gemini",
+      "command": "./wrappers/gemini-wrapper.sh",
+      "args": [],
+      "endMarker": "[DONE]"
+    }
+  ],
+  "team": {
+    "name": "Multi-AI Team",
+    "description": "A team with Claude, Codex, Gemini, and human observer",
+    "roles": [
+      {
+        "title": "Claude",
+        "name": "claude",
+        "type": "ai",
+        "agentName": "claude",
+        "systemInstruction": "You are Claude, a helpful AI assistant. Be concise."
+      },
+      {
+        "title": "Codex",
+        "name": "codex",
+        "type": "ai",
+        "agentName": "codex",
+        "systemInstruction": "You are Codex, an AI coding assistant. Focus on code and technical solutions."
+      },
+      {
+        "title": "Gemini",
+        "name": "gemini",
+        "type": "ai",
+        "agentName": "gemini",
+        "systemInstruction": "You are Gemini, Google's AI assistant. Provide helpful responses."
+      },
+      {
+        "title": "Observer",
+        "name": "observer",
+        "type": "human"
+      }
+    ]
+  },
+  "maxRounds": 20
+}

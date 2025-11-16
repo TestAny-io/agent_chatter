@@ -1,0 +1,29 @@
+{
+  "agents": [
+    {
+      "name": "codex",
+      "command": "./wrappers/codex-wrapper.sh",
+      "args": [],
+      "endMarker": "[DONE]"
+    }
+  ],
+  "team": {
+    "name": "Codex Test Team",
+    "description": "Testing Codex CLI integration",
+    "roles": [
+      {
+        "title": "Codex",
+        "name": "codex",
+        "type": "ai",
+        "agentName": "codex",
+        "systemInstruction": "You are Codex, an AI coding assistant from OpenAI. Be concise and helpful."
+      },
+      {
+        "title": "Observer",
+        "name": "observer",
+        "type": "human"
+      }
+    ]
+  },
+  "maxRounds": 10
+}
