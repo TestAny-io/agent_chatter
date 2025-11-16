@@ -1,0 +1,290 @@
+/**
+ * ReplMode - 交互式REPL模式
+ *
+ * 类似Gemini CLI的交互式界面
+ */
+
+import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
+import { detectAllTools } from '../utils/ToolDetector';
+import { initializeServices, startConversation, CLIConfig } from '../utils/ConversationStarter';
+
+// 颜色定义
+const colors = {
+    reset: '\x1b[0m',
+    bright: '\x1b[1m',
+    dim: '\x1b[2m',
+    cyan: '\x1b[36m',
+    green: '\x1b[32m',
+    yellow: '\x1b[33m',
+    red: '\x1b[31m',
+    blue: '\x1b[34m',
+    magenta: '\x1b[35m',
+};
+
+function c(text: string, color: keyof typeof colors): string {
+    return `${colors[color]}${text}${colors.reset}`;
+}
+
+export class ReplMode {
+    private rl: readline.Interface;
+    private currentConfig: CLIConfig | null = null;
+    private currentConfigPath: string | null = null;
+    private isRunning: boolean = false;
+
+    constructor() {
+        this.rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout,
+            prompt: c('agent-chatter> ', 'cyan'),
+        });
+    }
+
+    /**
+     * 显示欢迎界面
+     */
+    private showWelcome(): void {
+        console.clear();
+        console.log(c('╔════════════════════════════════════════════════════════════╗', 'cyan'));
+        console.log(c('║                                                            ║', 'cyan'));
+        console.log(c('║                    ', 'cyan') + c('AGENT CHATTER', 'bright') + c('                       ║', 'cyan'));
+        console.log(c('║                                                            ║', 'cyan'));
+        console.log(c('║          ', 'cyan') + c('Multi-AI Conversation Orchestrator', 'dim') + c('             ║', 'cyan'));
+        console.log(c('║                                                            ║', 'cyan'));
+        console.log(c('╚════════════════════════════════════════════════════════════╝', 'cyan'));
+        console.log();
+        console.log(c('  Version 0.0.1', 'dim') + c(' • ', 'dim') + c('TestAny.io', 'dim'));
+        console.log();
+        console.log(c('  Type', 'dim') + ' ' + c('/help', 'green') + c(' for available commands', 'dim'));
+        console.log(c('  Type', 'dim') + ' ' + c('/exit', 'green') + c(' to quit', 'dim'));
+        console.log();
+    }
+
+    /**
+     * 显示帮助信息
+     */
+    private showHelp(): void {
+        console.log();
+        console.log(c('Available Commands:', 'bright'));
+        console.log();
+        console.log(c('  /help', 'green') + '              ' + c('Show this help message', 'dim'));
+        console.log(c('  /status', 'green') + '            ' + c('Check installed AI CLI tools', 'dim'));
+        console.log(c('  /config <file>', 'green') + '    ' + c('Load a configuration file', 'dim'));
+        console.log(c('  /start <message>', 'green') + '  ' + c('Start a conversation (config must be loaded)', 'dim'));
+        console.log(c('  /list', 'green') + '              ' + c('List available configuration files', 'dim'));
+        console.log(c('  /clear', 'green') + '             ' + c('Clear the screen', 'dim'));
+        console.log(c('  /exit', 'green') + '              ' + c('Exit the application', 'dim'));
+        console.log();
+    }
+
+    /**
+     * 检测工具状态
+     */
+    private async showStatus(): Promise<void> {
+        console.log();
+        console.log(c('Detecting AI CLI tools...', 'cyan'));
+        const tools = await detectAllTools();
+
+        const installed = tools.filter(t => t.installed);
+        const notInstalled = tools.filter(t => !t.installed);
+
+        if (installed.length > 0) {
+            console.log();
+            console.log(c('✓ Installed:', 'green'));
+            installed.forEach(tool => {
+                const version = tool.version ? c(` (v${tool.version})`, 'dim') : '';
+                console.log(`  ${c('●', 'green')} ${tool.displayName}${version}`);
+            });
+        }
+
+        if (notInstalled.length > 0) {
+            console.log();
+            console.log(c('✗ Not Installed:', 'yellow'));
+            notInstalled.forEach(tool => {
+                console.log(`  ${c('○', 'dim')} ${tool.displayName}`);
+                if (tool.installHint) {
+                    console.log(c(`    ${tool.installHint}`, 'dim'));
+                }
+            });
+        }
+        console.log();
+    }
+
+    /**
+     * 列出配置文件
+     */
+    private listConfigs(): void {
+        console.log();
+        console.log(c('Looking for configuration files...', 'cyan'));
+
+        const cwd = process.cwd();
+        const files = fs.readdirSync(cwd).filter(f =>
+            f.endsWith('-config.json') || f === 'agent-chatter-config.json'
+        );
+
+        if (files.length === 0) {
+            console.log(c('  No configuration files found in current directory', 'yellow'));
+            console.log(c('  Use', 'dim') + ' ' + c('agent-chatter config-example', 'green') + c(' to create one', 'dim'));
+        } else {
+            console.log();
+            files.forEach(file => {
+                const indicator = this.currentConfigPath && file === path.basename(this.currentConfigPath)
+                    ? c('●', 'green')
+                    : c('○', 'dim');
+                console.log(`  ${indicator} ${file}`);
+            });
+        }
+        console.log();
+    }
+
+    /**
+     * 加载配置文件
+     */
+    private loadConfig(filePath: string): boolean {
+        try {
+            const fullPath = path.resolve(filePath);
+            if (!fs.existsSync(fullPath)) {
+                console.log(c(`Error: Configuration file not found: ${filePath}`, 'red'));
+                return false;
+            }
+
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            this.currentConfig = JSON.parse(content);
+            this.currentConfigPath = filePath;
+
+            console.log();
+            console.log(c('✓ Configuration loaded:', 'green') + ' ' + c(filePath, 'bright'));
+            console.log(c(`  Team: ${this.currentConfig?.team?.name || 'Unknown'}`, 'dim'));
+            console.log(c(`  Agents: ${this.currentConfig?.agents?.length || 0}`, 'dim'));
+            console.log();
+
+            return true;
+        } catch (error) {
+            console.log(c(`Error: Failed to load configuration: ${error}`, 'red'));
+            return false;
+        }
+    }
+
+    /**
+     * 处理slash命令
+     */
+    private async handleCommand(line: string): Promise<boolean> {
+        const trimmed = line.trim();
+
+        if (!trimmed.startsWith('/')) {
+            console.log(c('Unknown command. Type /help for available commands.', 'yellow'));
+            return true;
+        }
+
+        const parts = trimmed.split(/\s+/);
+        const command = parts[0].toLowerCase();
+        const args = parts.slice(1);
+
+        switch (command) {
+            case '/help':
+                this.showHelp();
+                break;
+
+            case '/status':
+                await this.showStatus();
+                break;
+
+            case '/list':
+                this.listConfigs();
+                break;
+
+            case '/config':
+                if (args.length === 0) {
+                    console.log(c('Usage: /config <file>', 'yellow'));
+                } else {
+                    this.loadConfig(args[0]);
+                }
+                break;
+
+            case '/start':
+                if (!this.currentConfig) {
+                    console.log(c('Error: No configuration loaded. Use /config <file> first.', 'red'));
+                } else if (args.length === 0) {
+                    console.log(c('Usage: /start <initial message>', 'yellow'));
+                } else {
+                    const message = args.join(' ');
+                    await this.startConversationInRepl(message);
+                }
+                break;
+
+            case '/clear':
+                console.clear();
+                this.showWelcome();
+                break;
+
+            case '/exit':
+            case '/quit':
+                console.log();
+                console.log(c('Goodbye! 👋', 'cyan'));
+                console.log();
+                return false;
+
+            default:
+                console.log(c(`Unknown command: ${command}`, 'yellow'));
+                console.log(c('Type /help for available commands.', 'dim'));
+        }
+
+        return true;
+    }
+
+    /**
+     * 启动对话
+     */
+    private async startConversationInRepl(initialMessage: string): Promise<void> {
+        if (!this.currentConfig) {
+            console.log(c('Error: No configuration loaded', 'red'));
+            return;
+        }
+
+        try {
+            console.log();
+            console.log(c('Initializing services...', 'cyan'));
+            const { coordinator, team } = await initializeServices(this.currentConfig);
+
+            await startConversation(coordinator, team, initialMessage);
+
+            console.log();
+            console.log(c('Conversation ended. You can start another one with /start', 'cyan'));
+            console.log();
+        } catch (error) {
+            console.log(c(`Error: ${error}`, 'red'));
+        }
+    }
+
+    /**
+     * 启动REPL模式
+     */
+    public async start(): Promise<void> {
+        this.showWelcome();
+        this.isRunning = true;
+
+        this.rl.on('line', async (line) => {
+            const shouldContinue = await this.handleCommand(line);
+
+            if (!shouldContinue) {
+                this.rl.close();
+                process.exit(0);
+            } else {
+                this.rl.prompt();
+            }
+        });
+
+        this.rl.on('close', () => {
+            if (this.isRunning) {
+                console.log();
+                console.log(c('Goodbye! 👋', 'cyan'));
+                console.log();
+            }
+            process.exit(0);
+        });
+
+        // 显示初始提示符
+        this.rl.prompt();
+    }
+}

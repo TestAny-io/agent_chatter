@@ -20,6 +20,7 @@ import { Team } from './models/Team';
 import { ConversationMessage } from './models/ConversationMessage';
 import * as readline from 'readline';
 import { detectAllTools, ToolStatus } from './utils/ToolDetector';
+import { ReplMode } from './repl/ReplMode';
 
 const program = new Command();
 
@@ -306,7 +307,12 @@ async function startConversation(
 program
     .name('agent-chatter')
     .description('让多个 CLI AI agents 自动对话的命令行工具')
-    .version('0.0.1');
+    .version('0.0.1')
+    .action(async () => {
+        // 当没有子命令时，启动REPL模式
+        const repl = new ReplMode();
+        await repl.start();
+    });
 
 program
     .command('start')
