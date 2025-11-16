@@ -1,70 +1,60 @@
 # Agent Chatter
 
-A CLI application for orchestrating multi-agent conversations between different AI assistants (Claude, Codex, Gemini) and human participants.
+**Orchestrate multi-agent AI conversations effortlessly.**
 
-## Overview
+Agent Chatter is a powerful CLI application that enables structured conversations between multiple AI assistants (Claude, Codex, Gemini) and human participants. Let your AI agents collaborate, discuss, and solve problems together while you observe and guide the conversation.
 
-Agent Chatter enables structured conversations between multiple AI agents and human observers. Each participant takes turns responding to messages, with automatic routing and context management. The system supports:
+## Why Agent Chatter?
 
-- **Multiple AI CLI tools**: Claude Code, OpenAI Codex, Google Gemini
-- **Mixed human-AI teams**: Combine AI agents with human participants
-- **Conversation flow control**: Automatic turn-taking or explicit addressing with `[NEXT: ...]`
-- **Context awareness**: Each agent receives recent conversation history
-- **Flexible configuration**: JSON-based team and agent setup
+- 🤖 **Multi-AI Collaboration**: Run Claude Code, OpenAI Codex, and Google Gemini in coordinated conversations
+- 💬 **Intelligent Routing**: Automatic turn-taking or explicit addressing with `[NEXT: ...]` markers
+- 🧠 **Context Awareness**: Each agent receives recent conversation history for coherent discussions
+- 👥 **Human-in-the-loop**: Mix AI agents with human participants seamlessly
+- ⚙️ **Flexible Configuration**: JSON-based team and agent setup for any workflow
+- 🎯 **Production Ready**: Clean architecture designed for reliability and extensibility
+
+## Key Features
+
+### Automatic Conversation Flow
+Agents take turns responding in round-robin fashion, or explicitly address each other by name. No manual copy-pasting between different AI tools.
+
+### Context Management
+Every agent receives the recent conversation history, ensuring coherent multi-turn discussions with full context awareness.
+
+### Extensible Architecture
+Add support for any AI CLI tool through simple wrapper scripts. Standard stdin/stdout interface makes integration straightforward.
+
+### Mixed Teams
+Combine multiple AI agents with human observers or participants. Perfect for AI-assisted brainstorming, code review, or complex problem-solving.
 
 ## Installation
 
+### Prerequisites
+
+You'll need at least one of these AI CLI tools installed:
+
+- **Claude Code**: Download from https://claude.ai/download
+- **OpenAI Codex**: `npm install -g @openai/codex` or `brew install --cask codex`
+- **Google Gemini CLI**: `npm install -g @google/gemini-cli` or `brew install gemini-cli`
+
+### Install Agent Chatter
+
 ```bash
-# Clone the repository
-git clone https://github.com/TestAny-io/agent_chatter.git
-cd agent_chatter
-
-# Install dependencies
-npm install
-
-# Build the project
-npm run compile
-
-# Link for global CLI usage (optional)
-npm link
+npm install -g agent-chatter
 ```
 
-## Prerequisites
+Or install locally:
 
-Install the AI CLI tools you want to use:
-
-### Claude Code
 ```bash
-# Installation instructions at https://claude.ai/download
-```
-
-### OpenAI Codex
-```bash
-npm install -g @openai/codex
-# or
-brew install --cask codex
-```
-
-### Google Gemini CLI
-```bash
-npm install -g @google/gemini-cli
-# or
-brew install gemini-cli
+npm install agent-chatter
+npx agent-chatter start -c config.json -m "Your message"
 ```
 
 ## Quick Start
 
-### Basic Usage
+### 1. Create a Configuration File
 
-Start a conversation with a single AI agent:
-
-```bash
-agent-chatter start -c agent-chatter-config.json -m "What is 2+2?"
-```
-
-### Configuration File
-
-Create a JSON configuration file defining your team and agents:
+Create `my-team.json`:
 
 ```json
 {
@@ -74,14 +64,14 @@ Create a JSON configuration file defining your team and agents:
       "command": "claude",
       "args": [
         "--append-system-prompt",
-        "Always end your response with the exact text [DONE] on a new line. Keep responses concise."
+        "Always end your response with [DONE] on a new line. Keep responses concise."
       ],
       "endMarker": "[DONE]"
     }
   ],
   "team": {
-    "name": "My Team",
-    "description": "A simple team with Claude and human observer",
+    "name": "My AI Team",
+    "description": "Claude with human observer",
     "roles": [
       {
         "title": "Claude",
@@ -101,182 +91,178 @@ Create a JSON configuration file defining your team and agents:
 }
 ```
 
-## Examples
-
-### Example 1: Claude + Human Observer
-
-**Configuration**: `agent-chatter-config.json`
+### 2. Start a Conversation
 
 ```bash
-agent-chatter start -c agent-chatter-config.json -m "Explain quantum computing"
+agent-chatter start -c my-team.json -m "Explain quantum computing in simple terms"
 ```
 
-Claude will respond first, then the conversation pauses for human input.
+Claude will respond, then pause for your input. The conversation continues with full context awareness.
 
-### Example 2: Testing Codex
+## Use Cases
 
-**Configuration**: `codex-test-config.json`
+### AI-Assisted Code Review
+Multiple AI agents review code from different perspectives (security, performance, maintainability), with a human making final decisions.
 
-Uses the wrapper script at `wrappers/codex-wrapper.sh` to adapt Codex CLI to the standard interface.
+### Brainstorming Sessions
+Agents with different "personalities" or specializations discuss ideas, generating diverse perspectives on complex problems.
 
-```bash
-agent-chatter start -c codex-test-config.json -m "Write a function to calculate fibonacci numbers"
-```
+### Multi-Step Problem Solving
+Break down complex tasks into steps, with different agents specializing in different aspects (research, implementation, testing).
 
-### Example 3: Multi-Agent Collaboration
-
-**Configuration**: `multi-agent-config.json`
-
-Three AI agents (Claude, Codex, Gemini) discuss a topic with a human observer:
-
-```bash
-agent-chatter start -c multi-agent-config.json -m "Discuss the best approach to build a REST API"
-```
-
-Agents take turns automatically in round-robin fashion, or can explicitly address each other using `[NEXT: agent-name]`.
+### Knowledge Synthesis
+Agents discuss a topic from different angles, synthesizing information from their different training approaches and capabilities.
 
 ## Configuration Reference
 
 ### Agent Configuration
 
-Each agent in the `agents` array requires:
+Each agent in the `agents` array:
 
-- `name` (string): Unique identifier for the agent
-- `command` (string): CLI command to execute (e.g., `"claude"`, `"./wrappers/codex-wrapper.sh"`)
-- `args` (array): Command-line arguments to pass to the command
-- `endMarker` (string): Text marker indicating response completion (e.g., `"[DONE]"`)
+```json
+{
+  "name": "unique-id",
+  "command": "cli-command",
+  "args": ["--arg1", "--arg2"],
+  "endMarker": "[DONE]"
+}
+```
+
+- `name`: Unique identifier
+- `command`: CLI executable path
+- `args`: Command-line arguments (optional)
+- `endMarker`: Text marking response completion
 
 ### Team Configuration
 
-The `team` object defines:
+Define your team structure:
 
-- `name` (string): Team name
-- `description` (string): Team description
-- `roles` (array): List of participants in the conversation
+```json
+{
+  "team": {
+    "name": "Team Name",
+    "description": "Team description",
+    "roles": [...]
+  },
+  "maxRounds": 10
+}
+```
 
 ### Role Configuration
 
-Each role in `roles` array:
+Each participant in the conversation:
 
-- `title` (string): Display name (e.g., `"Claude"`, `"Observer"`)
-- `name` (string): Internal identifier matching agent name or human username
-- `type` (string): Either `"ai"` or `"human"`
-- `agentName` (string, AI only): References an agent from the `agents` array
-- `systemInstruction` (string, AI only): Instructions prepended to each message sent to this agent
+```json
+{
+  "title": "Display Name",
+  "name": "internal-id",
+  "type": "ai" | "human",
+  "agentName": "agent-id",
+  "systemInstruction": "Custom instructions for this agent"
+}
+```
 
 ### Conversation Control
 
-Agents can control message routing:
+Agents control the conversation flow:
 
-- **No marker**: Next role in round-robin order receives the message
-- **`[NEXT: role-name]`**: Explicitly route to a specific role
-- **`[NEXT: alice, bob]`**: Route to multiple roles
+- **No marker**: Automatic round-robin to next role
+- **`[NEXT: role-name]`**: Route to specific participant
+- **`[NEXT: alice, bob]`**: Route to multiple participants
 - **`[DONE]`**: End the conversation
 
-## Architecture
+## Examples
 
-```
-src/
-├── cli.ts                          # CLI entry point (commander.js)
-├── models/
-│   ├── AgentConfig.ts              # Agent configuration model
-│   ├── Team.ts                     # Team and role models
-│   ├── ConversationMessage.ts      # Message structure
-│   └── ConversationSession.ts      # Session state
-├── services/
-│   ├── AgentConfigManager.ts       # Load and manage agent configs
-│   ├── AgentManager.ts             # Manage agent process lifecycle
-│   ├── ConversationCoordinator.ts  # Orchestrate conversation flow
-│   ├── MessageRouter.ts            # Parse [NEXT] and [DONE] markers
-│   └── TeamManager.ts              # Manage team configurations
-└── infrastructure/
-    ├── ProcessManager.ts           # Child process management
-    └── StorageService.ts           # Persistent storage
+### Example 1: Single AI + Human
+
+Start a conversation with Claude, then interact as needed:
+
+```bash
+agent-chatter start -c claude-config.json -m "Help me design a REST API"
 ```
 
-### Key Components
+### Example 2: Multiple AI Agents
 
-- **ProcessManager**: Manages child processes for AI CLI tools, handles stdin/stdout communication
-- **AgentManager**: High-level agent lifecycle (start, send, receive, stop)
-- **ConversationCoordinator**: Routes messages, manages turn-taking, handles context
-- **MessageRouter**: Parses conversation control markers (`[NEXT: ...]`, `[DONE]`)
+Three agents (Claude, Codex, Gemini) discuss technical architecture:
 
-## Wrapper Scripts
+```bash
+agent-chatter start -c multi-agent.json -m "Design a distributed caching system"
+```
 
-AI CLIs have different interfaces. Wrapper scripts in `wrappers/` adapt them to a standard stdin/stdout interface:
+Agents automatically take turns, building on each other's responses.
 
-### Codex Wrapper (`wrappers/codex-wrapper.sh`)
+### Example 3: Code Review Team
+
+Configure agents with different specializations:
+- Agent 1: Security focus
+- Agent 2: Performance focus
+- Agent 3: Code quality focus
+- Human: Final reviewer
+
+## Advanced Configuration
+
+### Custom AI Wrapper Scripts
+
+Integrate any CLI tool by creating a wrapper script:
 
 ```bash
 #!/bin/bash
+# my-ai-wrapper.sh
 prompt=$(cat)
-codex exec --skip-git-repo-check "$prompt" 2>/dev/null
+my-ai-tool --prompt "$prompt" 2>/dev/null
 echo ""
 echo "[DONE]"
 ```
 
-### Gemini Wrapper (`wrappers/gemini-wrapper.sh`)
+Reference it in your config:
 
-```bash
-#!/bin/bash
-prompt=$(cat)
-gemini -p "$prompt" 2>/dev/null
-echo ""
-echo "[DONE]"
+```json
+{
+  "name": "my-ai",
+  "command": "./wrappers/my-ai-wrapper.sh",
+  "args": [],
+  "endMarker": "[DONE]"
+}
 ```
 
-Make wrappers executable:
-```bash
-chmod +x wrappers/*.sh
-```
+### Context Window Control
 
-## Development
-
-### Build
-
-```bash
-npm run compile
-```
-
-### Watch Mode
-
-```bash
-npm run watch
-```
-
-### Run Without Installing
-
-```bash
-node out/cli.js start -c agent-chatter-config.json -m "Your message here"
-```
+Adjust how much conversation history agents receive by modifying `contextMessageCount` in the coordinator (default: 5 messages).
 
 ## Troubleshooting
 
-### Agent not responding
+**Agent not responding?**
+- Verify the CLI tool is installed and in PATH
+- Check the `command` path in your configuration
+- Ensure `endMarker` matches the agent's actual output
 
-- Verify the CLI tool is installed and accessible in PATH
-- Check that the `command` in agent configuration is correct
-- Ensure the `endMarker` matches what the agent actually outputs
+**Process hangs?**
+- Verify wrapper scripts properly close stdin
+- Check that the agent CLI supports non-interactive mode
+- Confirm the `endMarker` is being sent
 
-### Process hangs
+**Context issues?**
+- Verify messages are being logged in the session
+- Check that `contextMessageCount` is appropriate for your use case
 
-- Ensure wrapper scripts close stdin properly
-- Verify the agent CLI supports non-interactive mode
-- Check that `endMarker` is being sent by the agent
+## System Requirements
 
-### Context not working
+- Node.js 18 or higher
+- macOS, Linux, or Windows WSL
+- At least one supported AI CLI tool
 
-- Verify `contextMessageCount` in ConversationCoordinator (default: 5)
-- Check that messages are being added to session history
+## Support
+
+For technical support and inquiries:
+- Email: support@testany.io
+- Documentation: https://github.com/TestAny-io/agent_chatter
 
 ## License
 
-MIT
+Copyright © 2024 TestAny.io. All rights reserved.
 
-## Contributing
+This software is proprietary and confidential. Unauthorized copying, distribution, or use of this software, via any medium, is strictly prohibited.
 
-Contributions welcome! Please open an issue or submit a pull request.
+---
 
-## Repository
-
-https://github.com/TestAny-io/agent_chatter
+**Built by TestAny.io** - Bringing AI agents together.

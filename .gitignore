@@ -14,3 +14,6 @@ node_modules
 
 # Claude Code
 .claude/
+
+# Internal project documentation
+claude.md
