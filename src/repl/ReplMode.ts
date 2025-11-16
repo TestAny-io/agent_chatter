@@ -32,13 +32,27 @@ export class ReplMode {
     private currentConfig: CLIConfig | null = null;
     private currentConfigPath: string | null = null;
     private isRunning: boolean = false;
+    private exitMessageShown: boolean = false;
+
+    // 所有可用的命令
+    private commands = ['/help', '/status', '/config', '/start', '/list', '/clear', '/exit', '/quit'];
 
     constructor() {
         this.rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
             prompt: c('agent-chatter> ', 'cyan'),
+            completer: this.completer.bind(this),
         });
+    }
+
+    /**
+     * 自动补全函数
+     */
+    private completer(line: string): [string[], string] {
+        const hits = this.commands.filter((cmd) => cmd.startsWith(line));
+        // 如果只有一个匹配，返回它；否则返回所有匹配
+        return [hits.length ? hits : this.commands, line];
     }
 
     /**
@@ -220,6 +234,7 @@ export class ReplMode {
 
             case '/exit':
             case '/quit':
+                this.exitMessageShown = true;
                 console.log();
                 console.log(c('Goodbye! 👋', 'cyan'));
                 console.log();
@@ -276,7 +291,7 @@ export class ReplMode {
         });
 
         this.rl.on('close', () => {
-            if (this.isRunning) {
+            if (this.isRunning && !this.exitMessageShown) {
                 console.log();
                 console.log(c('Goodbye! 👋', 'cyan'));
                 console.log();
