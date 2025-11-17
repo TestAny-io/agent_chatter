@@ -20,7 +20,6 @@ describe('Sample configuration smoke tests', () => {
       expect(config.team?.members?.length).toBeGreaterThan(0);
       for (const member of config.team.members) {
         expect(member.roleDir, 'roleDir required').toBeTruthy();
-        expect(member.homeDir, 'homeDir required').toBeTruthy();
         expect(member.instructionFile, 'instructionFile required').toBeTruthy();
       }
     });

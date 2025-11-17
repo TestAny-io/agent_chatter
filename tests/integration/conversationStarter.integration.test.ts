@@ -67,9 +67,7 @@ describe('ConversationStarter integration', () => {
     const aiRoleDir = path.join(tempDir, 'dev', 'alice');
     const humanRoleDir = path.join(tempDir, 'pm', 'bob');
     const aiWork = path.join(aiRoleDir, 'work');
-    const aiHome = path.join(aiRoleDir, 'home');
     const humanWork = path.join(humanRoleDir, 'work');
-    const humanHome = path.join(humanRoleDir, 'home');
 
     fs.mkdirSync(aiRoleDir, { recursive: true });
     fs.mkdirSync(humanRoleDir, { recursive: true });
@@ -105,7 +103,6 @@ describe('ConversationStarter integration', () => {
             agentType: 'codex',
             roleDir: aiRoleDir,
             workDir: aiWork,
-            homeDir: aiHome,
             instructionFile: path.join(aiRoleDir, 'AGENTS.md'),
             env: { CUSTOM: '1' }
           },
@@ -117,7 +114,6 @@ describe('ConversationStarter integration', () => {
             role: 'reviewer',
             roleDir: humanRoleDir,
             workDir: humanWork,
-            homeDir: humanHome,
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]
@@ -129,9 +125,9 @@ describe('ConversationStarter integration', () => {
 
     expect(team.members).toHaveLength(2);
     expect(team.members[0].systemInstruction).toContain('integration test agent');
-    expect(team.members[0].env?.HOME).toBe(path.resolve(aiHome));
+    expect(team.members[0].env?.CUSTOM).toBe('1');
     expect(fs.existsSync(aiWork)).toBe(true);
-    expect(fs.existsSync(humanHome)).toBe(true);
+    expect(fs.existsSync(humanWork)).toBe(true);
 
     const firstSpeaker = team.members[0].id;
     await coordinator.startConversation(team, 'Review the new feature', firstSpeaker);
@@ -166,7 +162,6 @@ describe('ConversationStarter integration', () => {
             agentType: 'codex',
             roleDir: aiRoleDir,
             workDir: path.join(aiRoleDir, 'work'),
-            homeDir: path.join(aiRoleDir, 'home'),
             instructionFile: path.join(aiRoleDir, 'AGENTS.md')
           },
           {
@@ -176,7 +171,6 @@ describe('ConversationStarter integration', () => {
             role: 'observer',
             roleDir: humanRoleDir,
             workDir: path.join(humanRoleDir, 'work'),
-            homeDir: path.join(humanRoleDir, 'home'),
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]

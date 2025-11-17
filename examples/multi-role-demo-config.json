@@ -50,7 +50,6 @@
         "themeColor": "red",
         "roleDir": "./teams/multi-role-demo/security/alice",
         "workDir": "./teams/multi-role-demo/security/alice/work",
-        "homeDir": "./teams/multi-role-demo/security/alice/home",
         "instructionFile": "./teams/multi-role-demo/security/alice/AGENTS.md"
       },
       {
@@ -63,7 +62,6 @@
         "themeColor": "yellow",
         "roleDir": "./teams/multi-role-demo/performance/bob",
         "workDir": "./teams/multi-role-demo/performance/bob/work",
-        "homeDir": "./teams/multi-role-demo/performance/bob/home",
         "instructionFile": "./teams/multi-role-demo/performance/bob/AGENTS.md"
       },
       {
@@ -76,7 +74,6 @@
         "themeColor": "cyan",
         "roleDir": "./teams/multi-role-demo/readability/carol",
         "workDir": "./teams/multi-role-demo/readability/carol/work",
-        "homeDir": "./teams/multi-role-demo/readability/carol/home",
         "instructionFile": "./teams/multi-role-demo/readability/carol/AGENTS.md"
       },
       {
@@ -88,7 +85,6 @@
         "themeColor": "green",
         "roleDir": "./teams/multi-role-demo/observer/human",
         "workDir": "./teams/multi-role-demo/observer/human/work",
-        "homeDir": "./teams/multi-role-demo/observer/human/home",
         "instructionFile": "./teams/multi-role-demo/observer/human/README.md"
       }
     ]

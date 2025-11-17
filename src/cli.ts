@@ -189,7 +189,6 @@ program
                         themeColor: 'cyan',
                         roleDir: './teams/claude-code-test/reviewer/claude-reviewer',
                         workDir: './teams/claude-code-test/reviewer/claude-reviewer/work',
-                        homeDir: './teams/claude-code-test/reviewer/claude-reviewer/home',
                         instructionFile: './teams/claude-code-test/reviewer/claude-reviewer/AGENTS.md'
                     },
                     {
@@ -201,7 +200,6 @@ program
                         themeColor: 'green',
                         roleDir: './teams/claude-code-test/observer/human-observer',
                         workDir: './teams/claude-code-test/observer/human-observer/work',
-                        homeDir: './teams/claude-code-test/observer/human-observer/home',
                         instructionFile: './teams/claude-code-test/observer/human-observer/README.md'
                     }
                 ]

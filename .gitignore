@@ -17,3 +17,7 @@ node_modules
 
 # Local team configs / test assets
 teams/
+agent-chatter-config.json
+codex-test-config.json
+codex-test-config-windows.json
+multi-agent-config.json

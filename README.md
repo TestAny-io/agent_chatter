@@ -116,7 +116,6 @@ Create `my-team.json`:
         "themeColor": "cyan",
         "roleDir": "./teams/my-ai-team/reviewer/claude-reviewer",
         "workDir": "./teams/my-ai-team/reviewer/claude-reviewer/work",
-        "homeDir": "./teams/my-ai-team/reviewer/claude-reviewer/home",
         "instructionFile": "./teams/my-ai-team/reviewer/claude-reviewer/AGENTS.md"
       },
       {
@@ -128,7 +127,6 @@ Create `my-team.json`:
         "themeColor": "green",
         "roleDir": "./teams/my-ai-team/observer/human-observer",
         "workDir": "./teams/my-ai-team/observer/human-observer/work",
-        "homeDir": "./teams/my-ai-team/observer/human-observer/home",
         "instructionFile": "./teams/my-ai-team/observer/human-observer/README.md"
       }
     ]
@@ -213,20 +211,15 @@ Each participant entry in `team.members` must define directories and the instruc
   "agentType": "claude",
   "roleDir": "./teams/team-name/reviewer/claude-reviewer",
   "workDir": "./teams/team-name/reviewer/claude-reviewer/work",
-  "homeDir": "./teams/team-name/reviewer/claude-reviewer/home",
-  "instructionFile": "./teams/team-name/reviewer/claude-reviewer/AGENTS.md",
-  "env": {
-    "HOME": "./teams/team-name/reviewer/claude-reviewer/home"
-  }
+  "instructionFile": "./teams/team-name/reviewer/claude-reviewer/AGENTS.md"
 }
 ```
 
 - `agentType`: References an entry in the top-level `agents` array (e.g., `claude`, `codex`, `gemini`).
-- `roleDir`: Anchor directory for this member. The instruction file, work directory, and CLI home typically live under this tree.
+- `roleDir`: Anchor directory for this member. The instruction file and work directory typically live under this tree.
 - `workDir`: Directory the process should treat as its working directory (symlink it to your actual project if needed).
-- `homeDir`: Directory used for `$HOME` or CLI-specific config (`CODEX_HOME`, `.gemini`, etc.). The loader creates it automatically.
 - `instructionFile`: Path to the Markdown instructions that define this member's role-specific persona.
-- `env`: Optional extra environment variables merged into the spawned CLI.
+- `env`: Optional extra environment variables merged into the spawned CLI. Note: All CLI agents (Claude Code, Codex, Gemini) use the system HOME directory for credentials.
 
 ### Conversation Control
 

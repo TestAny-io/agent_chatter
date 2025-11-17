@@ -101,9 +101,8 @@ Step 3/4: Configure Each Team Member
 
   Role Directory: [input] /teams/code-review/alice
   Working Directory: [input] /teams/code-review/alice/work (default: roleDir/work)
-  CLI Home Directory: [input] /teams/code-review/alice/home (default: roleDir/home)
   Instruction File: [input] AGENTS.md (relative to roleDir)
-  Additional Env (key=value, comma separated): [input] CODEX_HOME=/teams/code-review/alice/home/.codex
+  Additional Env (key=value, comma separated): [input]
 
   ✓ Member 1 configured
 
@@ -126,7 +125,6 @@ Step 3/4: Configure Each Team Member
       Magenta
   Role Directory: [input] /teams/code-review/reviewer/human-observer
   Working Directory: [input] /teams/code-review/reviewer/human-observer/work
-  CLI Home Directory: [input] /teams/code-review/reviewer/human-observer/home
   Instruction File: [input] README.md
 
   ✓ Member 2 configured
@@ -154,7 +152,6 @@ Step 3/4: Configure Each Team Member
 
   Role Directory: [input] /teams/code-review/observer
   Working Directory: [input] /teams/code-review/observer/work
-  CLI Home Directory: [input] /teams/code-review/observer/home
   Instruction File: [input] CLAUDE.md
 
   ✓ Member 3 configured
@@ -265,9 +262,8 @@ Adding New Member
   Theme Color: [select] Yellow
   Role Directory: [input] /teams/code-review/alice-2
   Working Directory: [input] /teams/code-review/alice-2/work
-  CLI Home Directory: [input] /teams/code-review/alice-2/home
   Instruction File: [input] AGENTS.md
-  Additional Env (key=value, comma separated): [input] CODEX_HOME=/teams/code-review/alice-2/home/.codex
+  Additional Env (key=value, comma separated): [input]
 
 ✓ Member added: Second Reviewer
 [Return to main menu]
@@ -285,13 +281,12 @@ Current Settings:
   Theme Color: Cyan
   Role Directory: /teams/code-review/reviewer/alice
   Work Directory: /teams/code-review/reviewer/alice/work
-  CLI Home Directory: /teams/code-review/reviewer/alice/home
   Instruction File: /teams/code-review/reviewer/alice/AGENTS.md
 
 What would you like to modify?
   ▶ Display Name
     Theme Color
-    Directories & Environment (roleDir, workDir, HOME, env vars)
+    Directories & Environment (roleDir, workDir, env vars)
     Change AI Agent (Claude Code → Other)
     Change Type (AI → Human)
     Back to main menu
@@ -314,12 +309,11 @@ Confirm change? [y/N] y
 # Reconfigure agent-specific parameters:
 Reconfiguring for OpenAI Codex
 ────────────────────────────────────────────────────────────
-  Confirm role/work/home directories:
+  Confirm role/work directories:
     Role Dir: /teams/code-review/reviewer/alice
     Work Dir: /teams/code-review/reviewer/alice/work
-    CLI Home: /teams/code-review/reviewer/alice/home
     Instruction File: /teams/code-review/reviewer/alice/AGENTS.md
-  Update env if needed (e.g., CODEX_HOME)
+  Update env if needed
 
 ✓ AI agent changed to OpenAI Codex
 [Return to member edit menu]
@@ -327,7 +321,7 @@ Reconfiguring for OpenAI Codex
 # User selects "Change Type (AI → Human)"
 ────────────────────────────────────────────────────────────
 ⚠ Warning: Changing from AI to Human will remove all AI-specific
-environment requirements (CLI HOME overrides, agentType, instruction file semantics, etc.)
+settings (agentType, instruction file semantics, etc.)
 
 Current: AI (Claude Code)
 Change to: Human
@@ -452,18 +446,15 @@ Members (3):
   1. Claude Reviewer (AI - Claude Code) - Role: Reviewer [Cyan]
      Role Dir: /teams/code-review/alice
      Work Dir: /teams/code-review/alice/work
-     Home Dir: /teams/code-review/alice/home
      Instruction File: /teams/code-review/alice/AGENTS.md
 
   2. Senior Dev (Human) - Role: Reviewer [Green]
      Role Dir: /teams/code-review/reviewer/dick
      Work Dir: /teams/code-review/reviewer/dick/work
-     Home Dir: /teams/code-review/reviewer/dick/home
 
   3. Observer Bot (AI - Claude Code) - Role: Observer [Yellow]
      Role Dir: /teams/code-review/codex-observer
      Work Dir: /teams/code-review/codex-observer/work
-     Home Dir: /teams/code-review/codex-observer/home
      Instruction File: /teams/code-review/codex-observer/CLAUDE.md
 ```
 
@@ -535,9 +526,14 @@ Confirm deletion? [y/N] y
   └── help                # 团队管理帮助
 ```
 
-## 3. 交互模式设计
+## 3. Team Member 配置
 
-### 3.1 Wizard模式（向导模式）
+**关于 homeDir 的移除**:
+早期版本通过 `homeDir` 字段和 `HOME` 环境变量覆盖来隔离不同成员的凭证存储。然而，所有AI CLI工具（Claude Code、Codex、Gemini）都需要访问真实的系统HOME目录来存储凭证，覆盖HOME会导致认证失败。因此我们移除了 `homeDir` 配置，所有CLI现在统一使用系统HOME目录（`~/.claude/`、`~/.codex/auth.json`、`~/.gemini/`）存储凭证。
+
+## 4. 交互模式设计
+
+### 4.1 Wizard模式（向导模式）
 用于创建新团队，采用分步引导方式。
 
 **特点**：
@@ -551,7 +547,7 @@ Confirm deletion? [y/N] y
 - 维护向导状态：当前步骤、已收集数据
 - 键盘输入：Enter提交，Ctrl+C取消向导
 
-### 3.2 Menu模式（菜单模式）
+### 4.2 Menu模式（菜单模式）
 用于编辑现有团队，采用菜单选择方式。
 
 **特点**：
@@ -579,7 +575,7 @@ Confirm deletion? [y/N] y
 - 支持嵌套菜单（主菜单 → 编辑成员 → 修改属性 → 输入新值）
 - 所有修改暂存在内存中，选择"Save and exit"时才写入文件
 
-### 3.3 Form模式（表单模式）
+### 4.3 Form模式（表单模式）
 用于输入具体配置参数。
 
 **特点**：
@@ -596,9 +592,9 @@ Confirm deletion? [y/N] y
 - 输入end marker
 - 输入命令参数
 
-## 4. 数据模型
+## 5. 数据模型
 
-### 4.1 配置文件格式
+### 5.1 配置文件格式
 
 ```json
 {
@@ -658,12 +654,8 @@ Confirm deletion? [y/N] y
         "themeColor": "cyan",
         "roleDir": "/teams/code-review/reviewer/alice",
         "workDir": "/teams/code-review/reviewer/alice/work",
-        "homeDir": "/teams/code-review/reviewer/alice/home",
         "instructionFile": "/teams/code-review/alice/AGENTS.md",
-        "env": {
-          "HOME": "/teams/code-review/reviewer/alice/home",
-          "CODEX_HOME": "/teams/code-review/reviewer/alice/home/.codex"
-        }
+        "env": {}
       },
       {
         "displayName": "Senior Dev",
@@ -672,8 +664,7 @@ Confirm deletion? [y/N] y
         "role": "reviewer",
         "themeColor": "green",
         "roleDir": "/teams/code-review/reviewer/dick",
-        "workDir": "/teams/code-review/reviewer/dick/work",
-        "homeDir": "/teams/code-review/reviewer/dick/home"
+        "workDir": "/teams/code-review/reviewer/dick/work"
       },
       {
         "displayName": "Observer Bot",
@@ -684,7 +675,6 @@ Confirm deletion? [y/N] y
         "themeColor": "yellow",
         "roleDir": "/teams/code-review/observer/member-3",
         "workDir": "/teams/code-review/observer/member-3/work",
-        "homeDir": "/teams/code-review/observer/member-3/home",
         "instructionFile": "/teams/code-review/observer/member-3/CLAUDE.md"
       },
       {
@@ -696,7 +686,6 @@ Confirm deletion? [y/N] y
         "themeColor": "purple",
         "roleDir": "/teams/code-review/ui-ux-designer",
         "workDir": "/teams/code-review/ui-ux-designer/veronica/work",
-        "homeDir": "/teams/code-review/ui-ux-designer/veronica/home",
         "instructionFile": "teams/code-review/ui-ux-designer/veronica/agents.md"
       }
     ]
@@ -736,17 +725,16 @@ Confirm deletion? [y/N] y
     - `agentType`: 引用agents数组中的agent配置
     - `roleDir`: 角色入口目录（存放角色指令、启动脚本等）
     - `workDir`: 实际执行/访问业务资料的目录（可为符号链接）
-    - `homeDir`: CLI的HOME或配置根目录（如`CODEX_HOME`/`~/.gemini`/`~/.claude`）
     - `instructionFile`: 指向该成员所使用的指令文件（AGENTS.md/GEMINI.md/CLAUDE.md等）
-    - `env`: 额外环境变量映射，例如`{"CODEX_HOME": "...", "HOME": "..."}`，用于进一步隔离日志/缓存
+    - `env`: 额外环境变量映射，用于配置成员特定的环境变量
 
   **路径校验规范**：
   - 向导允许输入相对路径，但会立即通过 `path.resolve` 转绝对路径并回写 UI，保证配置文件中始终存储绝对路径。
-  - CLI 加载阶段会验证 `roleDir` 与 `workDir` 是否存在；如缺失则打印警告，但继续运行；`homeDir` 则会在缺失时自动 `fs.mkdirSync` 创建。
-  - `instructionFile` 不存在时，loader 只记录 warning 并允许用户后续补写；若需要自动生成，向导会提供“创建模板”按钮。
+  - CLI 加载阶段会验证 `roleDir` 与 `workDir` 是否存在；如缺失则打印警告，但继续运行。
+  - `instructionFile` 不存在时，loader 只记录 warning 并允许用户后续补写；若需要自动生成，向导会提供"创建模板"按钮。
   - 所有路径经过 `path.normalize` 并禁止包含 `..`、控制字符或 Windows 保留名称，若命中非法字符则阻止保存并提示用户修正。
 
-> 注：`roleDir`/`workDir`/`homeDir`/`instructionFile`/`env` 对人类成员也可用（例如指定共享资料目录或自定义命令环境），但在AI成员上是必填项，以确保多进程隔离策略可以落地；向导会默认帮人类成员生成与AI一致的目录结构，方便团队管理。
+> 注：`roleDir`/`workDir`/`instructionFile`/`env` 对人类成员也可用（例如指定共享资料目录或自定义命令环境），但在AI成员上是必填项，以确保多进程隔离策略可以落地；向导会默认帮人类成员生成与AI一致的目录结构，方便团队管理。
 
 **maxRounds**: 最大对话轮数（0表示无限制）
 
@@ -762,25 +750,18 @@ Confirm deletion? [y/N] y
    - 不再允许成员级别覆盖endMarker/usePty/args；如需定制，请创建新的agent类型或在指令文件中说明
 
 3. **目录与环境隔离**：
-   - `roleDir` 是角色入口目录，用于存放该成员的指令文件、启动脚本、符号链接等“人格资产”；它是用户交互和团队结构的锚点
+   - `roleDir` 是角色入口目录，用于存放该成员的指令文件、启动脚本、符号链接等"人格资产"；它是用户交互和团队结构的锚点
    - `workDir` 可以指向真实业务资料（允许使用符号链接）
-   - `homeDir`/`env` 专门为 CLI 运行时配置 HOME/CODEX_HOME/`.gemini`/`.claude` 等目录，保证日志、缓存、历史完全隔离；它通常位于 `roleDir` 下的 `home/` 子目录，但概念上独立于 `roleDir`
    - `instructionFile` 显式记录该成员实际使用的指令文件路径，便于调度层验证和自动生成
    - 推荐目录结构：`/teams/{team.name}/{roleDefinitions[i].name}/{member.name}/...`，便于团队自查和批量管理
-   - Three CLI mapping:
-     - Codex: `homeDir` → `CODEX_HOME`/`.codex`; 默认在 `roleDir/.codex`
-     - Gemini CLI: `instructionFile` → `GEMINI.md`（或 `contextFileName`），`homeDir` 提供 `.gemini` 存储
-     - Claude Code: `HOME` 映射到 `roleDir/home`，`instructionFile` 指向 `CLAUDE.md`
+   - CLI凭证存储：所有CLI工具(Claude Code、Codex、Gemini)统一使用系统HOME目录存储凭证（`~/.claude/`、`~/.codex/auth.json`、`~/.gemini/`）
 
 **环境变量合并规则**：
-1. Loader 先构造“默认隔离层”：始终写入 `HOME=homeDir`，若 `agentType` 为 Codex 追加 `CODEX_HOME=${homeDir}/.codex`，Gemini/Claude 同理补齐 CLI 专属变量。
-2. 成员配置中的 `env` 覆盖上述默认值；用户可通过它指向自定义缓存目录或注入额外变量。
-3. 运行进程时再与宿主 `process.env` 合并，策略为“配置优先”：成员 `env` > 默认隔离层 > 系统环境。
-4. 若用户在 `env` 中显式设置 `HOME`/`CODEX_HOME` 等关键字段，向导会提示它们与 `homeDir` 是否一致；不一致时允许继续，但会显示“请确认确实需要自定义路径”的黄色提醒。
+1. 成员配置中的 `env` 字段用于配置成员特定的环境变量。
+2. 运行进程时与宿主 `process.env` 合并，策略为"配置优先"：成员 `env` > 系统环境。
+3. 所有CLI工具使用系统HOME目录进行凭证认证，不可覆盖。
 
-该合并顺序确保我们能提供安全的默认隔离，又允许高级用户覆盖；也让人类成员（type=human）在需要时可以声明自己的工具链变量。
-
-### 4.2 向导状态模型
+### 5.2 向导状态模型
 
 ```typescript
 interface WizardState {
@@ -824,7 +805,6 @@ interface MemberConfig {
   themeColor: string;
   roleDir: string;        // Base directory for this role (contains instruction file/start script)
   workDir: string;        // Execution directory (where CLI runs commands)
-  homeDir?: string;       // Optional CLI HOME/config root override
   instructionFile?: string; // Explicit instruction file path relative to roleDir
   env?: Record<string, string>; // Additional environment variables per member
 
@@ -838,12 +818,12 @@ interface MemberConfig {
 // - assignedRole → role
 // - agentType → agentType
 // - themeColor → themeColor
-// - roleDir/workDir/homeDir/instructionFile/env → 对应team.members[i]的同名字段
+// - roleDir/workDir/instructionFile/env → 对应team.members[i]的同名字段
 ```
 
-## 5. UI组件设计
+## 6. UI组件设计
 
-### 5.1 WizardView组件
+### 6.1 WizardView组件
 显示向导界面，包含：
 - 进度指示器（Step X/4）
 - 当前步骤说明和标题
@@ -851,10 +831,10 @@ interface MemberConfig {
 - 导航提示（Enter to confirm, Ctrl+C to cancel）
 - 根据步骤显示不同的子组件（TeamStructureStep, DetectAgentsStep, ConfigureMembersStep, TeamSettingsStep）
 
-### 5.2 MenuView组件
+### 6.2 MenuView组件
 显示菜单界面，包含：
 - 菜单标题（如 "Editing Team: Code Review Team"）
-- 当前配置预览（team name, description, team instruction file, roleDefinitions, members列表、每个成员的roleDir/workDir/homeDir）
+- 当前配置预览（team name, description, team instruction file, roleDefinitions, members列表、每个成员的roleDir/workDir）
 - 菜单项列表（高亮当前项，用 ▶ 标记）
 - 菜单项类型：
   - Edit team information (name, description, goal, max rounds)
@@ -866,14 +846,14 @@ interface MemberConfig {
   - Exit without saving
 - 注意：roleDefinitions显示在预览中，但创建后不可编辑
 
-### 5.3 FormView组件
+### 6.3 FormView组件
 显示表单界面，包含：
 - 字段标签和输入框
 - 提示文本（如 "[input]", "[multi-line input, Ctrl+D to finish]"）
 - 验证错误提示（实时显示）
 - 适用于单行输入、多行输入、数字输入、路径输入（需要即时验证目录存在与否）等场景
 
-### 5.4 SummaryView组件
+### 6.4 SummaryView组件
 显示配置摘要，用于确认前预览。向导完成时显示：
 ```
 Summary
@@ -908,7 +888,7 @@ Settings:
 Looks good? [Y/n]
 ```
 
-## 6. 实现计划
+## 7. 实现计划
 
 ### Phase 1: 基础架构（1-2天）
 - [ ] 扩展模式系统：添加 `wizard`, `menu`, `form`, `select` 模式到ReplModeInk.tsx
@@ -927,10 +907,9 @@ Looks good? [Y/n]
   - [ ] 为每个选中的agent生成agents数组条目（command, default args, endMarker, usePty）
 - [ ] 实现Step 3: Configure Members（逐个配置成员）
   - [ ] 遍历每个成员，配置type, display name, theme color
-  - [ ] 为每个成员收集目录/环境：roleDir、workDir、homeDir、instructionFile（可自动推导）
+  - [ ] 为每个成员收集目录/环境：roleDir、workDir、instructionFile（可自动推导）
   - [ ] AI成员额外配置：agent选择、角色入口目录/指令文件路径
   - [ ] AI成员可选覆盖配置：end marker, args, use PTY
-  - [ ] 支持为不同CLI生成默认env（如Codex的`CODEX_HOME`、Claude的`HOME`、Gemini的`.gemini`路径）
   - [ ] Human成员简化配置（可跳过env/目录或沿用团队默认值）
 - [ ] 实现Step 4: Team Settings（团队设置）
   - [ ] 配置maxRounds
@@ -946,10 +925,10 @@ Looks good? [Y/n]
 - [ ] 实现添加新成员（完整配置流程）
   - [ ] 选择角色（只能从现有roleDefinitions中选择，不能新增角色）
   - [ ] 如果现有角色不满足需求，提示用户必须创建新团队
-  - [ ] 配置成员属性（displayName、themeColor、roleDir/workDir/homeDir/instructionFile/env）
+  - [ ] 配置成员属性（displayName、themeColor、roleDir/workDir/instructionFile/env）
 - [ ] 实现编辑成员（嵌套菜单 → 选择属性 → 修改值）
   - [ ] 支持修改display name与theme color
-  - [ ] 支持更新目录/环境字段（roleDir/workDir/homeDir/instructionFile/env），并实时校验路径有效性
+  - [ ] 支持更新目录/环境字段（roleDir/workDir/instructionFile/env），并实时校验路径有效性
   - [ ] 支持Change AI Agent（带警告和重新配置默认args/endMarker）
   - [ ] 支持Change Type AI↔Human（带警告）
   - [ ] ~~支持Change Role~~（不允许，角色分配创建后不可修改）
@@ -962,7 +941,7 @@ Looks good? [Y/n]
 - [ ] 实现 `/team show [filename]` - 显示配置详情
   - [ ] 显示team instruction file
   - [ ] 显示roleDefinitions（"Reviewer"、"Observer" 等用户自定义角色）
-  - [ ] 显示members并标注roleDir/workDir/homeDir/instructionFile/env字段
+  - [ ] 显示members并标注roleDir/workDir/instructionFile/env字段
 - [ ] 实现 `/team delete <filename>` - 删除配置（带安全检查）
 - [ ] 实现 `/unload` 命令（卸载当前配置，用于delete场景）
 - [ ] 更新 `/config` 命令
@@ -978,16 +957,16 @@ Looks good? [Y/n]
 - [ ] UX优化（提示文本、警告信息、输入验证）
 - [ ] 回归测试（确保legacy配置可正常加载并运行）
 
-## 7. 技术挑战
+## 8. 技术挑战
 
-### 7.1 状态管理
+### 8.1 状态管理
 **挑战**：向导和菜单需要维护复杂的状态（当前步骤、已收集数据、菜单层级、编辑缓冲区）
 **方案**：
 - 使用React useState管理WizardState和MenuState
 - 编辑模式下，所有修改暂存在内存中，仅在"Save and exit"时写入文件
 - 状态结构清晰分层（step → data → memberConfigs）
 
-### 7.2 输入验证
+### 8.2 输入验证
 **挑战**：实时验证用户输入（团队名称、角色名称、成员数量、命令参数等）
 **方案**：
 - 实现验证函数，每个输入字段有独立的验证规则
@@ -997,7 +976,7 @@ Looks good? [Y/n]
 - maxRounds：非负整数
 - 显示实时错误提示，阻止无效输入进入下一步
 
-### 7.3 模式切换
+### 8.3 模式切换
 **挑战**：在normal、conversation、wizard、menu等模式间平滑切换
 **方案**：
 - 使用React状态管理mode: 'normal' | 'conversation' | 'wizard' | 'menu' | 'form' | 'select'
@@ -1008,7 +987,7 @@ Looks good? [Y/n]
   - Ctrl+C或完成操作后返回normal模式
 - useInput根据当前mode执行不同的键盘处理逻辑
 
-### 7.4 配置兼容性
+### 8.4 配置兼容性
 **挑战**：确保新生成的配置与现有系统兼容（ConversationStarter.ts能正确加载）
 **方案**：
 - 严格遵循现有配置文件格式（agents数组 + team对象 + maxRounds）
@@ -1016,7 +995,7 @@ Looks good? [Y/n]
 - 参考agent-chatter-config.json作为模板
 - 自动化测试：生成的配置能否被`/config`加载并启动对话
 
-### 7.5 角色定义与成员配置的映射关系
+### 8.5 角色定义与成员配置的映射关系
 **挑战**：用户在Step 1定义抽象角色（如"Reviewer"），在Step 3为每个成员分配角色，需要在配置文件中正确表达这种关系
 
 **方案**：
@@ -1037,7 +1016,7 @@ Looks good? [Y/n]
    - memberConfig.memberIndex → 生成唯一ID "member-{index}"存入team.members[i].name
    - memberConfig.assignedRole → team.members[i].role
    - memberConfig.themeColor → team.members[i].themeColor
-   - memberConfig.roleDir/workDir/homeDir/instructionFile/env → team.members[i]的同名字段
+   - memberConfig.roleDir/workDir/instructionFile/env → team.members[i]的同名字段
    - memberConfig中的AI配置 → team.members[i]的AI专有字段
 
 3. **成员级配置覆盖**：
@@ -1067,7 +1046,7 @@ team: {
 }
 ```
 
-### 7.6 成员级配置覆盖的运行时处理
+### 8.6 成员级配置覆盖的运行时处理
 **挑战**：成员可以覆盖agents数组中的默认配置，运行时需要正确合并配置
 **方案**：
 
@@ -1091,48 +1070,47 @@ team: {
    - legacy配置中的`teamGoal`内容会提示用户写入新的team instruction file
 
 3. **编辑时的智能显示**：
-   - UI明确显示每个成员的roleDir/workDir/homeDir/instructionFile/env等目录信息
-   - 提供路径存在性验证与“打开目录”快捷键，帮助用户快速定位角色入口
+   - UI明确显示每个成员的roleDir/workDir/instructionFile/env等目录信息
+   - 提供路径存在性验证与"打开目录"快捷键，帮助用户快速定位角色入口
 
-### 7.7 编辑模式中的原子操作实现
+### 8.7 编辑模式中的原子操作实现
 **挑战**：允许灵活编辑（改agent类型、改member类型），同时保持数据一致性，但不允许修改角色相关配置
 **方案**：
 - 每个编辑操作都是明确的JSON对象修改
-  - Change AI Agent：更新agentType并提示用户重新确认目录、HOME和instructionFile（避免引用错误的CLI配置）
+  - Change AI Agent：更新agentType并提示用户重新确认目录和instructionFile（避免引用错误的CLI配置）
 - Change Type (AI↔Human)：删除/添加相应字段，显示警告
 - ~~Change Role~~：**不允许修改**。成员的role字段在创建时确定，之后不可修改，因为会影响团队结构和其他成员配置
 - 所有操作都在内存中的临时对象上进行，Save时才覆盖原文件
 
-### 7.8 配置文件兼容性
+### 8.8 配置文件兼容性
 项目从正式开发起即使用 schema v1.0，仅支持该版本。产品从未对外发布旧格式，因此不提供任何自动迁移或兼容层。若用户仍保存早期草稿（如 team.roles 结构），需要按照本文档的 schema 说明重新创建配置，或使用 `/team create` 向导生成。未来若 schema 升级，将届时重新评估是否需要迁移工具。
 
 
-## 8. 用户体验要点
+## 9. 用户体验要点
 
-### 8.1 清晰的进度提示
+### 9.1 清晰的进度提示
 - 向导每步都显示 "Step X/4" 进度指示器
 - 每步都有清晰的标题和说明
 - 显示已收集的信息摘要，让用户了解当前状态
 
-### 8.2 智能默认值
+### 9.2 智能默认值
 - 文件名：根据团队名称自动生成（team-name-config.json）
 - 团队指令文件：根据团队名称默认生成 `./TEAM.md`（可配置不同根目录）
 - maxRounds：默认值10，提示可设为0表示无限制
 - End Marker / Use PTY：由 `agents[]` 的默认值决定，如需差异化请添加新的agent类型
 
-### 8.3 输入提示和验证
+### 9.3 输入提示和验证
 - 每个输入字段显示格式提示（如 "[input]", "[multi-line input, Ctrl+D to finish]"）
 - 实时验证输入，显示错误信息
 - 数字字段只接受有效数字
 - 多行输入明确告知如何结束输入（Ctrl+D）
 
-#### 8.3.1 路径字段与环境变量验证
+#### 9.3.1 路径字段验证
 
 **roleDir**：
 - 必须是绝对路径
 - 如果不存在，向用户确认是否创建（默认Yes），系统会创建 `roleDir` 以及默认子目录
   - `roleDir/work`（可替换为真实工作目录或指向符号链接）
-  - `roleDir/home`（CLI HOME 基础目录）
 - 容许符号链接；若为符号链接，会验证目标是否存在
 
 **workDir**：
@@ -1140,31 +1118,23 @@ team: {
 - 允许符号链接，若不存在且不是符号链接将提示是否创建
 - 可指向团队实际代码目录或共享盘
 
-**homeDir**：
-- 默认值：`{roleDir}/home`
-- 若不存在自动创建，不允许符号链接（确保 CLI HOME 使用真实目录）
-- 若用户设置 `env.HOME` 或 `env.CODEX_HOME`，Wizard 会提示与 `homeDir` 保持一致
-
 **instructionFile**：
 - 可为相对路径（相对于 roleDir）或绝对路径
 - 如果文件不存在，提示用户是否使用模板初始化（模板内容会包含 `@{team.instructionFile}` 以引用团队级指令）
 
 **env**：
 - JSON对象形式（key → value），在运行进程时通过 `process.env` 传入
-- 默认规则：
-  - 对 Codex：`CODEX_HOME = {homeDir}/.codex`（同时设置 `HOME` = `homeDir` 保障兼容）
-  - 对 Gemini：`HOME = {homeDir}`，`.gemini` 目录位于 HOME 下
-  - 对 Claude：`HOME = {homeDir}`
-- 如果用户显式设置 `env.HOME`，Wizard 会校验其与 `homeDir` 一致；若不同，警告用户并允许继续（由高级用户控制）
+- 用于配置成员特定的环境变量
+- 所有CLI工具使用系统HOME目录进行凭证认证
 
-### 8.4 安全确认和警告
+### 9.4 安全确认和警告
 - 删除配置前确认，防止误删
 - 删除成员时，如果会导致某role为0成员，显示警告
 - Change AI Agent时警告将重新配置所有agent-specific设置
 - Change Type (AI↔Human) 时警告将丢失AI-specific设置
 - 编辑模式下提供"Exit without saving"选项
 
-### 8.5 帮助文本和提示
+### 9.5 帮助文本和提示
 向导和菜单中显示简短的帮助文本：
 ```
 Step 1/4: Team Structure
@@ -1185,33 +1155,33 @@ What would you like to modify?
 ⚠ Changing AI agent will require reconfiguring agent-specific settings.
 ```
 
-## 9. 未来扩展
+## 10. 未来扩展
 
-### 9.1 模板系统
+### 10.1 模板系统
 预定义常用团队模板，加速创建流程：
 - 提供几种预设模板供用户选择
 - 用户可以基于模板快速创建，然后进行自定义修改
 - 可能的实现：`/team create --template <name>`
 
-### 9.2 配置验证和测试
+### 10.2 配置验证和测试
 - 在向导完成后，自动检查选择的AI agents是否真的已安装
 - 提供"Test Configuration"功能，尝试启动agents验证配置是否有效
 - 验证命令参数格式是否正确
 
-### 9.3 导入/导出
+### 10.3 导入/导出
 - 从其他格式导入配置（YAML, TOML）
 - 导出配置为其他格式，便于分享
 - 配置打包和分享功能
 
-### 9.4 配置导入导出增强
+### 10.4 配置导入导出增强
 未来可考虑：
 - 从其他团队协作平台导入配置
 - 批量配置管理工具
 - 配置模板市场
 
-## 10. 开放问题与设计决策
+## 11. 开放问题与设计决策
 
-### 10.1 已明确的设计决策（从讨论中得出）：
+### 11.1 已明确的设计决策（从讨论中得出）：
 - ✅ **编辑灵活性**：允许编辑team信息、成员配置、AI agent类型、member类型、role分配等
 - ✅ **角色定义不可编辑**：roleDefinitions 在团队创建时定义，之后不可修改，因为修改会影响所有成员配置和系统提示词
 - ✅ **备份策略**：不提供自动备份功能，用户可在文件系统手动备份
@@ -1219,7 +1189,7 @@ What would you like to modify?
 - ✅ **向导流程**：固定4步（Team Structure → Detect Agents → Configure Members → Team Settings）
 - ✅ **迁移策略**：不提供迁移功能，所有配置须直接使用 schema v1.0；若需升级，用户需手动创建新配置
 
-### 10.2 已解决的问题（从最新讨论）：
+### 11.2 已解决的问题（从最新讨论）：
 
 1. ✅ **动态修改正在运行的team**
    **决定**：不支持对话中途修改team配置

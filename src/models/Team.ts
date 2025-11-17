@@ -35,7 +35,6 @@ export interface Role {
   themeColor?: string;
   roleDir?: string;
   workDir?: string;
-  homeDir?: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string;

@@ -54,7 +54,6 @@ export interface TeamMemberConfig {
   themeColor?: string;
   roleDir: string;
   workDir?: string;
-  homeDir?: string;
   instructionFile?: string;
   env?: Record<string, string>;
 }
@@ -86,7 +85,6 @@ interface NormalizedAgent {
 interface NormalizedPaths {
   roleDir: string;
   workDir: string;
-  homeDir: string;
   instructionFile?: string;
 }
 
@@ -173,30 +171,19 @@ function ensureDir(targetPath: string, label: string): void {
 export function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
   const roleDir = path.resolve(member.roleDir);
   const workDir = path.resolve(member.workDir ?? path.join(roleDir, 'work'));
-  const homeDir = path.resolve(member.homeDir ?? path.join(roleDir, 'home'));
   const instructionFile = resolveInstructionFile(member, roleDir);
 
   ensureDir(roleDir, 'roleDir');
   ensureDir(workDir, 'workDir');
-  ensureDir(homeDir, 'homeDir');
 
-  return { roleDir, workDir, homeDir, instructionFile };
+  return { roleDir, workDir, instructionFile };
 }
 
-export function buildEnv(agentType: string | undefined, member: TeamMemberConfig, homeDir: string): Record<string, string> {
+export function buildEnv(agentType: string | undefined, member: TeamMemberConfig): Record<string, string> {
   const env: Record<string, string> = {};
 
-  if (homeDir && !env.HOME) {
-    env.HOME = homeDir;
-  }
-
-  if (agentType?.toLowerCase().includes('codex') && homeDir) {
-    const codexHome = path.join(homeDir, '.codex');
-    if (!env.CODEX_HOME) {
-      env.CODEX_HOME = codexHome;
-    }
-  }
-
+  // Only merge user-provided environment variables
+  // All CLI agents (Claude, Codex, Gemini) use system HOME for credentials
   if (member.env) {
     Object.assign(env, member.env);
   }
@@ -253,7 +240,7 @@ export async function initializeServices(
         throw new Error(`未找到 agentType "${member.agentType}" 的定义`);
       }
 
-      env = buildEnv(member.agentType, member, normalizedPaths.homeDir);
+      env = buildEnv(member.agentType, member);
 
       const agentConfig = await agentConfigManager.createAgentConfig({
         name: `${member.name}-${member.agentType}-config`,
@@ -283,7 +270,6 @@ export async function initializeServices(
       themeColor: member.themeColor,
       roleDir: normalizedPaths.roleDir,
       workDir: normalizedPaths.workDir,
-      homeDir: normalizedPaths.homeDir,
       instructionFile: normalizedPaths.instructionFile,
       env,
       systemInstruction: loadInstructionContent(normalizedPaths.instructionFile),
