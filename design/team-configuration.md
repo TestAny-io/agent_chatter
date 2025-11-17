@@ -740,6 +740,12 @@ Confirm deletion? [y/N] y
     - `instructionFile`: 指向该成员所使用的指令文件（AGENTS.md/GEMINI.md/CLAUDE.md等）
     - `env`: 额外环境变量映射，例如`{"CODEX_HOME": "...", "HOME": "..."}`，用于进一步隔离日志/缓存
 
+  **路径校验规范**：
+  - 向导允许输入相对路径，但会立即通过 `path.resolve` 转绝对路径并回写 UI，保证配置文件中始终存储绝对路径。
+  - CLI 加载阶段会验证 `roleDir` 与 `workDir` 是否存在；如缺失则打印警告，但继续运行；`homeDir` 则会在缺失时自动 `fs.mkdirSync` 创建。
+  - `instructionFile` 不存在时，loader 只记录 warning 并允许用户后续补写；若需要自动生成，向导会提供“创建模板”按钮。
+  - 所有路径经过 `path.normalize` 并禁止包含 `..`、控制字符或 Windows 保留名称，若命中非法字符则阻止保存并提示用户修正。
+
 > 注：`roleDir`/`workDir`/`homeDir`/`instructionFile`/`env` 对人类成员也可用（例如指定共享资料目录或自定义命令环境），但在AI成员上是必填项，以确保多进程隔离策略可以落地；向导会默认帮人类成员生成与AI一致的目录结构，方便团队管理。
 
 **maxRounds**: 最大对话轮数（0表示无限制）
@@ -765,6 +771,14 @@ Confirm deletion? [y/N] y
      - Codex: `homeDir` → `CODEX_HOME`/`.codex`; 默认在 `roleDir/.codex`
      - Gemini CLI: `instructionFile` → `GEMINI.md`（或 `contextFileName`），`homeDir` 提供 `.gemini` 存储
      - Claude Code: `HOME` 映射到 `roleDir/home`，`instructionFile` 指向 `CLAUDE.md`
+
+**环境变量合并规则**：
+1. Loader 先构造“默认隔离层”：始终写入 `HOME=homeDir`，若 `agentType` 为 Codex 追加 `CODEX_HOME=${homeDir}/.codex`，Gemini/Claude 同理补齐 CLI 专属变量。
+2. 成员配置中的 `env` 覆盖上述默认值；用户可通过它指向自定义缓存目录或注入额外变量。
+3. 运行进程时再与宿主 `process.env` 合并，策略为“配置优先”：成员 `env` > 默认隔离层 > 系统环境。
+4. 若用户在 `env` 中显式设置 `HOME`/`CODEX_HOME` 等关键字段，向导会提示它们与 `homeDir` 是否一致；不一致时允许继续，但会显示“请确认确实需要自定义路径”的黄色提醒。
+
+该合并顺序确保我们能提供安全的默认隔离，又允许高级用户覆盖；也让人类成员（type=human）在需要时可以声明自己的工具链变量。
 
 ### 4.2 向导状态模型
 
