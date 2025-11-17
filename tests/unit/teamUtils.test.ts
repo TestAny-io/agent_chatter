@@ -47,6 +47,15 @@ describe('TeamUtils', () => {
     expect(result.errors).toContain('团队至少需要 2 个成员');
   });
 
+  it('validates team name is required', () => {
+    const base = buildTeam([buildRole(), buildRole({ id: 'human', name: 'human', type: 'human' })]);
+    base.name = '';
+    const result = TeamUtils.validateTeam(base);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('团队名称不能为空');
+  });
+
   it('detects duplicate member names', () => {
     const roleA = buildRole({ name: 'duplicate', order: 0 });
     const roleB = buildRole({ name: 'duplicate', id: 'role-b', order: 1 });
@@ -63,5 +72,13 @@ describe('TeamUtils', () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors[0]).toContain('缺少 agentConfigId');
+  });
+
+  it('accepts valid human-only team when size >= 2', () => {
+    const humanA = buildRole({ id: 'h1', name: 'human1', type: 'human', order: 0 });
+    const humanB = buildRole({ id: 'h2', name: 'human2', type: 'human', order: 1 });
+    const result = TeamUtils.validateTeam(buildTeam([humanA, humanB]));
+
+    expect(result.valid).toBe(true);
   });
 });

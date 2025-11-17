@@ -142,4 +142,48 @@ describe('ConversationStarter integration', () => {
     expect(processMock.stopCalls).toEqual(['proc-1']);
     expect(coordinator.getStatus()).toBe('completed');
   });
+
+  it('initializes members even when instruction file is missing', async () => {
+    const aiRoleDir = path.join(tempDir, 'dev', 'missing');
+    const humanRoleDir = path.join(tempDir, 'pm', 'observer');
+    fs.mkdirSync(aiRoleDir, { recursive: true });
+    fs.mkdirSync(humanRoleDir, { recursive: true });
+
+    const config: CLIConfig = {
+      schemaVersion: '1.0',
+      agents: [
+        { name: 'codex', command: 'echo', args: [], endMarker: '[DONE]', usePty: false }
+      ],
+      team: {
+        name: 'missing-instruction',
+        description: 'Should still initialize',
+        members: [
+          {
+            displayName: 'Codex Dev',
+            name: 'codex-dev',
+            type: 'ai',
+            role: 'developer',
+            agentType: 'codex',
+            roleDir: aiRoleDir,
+            workDir: path.join(aiRoleDir, 'work'),
+            homeDir: path.join(aiRoleDir, 'home'),
+            instructionFile: path.join(aiRoleDir, 'AGENTS.md')
+          },
+          {
+            displayName: 'Observer',
+            name: 'obs',
+            type: 'human',
+            role: 'observer',
+            roleDir: humanRoleDir,
+            workDir: path.join(humanRoleDir, 'work'),
+            homeDir: path.join(humanRoleDir, 'home'),
+            instructionFile: path.join(humanRoleDir, 'README.md')
+          }
+        ]
+      }
+    };
+
+    const { team } = await initializeServices(config);
+    expect(team.members[0].systemInstruction).toBeUndefined();
+  });
 });

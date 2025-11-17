@@ -87,4 +87,23 @@ describe('AgentManager', () => {
       manager.sendAndReceive('role-3', 'after-stop')
     ).rejects.toThrow(/no running agent/i);
   });
+
+  it('throws when agent config missing', async () => {
+    mockAgentConfigManager.getAgentConfig.mockResolvedValueOnce(undefined);
+    const manager = new AgentManager(
+      mockProcessManager as any,
+      mockAgentConfigManager as any
+    );
+
+    await expect(manager.ensureAgentStarted('role-missing', 'cfg')).rejects.toThrow(/config/);
+  });
+
+  it('throws when sending without running agent', async () => {
+    const manager = new AgentManager(
+      mockProcessManager as any,
+      mockAgentConfigManager as any
+    );
+
+    await expect(manager.sendAndReceive('no-agent', 'hello')).rejects.toThrow(/no running agent/);
+  });
 });
