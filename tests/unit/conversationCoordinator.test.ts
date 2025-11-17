@@ -95,4 +95,56 @@ describe('ConversationCoordinator', () => {
     expect(receivedMessages.some(msg => msg.content.includes('Handing off'))).toBe(true);
     expect(coordinator.getStatus()).toBe('completed');
   });
+
+  it('builds agent message with system prompt and context', () => {
+    const stub = new StubAgentManager({});
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router);
+
+    const role = createMember({
+      id: 'ai-alpha',
+      name: 'alpha',
+      systemInstruction: 'You are Alpha.'
+    });
+
+    const previousMessage = {
+      speaker: { roleId: 'alpha', roleName: 'alpha', roleTitle: 'Alpha', type: 'ai' },
+      content: 'Context message',
+      timestamp: Date.now(),
+      routing: {}
+    } as unknown as ConversationMessage;
+
+    (coordinator as any).session = { messages: [previousMessage, previousMessage] };
+
+    const payload = (coordinator as any).buildAgentMessage(role, 'Review the patch');
+
+    expect(payload).toContain('[SYSTEM]');
+    expect(payload).toContain('You are Alpha.');
+    expect(payload).toContain('[CONTEXT]');
+    expect(payload).toContain('Context message');
+    expect(payload).toContain('[MESSAGE]');
+    expect(payload).toContain('Review the patch');
+  });
+
+  it('resolves addressees with fuzzy matching and normalization', () => {
+    const stub = new StubAgentManager({});
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router);
+
+    const team = buildTeam([
+      createMember({ id: 'alpha-id', name: 'Alpha-One', displayName: 'Alpha One', order: 0 }),
+      createMember({ id: 'beta-id', name: 'BetaTwo', displayName: 'Beta Two', order: 1 })
+    ]);
+
+    (coordinator as any).team = team;
+
+    const normalized = (coordinator as any).resolveAddressees([' alpha one ', 'BETATWO']);
+
+    expect(normalized.map((role: Role) => role.id)).toEqual(['alpha-id', 'beta-id']);
+
+    const helper = (coordinator as any).normalizeIdentifier('A l-p h a');
+    expect(helper).toBe('alpha');
+  });
 });

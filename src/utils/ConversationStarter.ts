@@ -142,7 +142,7 @@ function normalizeAgentDefinitions(agents: AgentDefinition[]): Map<string, Norma
   return map;
 }
 
-function resolveInstructionFile(member: TeamMemberConfig, roleDir: string): string | undefined {
+export function resolveInstructionFile(member: TeamMemberConfig, roleDir: string): string | undefined {
   const defaultFileName = member.agentType
     ? member.agentType.toLowerCase().includes('gemini')
       ? 'GEMINI.md'
@@ -170,7 +170,7 @@ function ensureDir(targetPath: string, label: string): void {
   }
 }
 
-function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
+export function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
   const roleDir = path.resolve(member.roleDir);
   const workDir = path.resolve(member.workDir ?? path.join(roleDir, 'work'));
   const homeDir = path.resolve(member.homeDir ?? path.join(roleDir, 'home'));
@@ -183,7 +183,7 @@ function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
   return { roleDir, workDir, homeDir, instructionFile };
 }
 
-function buildEnv(agentType: string | undefined, member: TeamMemberConfig, homeDir: string): Record<string, string> {
+export function buildEnv(agentType: string | undefined, member: TeamMemberConfig, homeDir: string): Record<string, string> {
   const env: Record<string, string> = {};
 
   if (homeDir && !env.HOME) {
@@ -204,7 +204,7 @@ function buildEnv(agentType: string | undefined, member: TeamMemberConfig, homeD
   return env;
 }
 
-function loadInstructionContent(filePath?: string): string | undefined {
+export function loadInstructionContent(filePath?: string): string | undefined {
   if (!filePath) {
     return undefined;
   }
