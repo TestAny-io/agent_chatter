@@ -14,3 +14,6 @@ node_modules
 
 # Claude Code
 .claude/
+
+# Local team configs / test assets
+teams/

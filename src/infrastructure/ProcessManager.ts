@@ -131,10 +131,6 @@ export class ProcessManager {
       let output = managed.outputBuffer;
       managed.outputBuffer = '';  // 清空缓冲区
 
-      // DEBUG: 输出缓冲区内容
-      if (output) {
-      }
-
       let timeoutTimer: NodeJS.Timeout | null = null;
       let idleTimer: NodeJS.Timeout | null = null;
 

@@ -80,6 +80,8 @@ claude --system-prompt-file /path/to/alice-prompt.txt
 - 全局：`~/.claude/settings.json`
 - 项目：`/project/.claude/settings.json`
 
+> 2025-11 更新：调查确认所有 CLI 的凭证都固定在系统 HOME（`~/.claude/`, `~/.codex/`, `~/.gemini/`）。Agent Chatter 不再尝试通过自定义 `homeDir` 覆盖 `HOME`，而是仅通过 `roleDir`/`workDir` 隔离文件，并允许用户按需设置额外的环境变量。
+
 **示例**：
 ```json
 {
@@ -283,18 +285,21 @@ git worktree add /Team_A/Bob main-bob
 // Agent Chatter的实现策略
 interface ProcessConfig {
   roleId: string;
-  workingDir: string;    // /Team_A/Alice
-  homeDir: string;       // /Team_A/Alice/home
-  cwd: string;           // /Team_A/Alice/work
+  roleDir: string;       // /Team_A/Alice
+  workDir: string;       // /Team_A/Alice/work
+  instructionFile: string;  // /Team_A/Alice/CLAUDE.md
 }
 
-function spawnClaudeProcess(config: ProcessConfig): ChildProcess {
+function spawnClaudeProcess(
+  config: ProcessConfig,
+  extraEnv?: Record<string, string>
+): ChildProcess {
   return spawn('claude', [], {
-    cwd: config.cwd,
+    cwd: config.workDir,
     env: {
       ...process.env,
-      HOME: config.homeDir,  // 隔离配置目录
-      // CLAUDE_CONFIG_DIR: config.homeDir + '/.claude'  // 可选，但不可靠
+      ...extraEnv
+      // 注意：不再覆盖 HOME，Claude 直接读取系统 ~/.claude/ 凭证
     }
   });
 }
@@ -309,32 +314,31 @@ function spawnClaudeProcess(config: ProcessConfig): ChildProcess {
 | 变量名 | 用途 | 可靠性 | 说明 |
 |--------|------|--------|------|
 | `ANTHROPIC_API_KEY` | API认证 | ✅ 高 | 必需，用于Claude API调用 |
-| `HOME` | 配置目录 | ✅ 高 | Claude使用`$HOME/.claude/` |
+| `HOME` | 配置目录 | ✅ 高 | **必须**指向真实系统HOME（`~/.claude/`） |
 | `CLAUDE_CONFIG_DIR` | 配置根目录 | ⚠️ 中 | 未完整文档化，有已知bug |
 | `HTTPS_PROXY` | 代理设置 | ✅ 高 | 企业环境常用 |
 | `CLAUDE_CODE_USE_BEDROCK` | AWS Bedrock | ✅ 高 | 企业云服务 |
 
 ### 推荐的环境变量策略
 
-**为每个角色设置独立环境**：
+- 不再覆盖 `HOME`。Claude Code 与 Gemini CLI 依赖系统 HOME，覆盖会导致无法读取凭证。
+- Codex 如需隔离，可由用户在 `env.CODEX_HOME` 中显式设置；Agent Chatter 默认同样使用系统 `~/.codex/`。
+- `team.members[].env` 中的值与 `process.env` 合并，用户键优先。
 
 ```bash
 # Alice的启动脚本 (/Team_A/Alice/start.sh)
 #!/bin/bash
-export HOME=/Team_A/Alice/home
-export ANTHROPIC_API_KEY="sk-ant-..."  # 可选，或从全局继承
-cd /Team_A/Alice/work
+export CUSTOM_VAR="alice"   # 可选自定义变量
+cd /Team_A/Alice/work       # 不修改 HOME
 claude
 ```
 
-**或在Node.js中**：
 ```typescript
 spawn('claude', [], {
   cwd: '/Team_A/Alice/work',
   env: {
-    HOME: '/Team_A/Alice/home',
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    PATH: process.env.PATH
+    ...process.env,
+    ...member.env   // 仅合并用户变量，不设置 HOME
   }
 });
 ```
@@ -398,7 +402,7 @@ claude
 # - 不同的context window
 ```
 
-### Agent Chatter推荐：HOME隔离 + CLAUDE.md
+### Agent Chatter推荐：roleDir + workDir + CLAUDE.md
 
 **适用场景**：非Git团队（市场、PMO、财务等）
 
@@ -407,18 +411,10 @@ claude
 /Team_A/
   team_instruction.md        # 团队规范
   /Alice/
-    home/                    # HOME目录（隔离配置）
-      .claude/
-        CLAUDE.md            # 也可以放这里作为全局配置
-        settings.json
-        sessions/
-        logs/
     CLAUDE.md                # Alice的角色指令（推荐）
     work/                    # 工作目录
       → /real/path           # 符号链接到真实资料
   /Bob/
-    home/
-      .claude/
     CLAUDE.md
     work/
       → /another/path
@@ -447,12 +443,10 @@ Always end responses with [DONE]
 #!/bin/bash
 # Alice的启动入口
 
-# 设置隔离的HOME
-export HOME=/Team_A/Alice/home
-
 # 进入工作目录（会自动加载当前目录的CLAUDE.md）
 cd /Team_A/Alice/work
 
+# Claude 会使用系统 HOME (~/.claude/) 寻找凭证
 # 启动Claude Code
 echo "Starting Alice (Security Reviewer)..."
 claude
@@ -466,28 +460,20 @@ class AgentManager {
     roleDir: string;      // /Team_A/Alice
     workDir: string;      // /Team_A/Alice/work
     claudeMd: string;     // /Team_A/Alice/CLAUDE.md
+    env?: Record<string, string>;  // 用户自定义环境变量
   }): Promise<ChildProcess> {
-
-    const homeDir = path.join(roleConfig.roleDir, 'home');
-
-    // 确保home/.claude/目录存在
-    await fs.mkdir(path.join(homeDir, '.claude'), { recursive: true });
-
-    // 可选：复制CLAUDE.md到home/.claude/作为全局配置
-    // 或者依赖工作目录的CLAUDE.md
 
     const process = spawn('claude', [], {
       cwd: roleConfig.workDir,
       env: {
         ...process.env,
-        HOME: homeDir,
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+        ...roleConfig.env   // 不覆盖HOME，保持系统凭证
       },
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
     console.log(`Started Claude for role ${roleConfig.roleId}`);
-    console.log(`  HOME: ${homeDir}`);
     console.log(`  CWD: ${roleConfig.workDir}`);
     console.log(`  CLAUDE.md: ${roleConfig.claudeMd}`);
 
@@ -562,7 +548,6 @@ class AgentManager {
       // 新增字段
       "roleDir": "/Team_A/Alice",           // 角色入口目录
       "workDir": "/Team_A/Alice/work",      // 工作目录（可为符号链接）
-      "homeDir": "/Team_A/Alice/home",      // HOME目录（隔离配置）
       "instructionFile": "/Team_A/Alice/CLAUDE.md"  // 指令文件路径
     }
   ]
@@ -580,25 +565,9 @@ class AgentManager {
 
     const env: Record<string, string> = {
       ...process.env,
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || ''
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || '',
+      ...roleConfig.env    // 仅合并用户变量
     };
-
-    // 根据不同CLI设置环境变量
-    switch (agentType) {
-      case 'claude':
-        env.HOME = roleConfig.homeDir;
-        // env.CLAUDE_CONFIG_DIR = roleConfig.homeDir + '/.claude';  // 可选
-        break;
-
-      case 'codex':
-        env.CODEX_HOME = roleConfig.homeDir + '/.codex';
-        break;
-
-      case 'gemini':
-        env.HOME = roleConfig.homeDir;
-        // env.GEMINI_CONFIG_HOME = roleConfig.homeDir + '/.gemini';  // 如果支持
-        break;
-    }
 
     const process = spawn(agentType, [], {
       cwd: roleConfig.workDir,
@@ -609,6 +578,8 @@ class AgentManager {
     return process;
   }
 }
+
+> 说明：如需为 Codex 指定独立凭证目录，可在 `roleConfig.env` 中显式提供 `CODEX_HOME`。Claude Code 与 Gemini CLI 必须使用系统 HOME，因此不再做任何覆盖。
 ```
 
 ### 用户文档示例
