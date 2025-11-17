@@ -7,8 +7,9 @@
 import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
-import { detectAllTools } from '../utils/ToolDetector';
-import { initializeServices, startConversation, CLIConfig } from '../utils/ConversationStarter';
+import { detectAllTools } from '../utils/ToolDetector.js';
+import { initializeServices, startConversation } from '../utils/ConversationStarter.js';
+import type { CLIConfig } from '../utils/ConversationStarter.js';
 
 // 颜色定义
 const colors = {
@@ -38,12 +39,19 @@ export class ReplMode {
     private commands = ['/help', '/status', '/config', '/start', '/list', '/clear', '/exit', '/quit'];
 
     constructor() {
+        // 启用原始模式以捕获每个按键
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+        }
+
         this.rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout,
             prompt: c('agent-chatter> ', 'cyan'),
             completer: this.completer.bind(this),
         });
+
+        this.setupKeyHandler();
     }
 
     /**
@@ -51,8 +59,89 @@ export class ReplMode {
      */
     private completer(line: string): [string[], string] {
         const hits = this.commands.filter((cmd) => cmd.startsWith(line));
-        // 如果只有一个匹配，返回它；否则返回所有匹配
         return [hits.length ? hits : this.commands, line];
+    }
+
+    /**
+     * 设置按键处理
+     */
+    private setupKeyHandler(): void {
+        const stdin = process.stdin;
+        let currentLine = '';
+
+        stdin.on('keypress', (str, key) => {
+            if (!key) return;
+
+            // Ctrl+C 退出
+            if (key.ctrl && key.name === 'c') {
+                this.exitMessageShown = true;
+                console.log();
+                console.log(c('Goodbye! 👋', 'cyan'));
+                console.log();
+                process.exit(0);
+            }
+
+            // 处理退格
+            if (key.name === 'backspace') {
+                currentLine = currentLine.slice(0, -1);
+            }
+            // 处理回车
+            else if (key.name === 'return') {
+                currentLine = '';
+                this.clearCommandHints();
+                return;
+            }
+            // 处理普通字符
+            else if (str && !key.ctrl && !key.meta) {
+                currentLine += str;
+            }
+
+            // 如果当前行以 / 开头，显示命令提示
+            if (currentLine.startsWith('/')) {
+                this.showCommandHints(currentLine);
+            } else {
+                this.clearCommandHints();
+            }
+        });
+    }
+
+    /**
+     * 显示命令提示
+     */
+    private showCommandHints(input: string): void {
+        const matches = this.commands.filter(cmd => cmd.startsWith(input));
+
+        if (matches.length === 0) return;
+
+        // 保存光标位置
+        process.stdout.write('\x1b[s');
+
+        // 移动到下一行
+        process.stdout.write('\n');
+
+        // 显示匹配的命令
+        matches.forEach((cmd, index) => {
+            const hint = c(`  ${cmd}`, index === 0 ? 'green' : 'dim');
+            process.stdout.write(hint + '\n');
+        });
+
+        // 恢复光标位置
+        process.stdout.write('\x1b[u');
+    }
+
+    /**
+     * 清除命令提示
+     */
+    private clearCommandHints(): void {
+        // 清除下方的行（假设最多显示8个命令）
+        for (let i = 0; i < 9; i++) {
+            process.stdout.write('\x1b[1B');  // 向下移动
+            process.stdout.write('\x1b[2K');  // 清除行
+        }
+        // 回到原位
+        for (let i = 0; i < 9; i++) {
+            process.stdout.write('\x1b[1A');  // 向上移动
+        }
     }
 
     /**

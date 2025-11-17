@@ -8,11 +8,13 @@
  * 4. 协调 Agent 之间的交互
  */
 
-import { Team, Role } from '../models/Team';
-import { ConversationMessage, MessageUtils, MessageDelivery } from '../models/ConversationMessage';
-import { ConversationSession, SessionUtils } from '../models/ConversationSession';
-import { AgentManager } from './AgentManager';
-import { MessageRouter } from './MessageRouter';
+import type { Team, Role } from '../models/Team.js';
+import type { ConversationMessage, MessageDelivery } from '../models/ConversationMessage.js';
+import { MessageUtils } from '../models/ConversationMessage.js';
+import type { ConversationSession } from '../models/ConversationSession.js';
+import { SessionUtils } from '../models/ConversationSession.js';
+import { AgentManager } from './AgentManager.js';
+import { MessageRouter } from './MessageRouter.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -77,7 +79,7 @@ export class ConversationCoordinator {
     this.notifyMessage(initialSystemMessage);
 
     // 发送初始消息给第一个发言者
-    const firstRole = team.roles.find(r => r.id === firstSpeakerId);
+    const firstRole = team.members.find(r => r.id === firstSpeakerId);
     if (!firstRole) {
       throw new Error(`Role ${firstSpeakerId} not found in team`);
     }
@@ -100,7 +102,7 @@ export class ConversationCoordinator {
       throw new Error('No active conversation');
     }
 
-    const role = this.team.roles.find(r => r.id === roleId);
+    const role = this.team.members.find(r => r.id === roleId);
     if (!role) {
       throw new Error(`Role ${roleId} not found`);
     }
@@ -112,7 +114,7 @@ export class ConversationCoordinator {
     const message: ConversationMessage = MessageUtils.createMessage(
       role.id,
       role.name,
-      role.title,
+      role.displayName,
       role.type,
       parsed.cleanContent,
       {
@@ -144,7 +146,7 @@ export class ConversationCoordinator {
       throw new Error('No active conversation');
     }
 
-    const role = this.team.roles.find(r => r.id === roleId);
+    const role = this.team.members.find(r => r.id === roleId);
     if (!role) {
       throw new Error(`Role ${roleId} not found`);
     }
@@ -159,7 +161,7 @@ export class ConversationCoordinator {
     const message: ConversationMessage = MessageUtils.createMessage(
       role.id,
       role.name,
-      role.title,
+      role.displayName,
       role.type,
       parsed.cleanContent,
       {
@@ -202,10 +204,10 @@ export class ConversationCoordinator {
 
     if (addressees.length === 0) {
       // 没有指定接收者，使用轮询机制选择下一个角色
-      const currentRole = this.team.roles.find(r => r.id === message.speaker.roleId);
+      const currentRole = this.team.members.find(r => r.id === message.speaker.roleId);
       if (currentRole) {
         // 根据 order 字段找到下一个角色
-        const sortedRoles = [...this.team.roles].sort((a, b) => a.order - b.order);
+        const sortedRoles = [...this.team.members].sort((a, b) => a.order - b.order);
         const currentIndex = sortedRoles.findIndex(r => r.id === currentRole.id);
         const nextIndex = (currentIndex + 1) % sortedRoles.length;
         resolvedRoles = [sortedRoles[nextIndex]];
@@ -332,7 +334,7 @@ export class ConversationCoordinator {
    *
    * 实现模糊匹配：
    * - 支持 role.id 精确匹配
-   * - 支持 role.name 和 role.title 模糊匹配
+   * - 支持 role.name 和 role.displayName 模糊匹配
    * - 大小写不敏感
    * - 忽略空格和连字符
    */
@@ -348,7 +350,7 @@ export class ConversationCoordinator {
       const normalizedAddressee = this.normalizeIdentifier(addressee);
 
       // 尝试按 ID、名称或标题匹配
-      const role = this.team.roles.find(r => {
+      const role = this.team.members.find(r => {
         // 1. 先尝试精确匹配 role.id（规范化后）
         const normalizedId = this.normalizeIdentifier(r.id);
         if (normalizedId === normalizedAddressee) {
@@ -357,7 +359,7 @@ export class ConversationCoordinator {
 
         // 2. 再尝试匹配 name 和 title（模糊匹配）
         const normalizedName = this.normalizeIdentifier(r.name);
-        const normalizedTitle = this.normalizeIdentifier(r.title);
+        const normalizedTitle = this.normalizeIdentifier(r.displayName);
         return normalizedName === normalizedAddressee || normalizedTitle === normalizedAddressee;
       });
 

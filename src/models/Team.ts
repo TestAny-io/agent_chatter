@@ -1,78 +1,77 @@
 /**
- * Team - 团队配置
+ * Team 数据结构定义
  */
+
 export interface Team {
   id: string;
   name: string;
+  displayName?: string;
   description: string;
-  roles: Role[];
+  instructionFile?: string;
+  roleDefinitions?: RoleDefinition[];
+  members: Role[];
   createdAt: Date;
   updatedAt: Date;
 }
 
-/**
- * Role - 团队中的角色
- */
-export interface Role {
-  id: string;
-  title: string;        // "产品经理"
-  name: string;         // "Alice"
-  type: 'ai' | 'human';
-  agentConfigId?: string;  // AI 角色映射的 agent 配置 ID
-  systemInstruction?: string;  // AI 角色的 system instruction
-  order: number;        // 显示顺序
+export interface RoleDefinition {
+  name: string;
+  displayName?: string;
+  description?: string;
 }
 
 /**
- * 团队验证结果
+ * Role - 团队成员（沿用原有命名以兼容旧代码）
  */
+export interface Role {
+  id: string;
+  displayName: string;
+  name: string;
+  displayRole?: string;
+  role: string;
+  type: 'ai' | 'human';
+  agentType?: string;
+  agentConfigId?: string;
+  themeColor?: string;
+  roleDir?: string;
+  workDir?: string;
+  homeDir?: string;
+  instructionFile?: string;
+  env?: Record<string, string>;
+  systemInstruction?: string;
+  order: number;
+}
+
 export interface ValidationResult {
   valid: boolean;
   errors: string[];
 }
 
-/**
- * 团队工具函数
- */
 export class TeamUtils {
-  /**
-   * 生成唯一 ID
-   */
   static generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  /**
-   * 验证团队配置
-   */
   static validateTeam(team: Team): ValidationResult {
     const errors: string[] = [];
 
-    // 检查基本字段
     if (!team.name || team.name.trim().length === 0) {
       errors.push('团队名称不能为空');
     }
 
-    if (!team.roles || team.roles.length < 2) {
-      errors.push('团队至少需要 2 个角色');
+    if (!team.members || team.members.length < 2) {
+      errors.push('团队至少需要 2 个成员');
     }
 
-    // 检查角色名称重复
-    const names = team.roles.map(r => r.name);
+    const names = team.members.map(r => r.name);
     const uniqueNames = new Set(names);
     if (names.length !== uniqueNames.size) {
-      errors.push('角色名称不能重复');
+      errors.push('成员名称不能重复');
     }
 
-    // 检查 AI 角色配置完整性
-    for (const role of team.roles) {
-      if (role.type === 'ai') {
-        if (!role.agentConfigId) {
-          errors.push(`AI 角色 "${role.name}" 缺少 agentConfigId`);
-        }
-        if (!role.systemInstruction) {
-          errors.push(`AI 角色 "${role.name}" 缺少 systemInstruction`);
-        }
+    for (const role of team.members) {
+      if (role.type === 'ai' && !role.agentConfigId) {
+        errors.push(`AI 成员 "${role.name}" 缺少 agentConfigId`);
       }
     }
 
@@ -82,28 +81,26 @@ export class TeamUtils {
     };
   }
 
-  /**
-   * 创建新团队
-   */
   static createTeam(
     name: string,
     description: string,
-    roles: Role[] = []
+    members: Role[] = [],
+    instructionFile?: string,
+    roleDefinitions?: RoleDefinition[]
   ): Team {
     const now = new Date();
     return {
       id: this.generateId(),
       name,
       description,
-      roles,
+      members,
+      instructionFile,
+      roleDefinitions,
       createdAt: now,
       updatedAt: now
     };
   }
 
-  /**
-   * 创建新角色（接受对象参数）
-   */
   static createRole(input: Omit<Role, 'id'>): Role {
     return {
       id: this.generateId(),

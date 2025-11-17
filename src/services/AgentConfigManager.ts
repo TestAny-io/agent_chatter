@@ -5,8 +5,10 @@
  * 使用 StorageService 持久化配置数据
  */
 
-import { IStorageService, StorageKeys } from '../infrastructure/StorageService';
-import { AgentConfig, AgentConfigUtils } from '../models/AgentConfig';
+import type { IStorageService } from '../infrastructure/StorageService.js';
+import { StorageKeys } from '../infrastructure/StorageService.js';
+import type { AgentConfig } from '../models/AgentConfig.js';
+import { AgentConfigUtils } from '../models/AgentConfig.js';
 
 export interface CreateAgentConfigInput {
   name: string;

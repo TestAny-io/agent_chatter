@@ -8,8 +8,9 @@
  * 简化版：适配简化的 ProcessManager
  */
 
-import { ProcessManager, SendOptions } from '../infrastructure/ProcessManager';
-import { AgentConfigManager } from './AgentConfigManager';
+import { ProcessManager } from '../infrastructure/ProcessManager.js';
+import type { SendOptions } from '../infrastructure/ProcessManager.js';
+import { AgentConfigManager } from './AgentConfigManager.js';
 
 /**
  * Agent 实例信息

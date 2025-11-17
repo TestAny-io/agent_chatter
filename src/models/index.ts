@@ -1,9 +1,11 @@
 // 导出所有数据模型
-export { Team, Role, TeamUtils } from './Team';
-export type { ValidationResult as TeamValidationResult } from './Team';
+export type { Team, Role } from './Team.js';
+export { TeamUtils } from './Team.js';
+export type { ValidationResult as TeamValidationResult } from './Team.js';
 
-export { AgentConfig, AgentConfigUtils, TestResult } from './AgentConfig';
-export type { ValidationResult as AgentValidationResult } from './AgentConfig';
+export type { AgentConfig, TestResult } from './AgentConfig.js';
+export { AgentConfigUtils } from './AgentConfig.js';
+export type { ValidationResult as AgentValidationResult } from './AgentConfig.js';
 
-export * from './ConversationMessage';
-export * from './ConversationSession';
+export type * from './ConversationMessage.js';
+export type * from './ConversationSession.js';

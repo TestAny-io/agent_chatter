@@ -1,4 +1,4 @@
-import { ConversationMessage } from './ConversationMessage';
+import type { ConversationMessage } from './ConversationMessage.js';
 
 /**
  * ConversationSession - 对话会话

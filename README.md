@@ -75,6 +75,7 @@ Create `my-team.json`:
 
 ```json
 {
+  "schemaVersion": "1.0",
   "agents": [
     {
       "name": "claude",
@@ -83,24 +84,52 @@ Create `my-team.json`:
         "--append-system-prompt",
         "Always end your response with [DONE] on a new line. Keep responses concise."
       ],
-      "endMarker": "[DONE]"
+      "endMarker": "[DONE]",
+      "usePty": false
     }
   ],
   "team": {
-    "name": "My AI Team",
+    "name": "my-ai-team",
+    "displayName": "My AI Team",
     "description": "Claude with human observer",
-    "roles": [
+    "instructionFile": "./teams/my-ai-team/team_instruction.md",
+    "roleDefinitions": [
       {
-        "title": "Claude",
-        "name": "claude",
-        "type": "ai",
-        "agentName": "claude",
-        "systemInstruction": "You are Claude, a helpful AI assistant. Be concise."
+        "name": "reviewer",
+        "displayName": "Reviewer",
+        "description": "AI reviewer that inspects the code"
       },
       {
-        "title": "Observer",
         "name": "observer",
-        "type": "human"
+        "displayName": "Observer",
+        "description": "Human teammate who can step in with clarifications"
+      }
+    ],
+    "members": [
+      {
+        "displayName": "Claude Reviewer",
+        "displayRole": "Reviewer",
+        "name": "claude-reviewer",
+        "type": "ai",
+        "role": "reviewer",
+        "agentType": "claude",
+        "themeColor": "cyan",
+        "roleDir": "./teams/my-ai-team/reviewer/claude-reviewer",
+        "workDir": "./teams/my-ai-team/reviewer/claude-reviewer/work",
+        "homeDir": "./teams/my-ai-team/reviewer/claude-reviewer/home",
+        "instructionFile": "./teams/my-ai-team/reviewer/claude-reviewer/AGENTS.md"
+      },
+      {
+        "displayName": "Human Observer",
+        "displayRole": "Observer",
+        "name": "observer-1",
+        "type": "human",
+        "role": "observer",
+        "themeColor": "green",
+        "roleDir": "./teams/my-ai-team/observer/human-observer",
+        "workDir": "./teams/my-ai-team/observer/human-observer/work",
+        "homeDir": "./teams/my-ai-team/observer/human-observer/home",
+        "instructionFile": "./teams/my-ai-team/observer/human-observer/README.md"
       }
     ]
   },
@@ -157,27 +186,45 @@ Define your team structure:
 ```json
 {
   "team": {
-    "name": "Team Name",
+    "name": "team-name",
+    "displayName": "Team Name",
     "description": "Team description",
-    "roles": [...]
+    "instructionFile": "./teams/team-name/team_instruction.md",
+    "roleDefinitions": [...],
+    "members": [...]
   },
   "maxRounds": 10
 }
 ```
 
-### Role Configuration
+### Member Configuration
 
-Each participant in the conversation:
+Each participant entry in `team.members` must define directories and the instruction file to use:
 
 ```json
 {
-  "title": "Display Name",
-  "name": "internal-id",
-  "type": "ai" | "human",
-  "agentName": "agent-id",
-  "systemInstruction": "Custom instructions for this agent"
+  "displayName": "Claude Reviewer",
+  "displayRole": "Reviewer",
+  "name": "claude-reviewer",
+  "type": "ai",
+  "role": "reviewer",
+  "agentType": "claude",
+  "roleDir": "./teams/team-name/reviewer/claude-reviewer",
+  "workDir": "./teams/team-name/reviewer/claude-reviewer/work",
+  "homeDir": "./teams/team-name/reviewer/claude-reviewer/home",
+  "instructionFile": "./teams/team-name/reviewer/claude-reviewer/AGENTS.md",
+  "env": {
+    "HOME": "./teams/team-name/reviewer/claude-reviewer/home"
+  }
 }
 ```
+
+- `agentType`: References an entry in the top-level `agents` array (e.g., `claude`, `codex`, `gemini`).
+- `roleDir`: Anchor directory for this member. The instruction file, work directory, and CLI home typically live under this tree.
+- `workDir`: Directory the process should treat as its working directory (symlink it to your actual project if needed).
+- `homeDir`: Directory used for `$HOME` or CLI-specific config (`CODEX_HOME`, `.gemini`, etc.). The loader creates it automatically.
+- `instructionFile`: Path to the Markdown instructions that define this member's role-specific persona.
+- `env`: Optional extra environment variables merged into the spawned CLI.
 
 ### Conversation Control
 

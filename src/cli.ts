@@ -9,18 +9,14 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConversationCoordinator } from './services/ConversationCoordinator';
-import { AgentManager } from './services/AgentManager';
-import { ProcessManager } from './infrastructure/ProcessManager';
-import { MessageRouter } from './services/MessageRouter';
-import { AgentConfigManager } from './services/AgentConfigManager';
-import { TeamManager } from './services/TeamManager';
-import { MockStorageService } from './infrastructure/StorageService';
-import { Team } from './models/Team';
-import { ConversationMessage } from './models/ConversationMessage';
-import * as readline from 'readline';
-import { detectAllTools, ToolStatus } from './utils/ToolDetector';
-import { ReplMode } from './repl/ReplMode';
+import { detectAllTools } from './utils/ToolDetector.js';
+import type { ToolStatus } from './utils/ToolDetector.js';
+import { startReplInk } from './repl/ReplModeInk.js';
+import {
+  initializeServices,
+  startConversation,
+  type CLIConfig,
+} from './utils/ConversationStarter.js';
 
 const program = new Command();
 
@@ -86,29 +82,6 @@ function displayToolStatus(tools: ToolStatus[], showHeader: boolean = true): voi
     }
 }
 
-// CLI 配置接口
-interface CLIConfig {
-    agents: Array<{
-        name: string;
-        command: string;
-        args: string[];
-        endMarker?: string;
-        usePty?: boolean;
-    }>;
-    team: {
-        name: string;
-        description: string;
-        roles: Array<{
-            title: string;
-            name: string;
-            type: 'ai' | 'human';
-            agentName?: string;  // 对应 agents 数组中的 name
-            systemInstruction?: string;
-        }>;
-    };
-    maxRounds?: number;
-}
-
 /**
  * 加载配置文件
  */
@@ -129,179 +102,6 @@ function loadConfig(configPath: string): CLIConfig {
 }
 
 /**
- * 初始化服务和团队
- */
-async function initializeServices(config: CLIConfig): Promise<{
-    coordinator: ConversationCoordinator;
-    team: Team;
-    processManager: ProcessManager;
-}> {
-    // 初始化核心服务
-    const storage = new MockStorageService();
-    const processManager = new ProcessManager();
-    const messageRouter = new MessageRouter();
-    const agentConfigManager = new AgentConfigManager(storage);
-    const teamManager = new TeamManager(storage);
-    const agentManager = new AgentManager(processManager, agentConfigManager);
-
-    // 创建 agent 配置
-    const agentConfigMap = new Map<string, string>();  // name -> configId
-
-    for (const agentDef of config.agents) {
-        const agentConfig = await agentConfigManager.createAgentConfig({
-            name: `${agentDef.name}-config`,
-            type: 'cli',
-            command: agentDef.command,
-            args: agentDef.args,
-            endMarker: agentDef.endMarker,
-            description: `CLI agent: ${agentDef.name}`,
-            useEndOfMessageMarker: false,
-            usePty: agentDef.usePty ?? false,
-        });
-        agentConfigMap.set(agentDef.name, agentConfig.id);
-    }
-
-    // 创建团队角色
-    const roles = config.team.roles.map((roleDef, index) => ({
-        title: roleDef.title,
-        name: roleDef.name,
-        type: roleDef.type,
-        agentConfigId: roleDef.type === 'ai' && roleDef.agentName
-            ? agentConfigMap.get(roleDef.agentName)
-            : undefined,
-        systemInstruction: roleDef.systemInstruction || '',
-        order: index,
-    }));
-
-    // 创建团队
-    const team = await teamManager.createTeam({
-        name: config.team.name,
-        description: config.team.description,
-        roles,
-    });
-
-    // 创建对话协调器
-    const coordinator = new ConversationCoordinator(
-        agentManager,
-        messageRouter,
-        {
-            contextMessageCount: 5,
-            onMessage: (message: ConversationMessage) => {
-                // 显示消息
-                displayMessage(message);
-            },
-            onStatusChange: (status: string) => {
-                console.log(colorize(`[Status] ${status}`, 'dim'));
-            },
-        }
-    );
-
-    return { coordinator, team, processManager };
-}
-
-/**
- * 显示消息
- */
-function displayMessage(message: ConversationMessage): void {
-    const speaker = message.speaker;
-    const timestamp = new Date(message.timestamp).toLocaleTimeString();
-
-    // 根据角色类型选择颜色
-    const nameColor = speaker.type === 'ai' ? 'cyan' : 'green';
-
-    console.log('');
-    console.log(colorize(`[${timestamp}] ${speaker.roleTitle}:`, nameColor));
-    console.log(message.content);
-    console.log(colorize('─'.repeat(60), 'dim'));
-}
-
-/**
- * 等待用户输入
- */
-function waitForUserInput(prompt: string): Promise<string> {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-    });
-
-    return new Promise((resolve) => {
-        rl.question(colorize(prompt, 'yellow'), (answer) => {
-            rl.close();
-            resolve(answer.trim());
-        });
-    });
-}
-
-/**
- * 启动对话
- */
-async function startConversation(
-    coordinator: ConversationCoordinator,
-    team: Team,
-    initialMessage: string,
-    firstSpeaker?: string
-): Promise<void> {
-    // 确定第一个发言者
-    const firstSpeakerId = firstSpeaker
-        ? team.roles.find(r => r.name === firstSpeaker)?.id
-        : team.roles[0].id;
-
-    if (!firstSpeakerId) {
-        console.error(colorize('Error: Invalid first speaker', 'red'));
-        return;
-    }
-
-    console.log(colorize('\n=== 对话开始 ===\n', 'bright'));
-    console.log(colorize(`初始消息: ${initialMessage}`, 'blue'));
-    console.log(colorize(`第一个发言者: ${team.roles.find(r => r.id === firstSpeakerId)?.title}`, 'blue'));
-    console.log(colorize('─'.repeat(60), 'dim'));
-
-    // 启动对话
-    await coordinator.startConversation(team, initialMessage, firstSpeakerId);
-
-    // 监听需要人工输入的情况
-    let isWaitingForInput = false;  // 防止多次触发输入提示
-    const checkInterval = setInterval(async () => {
-        const waitingRoleId = coordinator.getWaitingForRoleId();
-
-        if (waitingRoleId && !isWaitingForInput) {
-            const role = team.roles.find(r => r.id === waitingRoleId);
-
-            if (role && role.type === 'human') {
-                isWaitingForInput = true;
-                // 需要人工输入
-                const userInput = await waitForUserInput(`\n${role.title}, 请输入你的消息: `);
-                isWaitingForInput = false;
-
-                if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
-                    console.log(colorize('\n用户终止对话', 'yellow'));
-                    coordinator.stop();
-                    clearInterval(checkInterval);
-                } else {
-                    coordinator.injectMessage(waitingRoleId, userInput);
-                }
-            }
-        }
-
-        // 检查对话是否完成
-        const session = (coordinator as any).session;
-        if (session && session.status === 'completed') {
-            clearInterval(checkInterval);
-            console.log(colorize('\n=== 对话结束 ===\n', 'bright'));
-            process.exit(0);
-        }
-    }, 500);
-
-    // 处理 Ctrl+C
-    process.on('SIGINT', () => {
-        console.log(colorize('\n\n用户中断对话', 'yellow'));
-        coordinator.stop();
-        clearInterval(checkInterval);
-        process.exit(0);
-    });
-}
-
-/**
  * 主程序
  */
 program
@@ -310,8 +110,7 @@ program
     .version('0.0.1')
     .action(async () => {
         // 当没有子命令时，启动REPL模式
-        const repl = new ReplMode();
-        await repl.start();
+        startReplInk();
     });
 
 program
@@ -332,7 +131,7 @@ program
 
             // 初始化服务
             console.log(colorize('正在初始化服务...', 'cyan'));
-            const { coordinator, team, processManager } = await initializeServices(config);
+            const { coordinator, team } = await initializeServices(config);
 
             // 启动对话
             await startConversation(coordinator, team, options.message, options.speaker);
@@ -349,6 +148,7 @@ program
     .option('-o, --output <path>', '输出文件路径', 'agent-chatter-config.json')
     .action((options) => {
         const exampleConfig: CLIConfig = {
+            schemaVersion: '1.0',
             agents: [
                 {
                     name: 'claude',
@@ -362,20 +162,47 @@ program
                 }
             ],
             team: {
-                name: 'Claude Code Test Team',
+                name: 'claude-code-test-team',
+                displayName: 'Claude Code Test Team',
                 description: 'A team with Claude Code CLI agent and human observer',
-                roles: [
+                instructionFile: './teams/claude-code-test/team_instruction.md',
+                roleDefinitions: [
                     {
-                        title: 'Claude',
-                        name: 'claude',
-                        type: 'ai',
-                        agentName: 'claude',
-                        systemInstruction: 'You are a helpful AI assistant.'
+                        name: 'reviewer',
+                        displayName: 'Reviewer',
+                        description: 'AI reviewer that inspects the code'
                     },
                     {
-                        title: 'Observer',
                         name: 'observer',
-                        type: 'human'
+                        displayName: 'Observer',
+                        description: 'Human observer who can join the conversation when needed'
+                    }
+                ],
+                members: [
+                    {
+                        displayName: 'Claude Reviewer',
+                        displayRole: 'AI Reviewer',
+                        name: 'claude-reviewer',
+                        type: 'ai',
+                        role: 'reviewer',
+                        agentType: 'claude',
+                        themeColor: 'cyan',
+                        roleDir: './teams/claude-code-test/reviewer/claude-reviewer',
+                        workDir: './teams/claude-code-test/reviewer/claude-reviewer/work',
+                        homeDir: './teams/claude-code-test/reviewer/claude-reviewer/home',
+                        instructionFile: './teams/claude-code-test/reviewer/claude-reviewer/AGENTS.md'
+                    },
+                    {
+                        displayName: 'Human Observer',
+                        displayRole: 'Observer',
+                        name: 'observer-1',
+                        type: 'human',
+                        role: 'observer',
+                        themeColor: 'green',
+                        roleDir: './teams/claude-code-test/observer/human-observer',
+                        workDir: './teams/claude-code-test/observer/human-observer/work',
+                        homeDir: './teams/claude-code-test/observer/human-observer/home',
+                        instructionFile: './teams/claude-code-test/observer/human-observer/README.md'
                     }
                 ]
             },

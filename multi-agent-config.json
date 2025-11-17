@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1.0",
   "agents": [
     {
       "name": "claude",
@@ -7,50 +8,102 @@
         "--append-system-prompt",
         "Always end your response with the exact text [DONE] on a new line. Keep responses concise."
       ],
-      "endMarker": "[DONE]"
+      "endMarker": "[DONE]",
+      "usePty": false
     },
     {
       "name": "codex",
       "command": "./wrappers/codex-wrapper.sh",
       "args": [],
-      "endMarker": "[DONE]"
+      "endMarker": "[DONE]",
+      "usePty": false
     },
     {
       "name": "gemini",
       "command": "./wrappers/gemini-wrapper.sh",
       "args": [],
-      "endMarker": "[DONE]"
+      "endMarker": "<END>",
+      "usePty": false
     }
   ],
   "team": {
-    "name": "Multi-AI Team",
+    "name": "multi-ai-team",
+    "displayName": "Multi-AI Team",
     "description": "A team with Claude, Codex, Gemini, and human observer",
-    "roles": [
+    "instructionFile": "./teams/multi-ai-team/team_instruction.md",
+    "roleDefinitions": [
       {
-        "title": "Claude",
-        "name": "claude",
-        "type": "ai",
-        "agentName": "claude",
-        "systemInstruction": "You are Claude, a helpful AI assistant. Be concise."
+        "name": "lead-analyst",
+        "displayName": "Lead Analyst",
+        "description": "Owns task decomposition and guidance"
       },
       {
-        "title": "Codex",
-        "name": "codex",
-        "type": "ai",
-        "agentName": "codex",
-        "systemInstruction": "You are Codex, an AI coding assistant. Focus on code and technical solutions."
+        "name": "code-implementor",
+        "displayName": "Implementation",
+        "description": "Writes and edits source code"
       },
       {
-        "title": "Gemini",
-        "name": "gemini",
-        "type": "ai",
-        "agentName": "gemini",
-        "systemInstruction": "You are Gemini, Google's AI assistant. Provide helpful responses."
+        "name": "qa-analyst",
+        "displayName": "QA Analyst",
+        "description": "Reviews outputs and verifies requirements"
       },
       {
-        "title": "Observer",
         "name": "observer",
-        "type": "human"
+        "displayName": "Observer",
+        "description": "Human PM that can join if needed"
+      }
+    ],
+    "members": [
+      {
+        "displayName": "Claude Planner",
+        "displayRole": "Lead Analyst",
+        "name": "claude-lead",
+        "type": "ai",
+        "role": "lead-analyst",
+        "agentType": "claude",
+        "themeColor": "cyan",
+        "roleDir": "./teams/multi-ai-team/lead-analyst/claude-lead",
+        "workDir": "./teams/multi-ai-team/lead-analyst/claude-lead/work",
+        "homeDir": "./teams/multi-ai-team/lead-analyst/claude-lead/home",
+        "instructionFile": "./teams/multi-ai-team/lead-analyst/claude-lead/AGENTS.md"
+      },
+      {
+        "displayName": "Codex Builder",
+        "displayRole": "Implementation",
+        "name": "codex-builder",
+        "type": "ai",
+        "role": "code-implementor",
+        "agentType": "codex",
+        "themeColor": "blue",
+        "roleDir": "./teams/multi-ai-team/code-implementor/codex-builder",
+        "workDir": "./teams/multi-ai-team/code-implementor/codex-builder/work",
+        "homeDir": "./teams/multi-ai-team/code-implementor/codex-builder/home",
+        "instructionFile": "./teams/multi-ai-team/code-implementor/codex-builder/AGENTS.md"
+      },
+      {
+        "displayName": "Gemini QA",
+        "displayRole": "QA Analyst",
+        "name": "gemini-qa",
+        "type": "ai",
+        "role": "qa-analyst",
+        "agentType": "gemini",
+        "themeColor": "magenta",
+        "roleDir": "./teams/multi-ai-team/qa-analyst/gemini-qa",
+        "workDir": "./teams/multi-ai-team/qa-analyst/gemini-qa/work",
+        "homeDir": "./teams/multi-ai-team/qa-analyst/gemini-qa/home",
+        "instructionFile": "./teams/multi-ai-team/qa-analyst/gemini-qa/GEMINI.md"
+      },
+      {
+        "displayName": "Product Observer",
+        "displayRole": "Observer",
+        "name": "observer-1",
+        "type": "human",
+        "role": "observer",
+        "themeColor": "green",
+        "roleDir": "./teams/multi-ai-team/observer/product-observer",
+        "workDir": "./teams/multi-ai-team/observer/product-observer/work",
+        "homeDir": "./teams/multi-ai-team/observer/product-observer/home",
+        "instructionFile": "./teams/multi-ai-team/observer/product-observer/README.md"
       }
     ]
   },

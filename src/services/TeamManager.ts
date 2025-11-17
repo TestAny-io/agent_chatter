@@ -5,20 +5,28 @@
  * 使用 StorageService 持久化团队数据
  */
 
-import { IStorageService, StorageKeys } from '../infrastructure/StorageService';
-import { Team, Role, TeamUtils } from '../models/Team';
+import type { IStorageService } from '../infrastructure/StorageService.js';
+import { StorageKeys } from '../infrastructure/StorageService.js';
+import type { Team, Role, RoleDefinition } from '../models/Team.js';
+import { TeamUtils } from '../models/Team.js';
 
 export interface CreateTeamInput {
   name: string;
   description: string;
-  roles: Array<Omit<Role, 'id'>>;
+  displayName?: string;
+  instructionFile?: string;
+  roleDefinitions?: RoleDefinition[];
+  members: Array<Omit<Role, 'id'>>;
 }
 
 export interface UpdateTeamInput {
   name?: string;
   description?: string;
-  roles?: Array<Partial<Role> & { id?: string }>;  // 支持带ID的partial update
-  replaceRoles?: boolean;  // true = 完全替换角色列表；false (默认) = 合并更新
+  displayName?: string;
+  instructionFile?: string;
+  roleDefinitions?: RoleDefinition[];
+  members?: Array<Partial<Role> & { id?: string }>;
+  replaceMembers?: boolean;
 }
 
 /**
@@ -32,14 +40,17 @@ export class TeamManager {
    */
   async createTeam(input: CreateTeamInput): Promise<Team> {
     // 生成角色 ID
-    const rolesWithIds = input.roles.map(role => TeamUtils.createRole(role));
+    const membersWithIds = input.members.map(role => TeamUtils.createRole(role));
 
     // 创建团队对象
     const team = TeamUtils.createTeam(
       input.name,
       input.description,
-      rolesWithIds
+      membersWithIds,
+      input.instructionFile,
+      input.roleDefinitions
     );
+    team.displayName = input.displayName;
 
     // 验证
     const validation = TeamUtils.validateTeam(team);
@@ -82,14 +93,14 @@ export class TeamManager {
     const existingTeam = teams[index];
 
     // 处理角色更新
-    let updatedRoles = existingTeam.roles;
-    if (input.roles) {
-      if (input.replaceRoles) {
+    let updatedMembers = existingTeam.members;
+    if (input.members) {
+      if (input.replaceMembers) {
         // 完全替换模式：直接使用提供的角色列表
-        updatedRoles = input.roles.map(roleInput => {
+        updatedMembers = input.members.map(roleInput => {
           if (roleInput.id) {
             // 如果提供了ID，查找现有角色以保留ID
-            const existingRole = existingTeam.roles.find(r => r.id === roleInput.id);
+            const existingRole = existingTeam.members.find(r => r.id === roleInput.id);
             if (existingRole) {
               // 合并更新
               return {
@@ -109,12 +120,12 @@ export class TeamManager {
         const roleMap = new Map<string, Role>();
 
         // 首先，添加所有现有角色到Map
-        for (const role of existingTeam.roles) {
+        for (const role of existingTeam.members) {
           roleMap.set(role.id, role);
         }
 
         // 然后，处理input中的角色更新
-        for (const roleInput of input.roles) {
+        for (const roleInput of input.members) {
           if (roleInput.id && roleMap.has(roleInput.id)) {
             // 如果提供了ID且存在，合并更新现有角色
             const existingRole = roleMap.get(roleInput.id)!;
@@ -134,7 +145,7 @@ export class TeamManager {
         }
 
         // 转换回数组
-        updatedRoles = Array.from(roleMap.values());
+        updatedMembers = Array.from(roleMap.values());
       }
     }
 
@@ -143,7 +154,10 @@ export class TeamManager {
       ...existingTeam,
       name: input.name ?? existingTeam.name,
       description: input.description ?? existingTeam.description,
-      roles: updatedRoles,
+      displayName: input.displayName ?? existingTeam.displayName,
+      instructionFile: input.instructionFile ?? existingTeam.instructionFile,
+      roleDefinitions: input.roleDefinitions ?? existingTeam.roleDefinitions,
+      members: updatedMembers,
       updatedAt: new Date()
     };
 
@@ -188,7 +202,7 @@ export class TeamManager {
       return undefined;
     }
 
-    return team.roles.find(r => r.id === roleId);
+    return team.members.find(r => r.id === roleId);
   }
 
   /**

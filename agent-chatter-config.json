@@ -1,4 +1,5 @@
 {
+  "schemaVersion": "1.0",
   "agents": [
     {
       "name": "claude",
@@ -12,20 +13,47 @@
     }
   ],
   "team": {
-    "name": "Claude Code Test Team",
+    "name": "claude-code-test-team",
+    "displayName": "Claude Code Test Team",
     "description": "A team with Claude Code CLI agent and human observer",
-    "roles": [
+    "instructionFile": "./teams/claude-code-test-team/team_instruction.md",
+    "roleDefinitions": [
       {
-        "title": "Claude",
-        "name": "claude",
-        "type": "ai",
-        "agentName": "claude",
-        "systemInstruction": "You are a helpful AI assistant."
+        "name": "reviewer",
+        "displayName": "Reviewer",
+        "description": "AI reviewer responsible for analyzing pull requests"
       },
       {
-        "title": "Observer",
         "name": "observer",
-        "type": "human"
+        "displayName": "Observer",
+        "description": "Human team member who can add clarifications or approvals"
+      }
+    ],
+    "members": [
+      {
+        "displayName": "Claude Reviewer",
+        "displayRole": "Reviewer",
+        "name": "claude-reviewer",
+        "type": "ai",
+        "role": "reviewer",
+        "agentType": "claude",
+        "themeColor": "cyan",
+        "roleDir": "./teams/claude-code-test-team/reviewer/claude-reviewer",
+        "workDir": "./teams/claude-code-test-team/reviewer/claude-reviewer/work",
+        "homeDir": "./teams/claude-code-test-team/reviewer/claude-reviewer/home",
+        "instructionFile": "./teams/claude-code-test-team/reviewer/claude-reviewer/AGENTS.md"
+      },
+      {
+        "displayName": "Human Observer",
+        "displayRole": "Observer",
+        "name": "observer-1",
+        "type": "human",
+        "role": "observer",
+        "themeColor": "green",
+        "roleDir": "./teams/claude-code-test-team/observer/human-observer",
+        "workDir": "./teams/claude-code-test-team/observer/human-observer/work",
+        "homeDir": "./teams/claude-code-test-team/observer/human-observer/home",
+        "instructionFile": "./teams/claude-code-test-team/observer/human-observer/README.md"
       }
     ]
   },
