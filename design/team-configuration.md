@@ -214,7 +214,7 @@ Current Configuration:
 ────────────────────────────────────────────────────────────
 Main Menu
 ────────────────────────────────────────────────────────────
-⚠️  Important: Role structure is fixed after team creation/migration.
+⚠️  Important: Role structure is fixed after team creation.
    To change roles, you must create a new team.
 
 What would you like to do?
@@ -939,14 +939,7 @@ Looks good? [Y/n]
   - [ ] 生成符合schema的完整JSON（包括schemaVersion）
 
 ### Phase 3: `/team edit` 编辑功能（2-3天）
-- [ ] **实现配置文件迁移逻辑**（见7.8节）
-  - [ ] `detectSchemaVersion()` - 检测配置版本
-  - [ ] `ensureMigratedConfig()` - 统一的内存迁移接口
-  - [ ] `silentMigration()` - 静默迁移（提供默认值）
-  - [ ] `interactiveMigration()` - 交互式迁移向导
-    - [ ] Step 1: Team Instruction File确认（可从legacy描述自动生成）
-    - [ ] Step 2: 自动推导角色结构，用户确认（不允许自定义）
-    - [ ] Migration Summary确认界面
+- [ ] ~~**实现配置文件迁移逻辑**~~（已取消：项目仅支持 schema v1.0，新配置需通过 `/team create` 重建）
 - [ ] 实现配置文件加载和解析（支持legacy和v1.0格式）
 - [ ] 实现主菜单界面（显示team instruction file, roleDefinitions, members）
 - [ ] 实现编辑团队信息（name, displayName, description, instructionFile, maxRounds）
@@ -967,28 +960,19 @@ Looks good? [Y/n]
 ### Phase 4: 辅助命令（1天）
 - [ ] 实现 `/team list` - 列出所有团队配置文件（显示基本信息）
 - [ ] 实现 `/team show [filename]` - 显示配置详情
-  - [ ] 使用`ensureMigratedConfig(interactive: false)`静默迁移
-  - [ ] 显示legacy格式警告（见7.8节场景B）
-  - [ ] 显示team instruction file（legacy使用默认值：例如推导自description或默认路径）
-  - [ ] 显示roleDefinitions（legacy使用默认值：单个角色"Member"，描述"Team member"）
+  - [ ] 显示team instruction file
+  - [ ] 显示roleDefinitions（"Reviewer"、"Observer" 等用户自定义角色）
   - [ ] 显示members并标注roleDir/workDir/homeDir/instructionFile/env字段
 - [ ] 实现 `/team delete <filename>` - 删除配置（带安全检查）
 - [ ] 实现 `/unload` 命令（卸载当前配置，用于delete场景）
 - [ ] 更新 `/config` 命令
-  - [ ] 使用`ensureMigratedConfig(interactive: false)`静默迁移
-  - [ ] 添加legacy格式提示（见7.8节场景C）
-- [ ] 更新 ConversationStarter.ts - 使用`ensureMigratedConfig()`加载配置
+  - [ ] 直接加载 v1.0 schema
++ [ ] 更新 ConversationStarter.ts - 仅接受 v1.0 schema
 
 ### Phase 5: 测试和优化（1-2天）
 - [ ] 端到端测试创建流程
 - [ ] 端到端测试编辑流程
-- [ ] **测试配置迁移流程**
-  - [ ] 交互式迁移向导测试（/team edit）
-  - [ ] 静默迁移测试（/config, /team show）
-  - [ ] 迁移后roleDefinitions不可编辑验证
-  - [ ] 迁移拒绝场景测试
-  - [ ] 保存后的配置格式验证（只有v1.0）
-  - [ ] 内存迁移不修改原文件的验证
+- [ ] ~~**测试配置迁移流程**~~（已取消：不提供迁移功能）
 - [ ] 测试边界情况（无agents、单agent、多agents）
 - [ ] 错误处理优化
 - [ ] UX优化（提示文本、警告信息、输入验证）
@@ -1103,7 +1087,7 @@ team: {
   ```
 
 2. **向后兼容性**：
-   - 旧版本成员如果带有`endMarker`/`usePty`/`args`字段，迁移时将忽略这些字段并回退到agent默认值
+  - 旧版本成员如果带有`endMarker`/`usePty`/`args`字段，需手动移除以回退到agent默认值
    - legacy配置中的`teamGoal`内容会提示用户写入新的team instruction file
 
 3. **编辑时的智能显示**：
@@ -1116,355 +1100,12 @@ team: {
 - 每个编辑操作都是明确的JSON对象修改
   - Change AI Agent：更新agentType并提示用户重新确认目录、HOME和instructionFile（避免引用错误的CLI配置）
 - Change Type (AI↔Human)：删除/添加相应字段，显示警告
-- ~~Change Role~~：**不允许修改**。成员的role字段在创建（或迁移）时确定，之后不可修改，因为会影响团队结构和其他成员配置
+- ~~Change Role~~：**不允许修改**。成员的role字段在创建时确定，之后不可修改，因为会影响团队结构和其他成员配置
 - 所有操作都在内存中的临时对象上进行，Save时才覆盖原文件
 
-### 7.8 配置文件向后兼容和迁移策略
-**挑战**：新schema引入了schemaVersion、team.instructionFile、team.roleDefinitions等必备字段，但现有配置文件（如agent-chatter-config.json）完全不包含这些字段。需要明确定义如何加载、迁移和保存旧版配置。
+### 7.8 配置文件兼容性
+项目从正式开发起即使用 schema v1.0，仅支持该版本。产品从未对外发布旧格式，因此不提供任何自动迁移或兼容层。若用户仍保存早期草稿（如 team.roles 结构），需要按照本文档的 schema 说明重新创建配置，或使用 `/team create` 向导生成。未来若 schema 升级，将届时重新评估是否需要迁移工具。
 
-**核心决策**：
-1. **交互式迁移，但不允许自定义角色**：系统自动推导角色结构（AI → "Assistant", Human → "Participant"），用户只能确认或拒绝，不提供自定义入口。这确保在编辑阶段不会新增/修改角色。
-2. **所有加载都在内存中迁移**：保证运行时不会缺少必需字段，避免代码崩溃
-3. **只有编辑时保存迁移结果**：`/config`和`/team show`不修改文件，保持向后兼容
-4. **迁移时角色定义一次性确定**：迁移向导中系统自动推导角色，用户确认后角色定义固定，不可修改（因为会影响所有成员配置）。如果用户不接受自动推导的角色，必须使用`/team create wizard`创建新团队。
-
-**方案**：
-
-#### 1. Schema版本检测
-加载配置文件时，通过是否存在`schemaVersion`字段来识别版本：
-
-```typescript
-function detectSchemaVersion(config: any): 'legacy' | '1.0' {
-  if (!config.schemaVersion) {
-    return 'legacy';  // Old format without schemaVersion
-  }
-  return config.schemaVersion;  // Currently only '1.0'
-}
-```
-
-#### 2. 统一的内存迁移接口
-
-所有加载配置的命令（`/config`, `/team edit`, `/team show`）都调用此函数：
-
-```typescript
-function ensureMigratedConfig(config: any, interactive: boolean = false): ConfigV1 {
-  const version = detectSchemaVersion(config);
-
-  if (version === '1.0') {
-    return config;  // Already migrated
-  }
-
-  // Legacy config - perform migration
-  if (interactive) {
-    // Interactive migration (for /team edit)
-    return interactiveMigration(config);
-  } else {
-    // Silent migration with defaults (for /config, /team show)
-    return silentMigration(config);
-  }
-}
-```
-
-#### 3. 静默迁移（用于 /config 和 /team show）
-
-提供保守的默认值，保证代码不崩溃：
-
-```typescript
-function silentMigration(legacyConfig: any): ConfigV1 {
-  const migratedConfig = { ...legacyConfig };
-
-  // Add schemaVersion
-  migratedConfig.schemaVersion = "1.0";
-
-  // Determine team instruction file (default to TEAM.md in current working dir)
-  migratedConfig.team.instructionFile =
-    legacyConfig.team.instructionFile ?? "./TEAM.md";
-
-  // Create default role definition(s)
-  migratedConfig.team.roleDefinitions = [
-    { name: "Member", description: "Team member" }
-  ];
-
-  // Assign all members to default role
-  const legacyMembers = legacyConfig.team?.members ?? legacyConfig.team?.roles ?? [];
-  migratedConfig.team.members = legacyMembers.map(member => ({
-    ...member,
-    role: member.role ?? "Member"
-  }));
-
-  return migratedConfig;
-}
-```
-
-#### 4. 交互式迁移（用于 /team edit）
-
-系统自动推导角色结构，用户只能确认或拒绝（不提供自定义入口）：
-
-```typescript
-async function interactiveMigration(legacyConfig: any): Promise<ConfigV1> {
-  // Step 1: Let user confirm/modify team instruction file path and (optionally) write legacy notes
-  const instructionFile = await promptTeamInstructionFile(
-    legacyConfig.team.instructionFile,
-    legacyConfig.team.description,
-  );
-
-  // Step 2: Auto-infer role definitions and assignments
-  const { roleDefinitions, memberAssignments } =
-    autoInferRoles(legacyConfig.team.members);
-
-  // Step 3: Present for confirmation (accept or reject, no editing)
-  const accepted = await confirmRoleStructure(
-    roleDefinitions,
-    memberAssignments,
-    legacyConfig.team.members
-  );
-
-  if (!accepted) {
-    throw new Error("Migration cancelled. To use this config, please create a new team with /team create wizard.");
-  }
-
-  // Step 4: Apply auto-assignments
-  const members = legacyConfig.team.members.map((member: any, index: number) => ({
-    ...member,
-    role: memberAssignments[index]
-  }));
-
-  return {
-    ...legacyConfig,
-    schemaVersion: "1.0",
-    team: {
-      ...legacyConfig.team,
-    instructionFile,
-      roleDefinitions,
-      members: members
-    }
-  };
-}
-
-function autoInferRoles(members: any[]): {
-  roleDefinitions: RoleDefinition[];
-  memberAssignments: string[];
-} {
-  // Simple rule: AI → "Assistant", Human → "Participant"
-  const hasAI = members.some(m => m.type === 'ai');
-  const hasHuman = members.some(m => m.type === 'human');
-
-  const roleDefinitions: RoleDefinition[] = [];
-  if (hasAI) {
-    roleDefinitions.push({
-      name: 'Assistant',
-      description: 'AI team member'
-    });
-  }
-  if (hasHuman) {
-    roleDefinitions.push({
-      name: 'Participant',
-      description: 'Human team member'
-    });
-  }
-
-  const memberAssignments = members.map(m =>
-    m.type === 'ai' ? 'Assistant' : 'Participant'
-  );
-
-  return { roleDefinitions, memberAssignments };
-}
-```
-
-#### 5. 迁移流程和用户体验
-
-**场景A：`/team edit` 加载旧版配置（交互式迁移）**
-
-```bash
-agent-chatter> /team edit agent-chatter-config.json
-
-# 检测到旧版配置，启动交互式迁移向导：
-⚠ Migration Required
-────────────────────────────────────────────────────────────
-This configuration uses the legacy format (no schemaVersion).
-An interactive migration wizard will guide you through upgrading
-to schema version 1.0.
-
-Detected configuration:
-  Team: Claude Code Test Team
-  Description: A team with Claude Code CLI agent and human observer
-  Members: 2
-    • Claude (AI - Claude Code)
-    • Observer (Human)
-
-Proceed with migration wizard? [Y/n] y
-
-────────────────────────────────────────────────────────────
-Migration Step 1/2: Define Team Instruction File
-────────────────────────────────────────────────────────────
-The new schema requires a canonical team instruction file path.
-
-Suggested path (based on team name):
-  "./TEAM.md"
-
-Legacy notes (from description / old goal):
-  "A team with Claude Code CLI agent and human observer"
-
-Instruction File Path: [input] ./TEAM.md
-Initialize file with legacy notes? [Y/n] y
-
-✓ Team instruction file recorded: "./TEAM.md"
-
-────────────────────────────────────────────────────────────
-Migration Step 2/2: Confirm Role Structure
-────────────────────────────────────────────────────────────
-The system has automatically inferred roles based on member types.
-
-Auto-inferred roles:
-  • Assistant - AI team member
-  • Participant - Human team member
-
-Your members will be assigned as follows:
-  • Claude (AI) → Assistant
-  • Observer (Human) → Participant
-
-⚠️  Important: Role structure will be fixed after migration.
-   To change roles later, you must create a new team.
-
-Accept this role structure? [Y/n] y
-
-✓ Role definitions confirmed
-
-────────────────────────────────────────────────────────────
-Migration Summary
-────────────────────────────────────────────────────────────
-✓ schemaVersion: "1.0"
-✓ team instruction file: "./TEAM.md"
-✓ Role Definitions:
-    • Assistant - AI team member
-    • Participant - Human team member
-✓ Member Assignments (auto-assigned by type):
-    • Claude (AI) → Assistant
-    • Observer (Human) → Participant
-
-Apply migration and enter edit mode? [Y/n] y
-
-✓ Configuration migrated to schema v1.0
-Entering edit mode...
-
-# 然后正常进入编辑界面，显示迁移后的配置
-📝 Editing Team: Claude Code Test Team
-────────────────────────────────────────────────────────────
-Current Configuration:
-  Team Name: Claude Code Test Team
-  Description: A team with Claude Code CLI agent and human observer
-  Team Instruction File: ./TEAM.md
-  Max Rounds: 10
-
-  Role Definitions:
-    • AI Assistant: AI agent that provides assistance
-    • Observer: Human observer
-
-  Members (2):
-    1. Claude (AI - Claude Code) - Role: AI Assistant [Default]
-    2. Observer (Human) - Role: Observer [Default]
-
-💡 Configuration migrated from legacy format. Role definitions
-are now fixed and cannot be modified. You can edit other settings.
-────────────────────────────────────────────────────────────
-Main Menu
-  ▶ Edit team information (name, description, instruction file, max rounds)
-    Add new member
-    ...
-```
-
-**场景B：`/team show` 显示旧版配置（静默迁移）**
-
-```bash
-agent-chatter> /team show agent-chatter-config.json
-
-⚠ This configuration uses legacy format (no schemaVersion)
-  Displaying with default migration values (in-memory only).
-  File is not modified. Use '/team edit' for interactive migration.
-
-Team: Claude Code Test Team
-Description: A team with Claude Code CLI agent and human observer
-File: agent-chatter-config.json
-Max Rounds: 10
-────────────────────────────────────────────────────────────
-Team Instruction File (default):
-  ./TEAM.md
-
-────────────────────────────────────────────────────────────
-Role Definitions (default):
-  • Member: Team member
-
-────────────────────────────────────────────────────────────
-Members (2):
-  1. Claude (AI - Claude Code) - Role: Member [Default]
-     Instruction File: ./TEAM.md
-
-  2. Observer (Human) - Role: Member [Default]
-     Instruction File: ./TEAM.md (shared)
-
-💡 This is a legacy configuration. Run '/team edit agent-chatter-config.json'
-for an interactive migration wizard to define proper roles and team instruction files.
-```
-
-**场景C：`/config` 加载旧版配置启动对话（静默迁移）**
-
-```bash
-agent-chatter> /config agent-chatter-config.json
-
-⚠ This configuration uses legacy format (no schemaVersion).
-  Loading with default values (file not modified).
-
-  Consider running '/team edit agent-chatter-config.json' to migrate
-  and take advantage of new features (role definitions, team instruction files).
-
-✓ Configuration loaded: Claude Code Test Team
-```
-
-#### 6. 保存策略
-
-**明确规则**：
-- ✅ **所有新创建的配置**：使用schema v1.0，包含所有必需字段
-- ✅ **编辑后保存**：
-  - `/team edit`：交互式迁移后，保存为v1.0格式（强制迁移）
-  - 不存在"保持legacy格式"的场景，一旦编辑就必须迁移
-- ✅ **只读场景不修改文件**：
-  - `/team show`：静默迁移仅在内存中，不修改原文件
-  - `/config`：静默迁移仅在内存中，不修改原文件
-- ✅ **迁移是单向的**：一旦保存为v1.0，不再降级回legacy格式
-
-#### 7. 特殊情况处理
-
-**问题1：配置文件完全没有team.members数组**
-```typescript
-if (!legacyTeam.roles || legacyTeam.roles.length === 0) {
-  throw new Error('Invalid configuration: team.members is empty. Cannot migrate.');
-}
-```
-
-**问题2：用户拒绝迁移（在 /team edit 中）**
-```bash
-Proceed with migration wizard? [Y/n] n
-
-Migration cancelled. Cannot edit legacy configurations without migration.
-Use '/team show' to view the configuration.
-```
-
-#### 8. 实现检查清单
-
-Phase 3实现时需要添加：
-- [ ] `detectSchemaVersion()` - 检测配置版本
-- [ ] `ensureMigratedConfig()` - 统一的内存迁移接口
-- [ ] `silentMigration()` - 静默迁移（用于/config, /team show）
-- [ ] `interactiveMigration()` - 交互式迁移向导（用于/team edit）
-  - [ ] 3步向导UI：Team Instruction File → Role Definitions → Member Assignment
-  - [ ] 提供建议默认值
-  - [ ] 最终确认界面
-- [ ] 在`/team edit`命令中集成交互式迁移向导
-- [ ] 在`/team show`命令中添加legacy格式警告和默认值说明
-- [ ] 在`/config`命令中添加legacy格式提示
-- [ ] 确保运行时代码（ConversationStarter等）使用`ensureMigratedConfig()`
-- [ ] 更新配置保存逻辑，确保只有v1.0格式被写入
-- [ ] 添加单元测试覆盖各种迁移场景
 
 ## 8. 用户体验要点
 
@@ -1572,14 +1213,11 @@ What would you like to modify?
 
 ### 10.1 已明确的设计决策（从讨论中得出）：
 - ✅ **编辑灵活性**：允许编辑team信息、成员配置、AI agent类型、member类型、role分配等
-- ✅ **角色定义不可编辑**：roleDefinitions在团队创建（或迁移）时定义，之后不可修改，因为修改会影响所有成员配置和系统提示词
+- ✅ **角色定义不可编辑**：roleDefinitions 在团队创建时定义，之后不可修改，因为修改会影响所有成员配置和系统提示词
 - ✅ **备份策略**：不提供自动备份功能，用户可在文件系统手动备份
 - ✅ **删除安全**：不能删除当前加载的或有活跃对话的配置
 - ✅ **向导流程**：固定4步（Team Structure → Detect Agents → Configure Members → Team Settings）
-- ✅ **迁移策略**：
-  - `/team edit`：交互式迁移向导（3步：Team Instruction File → Role Definitions → Member Assignment），迁移时一次性定义角色，之后不可修改
-  - `/config` 和 `/team show`：静默迁移（内存中），不修改原文件
-  - 保证运行时代码不会因缺少必需字段而崩溃
+- ✅ **迁移策略**：不提供迁移功能，所有配置须直接使用 schema v1.0；若需升级，用户需手动创建新配置
 
 ### 10.2 已解决的问题（从最新讨论）：
 
@@ -1601,7 +1239,7 @@ What would you like to modify?
 4. ✅ **Team-level Instruction File**
    **决定**：团队需要一个共享的指令文件（SOP/Guideline），由 `team.instructionFile` 指向
    **用途**：在不同角色指令文件中通过相对路径引用，确保团队规范统一
-   **重点**：路径必须可解析，且在迁移时要求用户确认/创建该文件
+   **重点**：路径必须可解析，并在团队创建流程中要求用户确认/创建该文件
 
 5. ✅ **多语言支持**
    **决定**：当前版本不做多语言支持，只做英语
@@ -1613,6 +1251,7 @@ What would you like to modify?
 **创建日期**: 2025-11-16
 **最后修订**: 2025-11-16
 **作者**: Claude Code
+> 说明：以下“历史版本摘要”保留了迁移向导等早期探索记录，当前产品已取消所有迁移方案，信息仅作存档。
 
 **v1.8关键修正（2025-11-16）- 彻底封堵角色编辑漏洞**：
 
@@ -1644,7 +1283,7 @@ What would you like to modify?
 
 4. **添加主菜单显式告知**（第222-223行）：
    - 在/team edit主菜单顶部添加警告
-   - "Role structure is fixed after team creation/migration"
+  - "Role structure is fixed after team creation"
    - "To change roles, you must create a new team"
 
 **最终状态**：完全封堵了所有角色编辑漏洞，确保角色结构在任何情况下都不可在编辑阶段修改。文档清晰无歧义，易于理解和实现。
@@ -1679,8 +1318,8 @@ What would you like to modify?
 
 **关键变化**：
 - Phase 3时间从"3-4天"恢复为"2-3天"（删除了角色管理实现）
-- 保留迁移向导中定义角色的功能（这是创建时，允许）
-- 迁移后角色定义固定，不可修改（这是编辑时，不允许）
+- 保留向导中定义角色的功能（这是创建时，允许）
+- 角色定义固定，不可修改（这是编辑时，不允许）
 
 **影响范围**：
 - 删除代码：96行UI流程 + 5处实现计划任务
@@ -1695,11 +1334,11 @@ What would you like to modify?
 2. **Phase 3实现计划**（第896行）：
    - 将"支持Change Role"标记为"~~支持Change Role~~（不允许，角色分配创建后不可修改）"
 3. **7.7节原子操作**（第1054行）：
-   - 将"Change Role"更新为"~~Change Role~~：**不允许修改**。成员的role字段在创建（或迁移）时确定，之后不可修改，因为会影响团队结构和其他成员配置"
+   - 将"Change Role"更新为"~~Change Role~~：**不允许修改**。成员的role字段在创建阶段确定，之后不可修改，因为会影响团队结构和其他成员配置"
 4. **3.2节核心编辑操作**（第577-581行）：
    - 添加完整的**角色限制**说明段落，明确roleDefinitions和member.role都不可修改
 
-**最终状态**：角色定义（roleDefinitions）和成员角色分配（member.role）在团队创建（或迁移）时一次性定义，之后不可修改。迁移算法正确，运行时不会崩溃。设计完整可实现，所有文档一致。
+**最终状态**：角色定义（roleDefinitions）和成员角色分配（member.role）在团队创建阶段一次性定义，之后不可修改。设计完整可实现，所有文档一致。
 
 **v1.6重大修正（2025-11-16）- 修复迁移算法和运行时安全**：
 

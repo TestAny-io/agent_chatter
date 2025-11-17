@@ -137,6 +137,8 @@ Create `my-team.json`:
 }
 ```
 
+> **Note:** Agent Chatter 从一开始就只支持 `schemaVersion: "1.0"`。若你手上还有早期草稿（例如 `team.roles` 结构），请参考本文档重新创建配置或使用 `/team create` 向导；本项目不提供旧版配置的自动迁移工具。
+
 ### 2. Start a Conversation
 
 ```bash
