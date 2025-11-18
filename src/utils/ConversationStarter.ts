@@ -14,7 +14,7 @@ import { TeamManager } from '../services/TeamManager.js';
 import { MockStorageService } from '../infrastructure/StorageService.js';
 import type { Team, Role } from '../models/Team.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
-import { AgentRegistry } from '../registry/AgentRegistry.js';
+import { AgentRegistry, type VerificationResult } from '../registry/AgentRegistry.js';
 import type { AgentDefinition as RegistryAgentDefinition } from '../registry/RegistryStorage.js';
 
 const colors = {
@@ -34,7 +34,7 @@ function colorize(text: string, color: keyof typeof colors): string {
 
 export interface AgentDefinition {
   name: string;
-  command: string;
+  command?: string; // Optional in schema 1.1 when referencing registry agent
   args?: string[];
   endMarker?: string;
   usePty?: boolean;
@@ -65,6 +65,7 @@ export interface TeamConfig {
   displayName?: string;
   description: string;
   instructionFile?: string;
+  workDir?: string; // Schema 1.1+: Team-level work directory, members inherit unless overridden
   roleDefinitions?: RoleDefinitionConfig[];
   members: TeamMemberConfig[];
 }
@@ -87,6 +88,7 @@ interface NormalizedAgent {
 interface NormalizedPaths {
   roleDir: string;
   workDir: string;
+  workDirSource: 'member' | 'team' | 'default';  // Tracks where workDir came from
   instructionFile?: string;
 }
 
@@ -95,6 +97,7 @@ export interface InitializeServicesOptions {
   onMessage?: (message: ConversationMessage) => void;
   onStatusChange?: (status: ConversationStatus) => void;
   onUnresolvedAddressees?: (addressees: string[], message: ConversationMessage) => void;
+  registryPath?: string;  // Optional registry path for testing
 }
 
 /**
@@ -131,6 +134,9 @@ function waitForUserInput(prompt: string): Promise<string> {
 function normalizeAgentDefinitions(agents: AgentDefinition[]): Map<string, NormalizedAgent> {
   const map = new Map<string, NormalizedAgent>();
   for (const agent of agents) {
+    if (!agent.command) {
+      throw new Error(`Agent "${agent.name}" is missing command field. This function requires complete agent definitions.`);
+    }
     map.set(agent.name, {
       name: agent.name,
       command: agent.command,
@@ -170,15 +176,33 @@ function ensureDir(targetPath: string, label: string): void {
   }
 }
 
-export function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
+export function normalizeMemberPaths(
+  member: TeamMemberConfig,
+  teamWorkDir?: string
+): NormalizedPaths {
   const roleDir = path.resolve(member.roleDir);
-  const workDir = path.resolve(member.workDir ?? path.join(roleDir, 'work'));
+
+  // Priority: member.workDir > team.workDir > roleDir/work (fallback)
+  let workDir: string;
+  let workDirSource: 'member' | 'team' | 'default';
+
+  if (member.workDir) {
+    workDir = path.resolve(member.workDir);
+    workDirSource = 'member';
+  } else if (teamWorkDir) {
+    workDir = path.resolve(teamWorkDir);
+    workDirSource = 'team';
+  } else {
+    workDir = path.join(roleDir, 'work');
+    workDirSource = 'default';
+  }
+
   const instructionFile = resolveInstructionFile(member, roleDir);
 
   ensureDir(roleDir, 'roleDir');
   ensureDir(workDir, 'workDir');
 
-  return { roleDir, workDir, instructionFile };
+  return { roleDir, workDir, workDirSource, instructionFile };
 }
 
 export function buildEnv(agentType: string | undefined, member: TeamMemberConfig): Record<string, string> {
@@ -208,19 +232,77 @@ export function loadInstructionContent(filePath?: string): string | undefined {
 }
 
 /**
- * 从全局 registry 加载 agents
+ * 从全局 registry 加载 agents 并与 team 配置合并
+ * Schema 1.1: Team config 可以引用 registry agent 并覆盖 args/endMarker/usePty
  */
-async function loadAgentsFromRegistry(): Promise<AgentDefinition[]> {
-  const registry = new AgentRegistry();
+async function loadAndMergeAgents(
+  teamAgents: AgentDefinition[] | undefined,
+  registryPath?: string
+): Promise<Map<string, NormalizedAgent>> {
+  const registry = new AgentRegistry(registryPath);
   const registryAgents = await registry.listAgents();
 
-  return registryAgents.map((agent: RegistryAgentDefinition) => ({
-    name: agent.name,
-    command: agent.command,
-    args: agent.args,
-    endMarker: agent.endMarker,
-    usePty: agent.usePty
-  }));
+  // Build registry map
+  const registryMap = new Map<string, RegistryAgentDefinition>();
+  for (const agent of registryAgents) {
+    registryMap.set(agent.name, agent);
+  }
+
+  const result = new Map<string, NormalizedAgent>();
+
+  if (!teamAgents || teamAgents.length === 0) {
+    // No team config: Use all registry agents as-is
+    for (const agent of registryAgents) {
+      result.set(agent.name, {
+        name: agent.name,
+        command: agent.command,
+        args: agent.args || [],
+        endMarker: agent.endMarker,
+        usePty: agent.usePty
+      });
+    }
+  } else {
+    // Team config present: Merge with registry
+    for (const teamAgent of teamAgents) {
+      const registryAgent = registryMap.get(teamAgent.name);
+
+      // Schema 1.1 reference mode: Agent must exist in registry, command cannot be overridden
+      if (registryAgent) {
+        if (teamAgent.command && teamAgent.command !== registryAgent.command) {
+          throw new Error(
+            `Security violation: Team config cannot override 'command' for agent "${teamAgent.name}". ` +
+            `The command path is controlled by the global registry only. ` +
+            `You can only override args, endMarker, or usePty.`
+          );
+        }
+        // Merge: team config can override args/endMarker/usePty, but NOT command
+        result.set(teamAgent.name, {
+          name: teamAgent.name,
+          command: registryAgent.command,  // Always use registry command
+          args: teamAgent.args !== undefined ? teamAgent.args : (registryAgent.args || []),
+          endMarker: teamAgent.endMarker !== undefined ? teamAgent.endMarker : registryAgent.endMarker,
+          usePty: teamAgent.usePty !== undefined ? teamAgent.usePty : registryAgent.usePty
+        });
+      } else {
+        // Schema 1.0 complete definition mode: Agent not in registry, must provide full definition
+        if (!teamAgent.command) {
+          throw new Error(
+            `Agent "${teamAgent.name}" referenced in team config but not found in global registry. ` +
+            `Run 'agent-chatter agents register' first, or provide a complete agent definition with 'command'.`
+          );
+        }
+        result.set(teamAgent.name, {
+          name: teamAgent.name,
+          command: teamAgent.command,
+          args: teamAgent.args || [],
+          endMarker: teamAgent.endMarker,
+          usePty: teamAgent.usePty
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -241,15 +323,21 @@ export async function initializeServices(
   const teamManager = new TeamManager(storage);
   const agentManager = new AgentManager(processManager, agentConfigManager);
 
-  // Schema 1.1+: Load agents from global registry if not in config
-  // Schema 1.0: Use agents from config (backward compatibility)
-  const agents = config.agents ?? await loadAgentsFromRegistry();
-
-  const agentDefinitionMap = normalizeAgentDefinitions(agents);
+  // Schema 1.1+: Load and merge agents from global registry with team config
+  // Schema 1.0: Team config provides complete definitions (backward compatibility)
+  const registryPath = options?.registryPath;
+  const agentDefinitionMap = await loadAndMergeAgents(config.agents, registryPath);
   const teamMembers: Array<Omit<Role, 'id'>> = [];
 
+  // Schema 1.1+: Team-level workDir for all members (unless member overrides)
+  const teamWorkDir = config.team.workDir;
+
+  // Shared registry instance and verification cache to avoid redundant verifications
+  const registry = new AgentRegistry(registryPath);
+  const verificationCache = new Map<string, VerificationResult>();
+
   for (const [index, member] of config.team.members.entries()) {
-    const normalizedPaths = normalizeMemberPaths(member);
+    const normalizedPaths = normalizeMemberPaths(member, teamWorkDir);
     let agentConfigId: string | undefined;
     let env: Record<string, string> | undefined;
 
@@ -262,7 +350,40 @@ export async function initializeServices(
         throw new Error(`未找到 agentType "${member.agentType}" 的定义`);
       }
 
+      // Real-time verification: Validate agent before starting conversation
+      // Use cached verification result if agent was already verified
+      let verification = verificationCache.get(member.agentType);
+      const isFirstVerification = !verification;
+
+      if (isFirstVerification) {
+        console.log(colorize(`正在验证 agent: ${member.agentType}...`, 'dim'));
+        verification = await registry.verifyAgent(member.agentType);
+        verificationCache.set(member.agentType, verification);
+
+        if (verification.status !== 'verified') {
+          let errorMsg = `Agent "${member.agentType}" 验证失败: ${verification.error || 'Unknown error'}`;
+          if (verification.checks) {
+            errorMsg += '\n详细检查结果:';
+            for (const check of verification.checks) {
+              const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
+              errorMsg += `\n  ${status} ${check.name}: ${check.message}`;
+            }
+          }
+          throw new Error(errorMsg);
+        }
+        console.log(colorize(`✓ Agent ${member.agentType} 验证成功`, 'green'));
+      } else {
+        console.log(colorize(`✓ Agent ${member.agentType} (使用缓存的验证结果)`, 'dim'));
+      }
+
       env = buildEnv(member.agentType, member);
+
+      // Log workDir source for debugging and troubleshooting
+      const workDirSourceLabel =
+        normalizedPaths.workDirSource === 'member' ? '成员配置' :
+        normalizedPaths.workDirSource === 'team' ? '团队配置' :
+        '默认值 (roleDir/work)';
+      console.log(colorize(`  工作目录: ${normalizedPaths.workDir} (来源: ${workDirSourceLabel})`, 'dim'));
 
       const agentConfig = await agentConfigManager.createAgentConfig({
         name: `${member.name}-${member.agentType}-config`,

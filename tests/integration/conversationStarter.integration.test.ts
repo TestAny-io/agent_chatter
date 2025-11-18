@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { initializeServices } from '../../src/utils/ConversationStarter.js';
 import type { CLIConfig } from '../../src/utils/ConversationStarter.js';
+import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
 
 vi.mock('../../src/infrastructure/ProcessManager.js', () => {
   const startCalls: Array<{ command: string; args: string[]; env?: Record<string, string>; cwd?: string }> = [];
@@ -50,10 +51,17 @@ vi.mock('../../src/infrastructure/ProcessManager.js', () => {
 
 describe('ConversationStarter integration', () => {
   let tempDir: string;
+  let tempRegistryPath: string;
   let processMock: { startCalls: any[]; sendCalls: any[]; stopCalls: any[]; reset: () => void };
 
   beforeEach(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-chatter-test-'));
+
+    // Create temporary registry and register claude agent for tests
+    tempRegistryPath = path.join(tempDir, 'test-registry.json');
+    const registry = new AgentRegistry(tempRegistryPath);
+    await registry.registerAgent('claude', 'echo');
+
     const module = await import('../../src/infrastructure/ProcessManager.js');
     processMock = module.__processMock;
     processMock.reset();
@@ -75,11 +83,11 @@ describe('ConversationStarter integration', () => {
     fs.writeFileSync(path.join(humanRoleDir, 'README.md'), 'Human instructions.');
 
     const config: CLIConfig = {
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       agents: [
+        // Schema 1.1: Reference registered agent, override args/endMarker
         {
-          name: 'codex',
-          command: 'echo',
+          name: 'claude',
           args: [],
           endMarker: '[DONE]',
           usePty: false
@@ -95,12 +103,12 @@ describe('ConversationStarter integration', () => {
         ],
         members: [
           {
-            displayName: 'Codex Dev',
+            displayName: 'Claude Dev',
             displayRole: 'Developer',
-            name: 'codex-dev',
+            name: 'claude-dev',
             type: 'ai',
             role: 'developer',
-            agentType: 'codex',
+            agentType: 'claude',
             roleDir: aiRoleDir,
             workDir: aiWork,
             instructionFile: path.join(aiRoleDir, 'AGENTS.md'),
@@ -121,7 +129,7 @@ describe('ConversationStarter integration', () => {
       maxRounds: 5
     };
 
-    const { coordinator, team } = await initializeServices(config);
+    const { coordinator, team } = await initializeServices(config, { registryPath: tempRegistryPath });
 
     expect(team.members).toHaveLength(2);
     expect(team.members[0].systemInstruction).toContain('integration test agent');
@@ -137,7 +145,7 @@ describe('ConversationStarter integration', () => {
     expect(processMock.sendCalls[0].input).toContain('integration test agent');
     expect(processMock.stopCalls).toEqual(['proc-1']);
     expect(coordinator.getStatus()).toBe('completed');
-  });
+  }, 30000); // Increased timeout for real-time verification
 
   it('initializes members even when instruction file is missing', async () => {
     const aiRoleDir = path.join(tempDir, 'dev', 'missing');
@@ -146,20 +154,20 @@ describe('ConversationStarter integration', () => {
     fs.mkdirSync(humanRoleDir, { recursive: true });
 
     const config: CLIConfig = {
-      schemaVersion: '1.0',
+      schemaVersion: '1.1',
       agents: [
-        { name: 'codex', command: 'echo', args: [], endMarker: '[DONE]', usePty: false }
+        { name: 'claude', args: [], endMarker: '[DONE]', usePty: false }
       ],
       team: {
         name: 'missing-instruction',
         description: 'Should still initialize',
         members: [
           {
-            displayName: 'Codex Dev',
-            name: 'codex-dev',
+            displayName: 'Claude Dev',
+            name: 'claude-dev',
             type: 'ai',
             role: 'developer',
-            agentType: 'codex',
+            agentType: 'claude',
             roleDir: aiRoleDir,
             workDir: path.join(aiRoleDir, 'work'),
             instructionFile: path.join(aiRoleDir, 'AGENTS.md')
@@ -177,7 +185,7 @@ describe('ConversationStarter integration', () => {
       }
     };
 
-    const { team } = await initializeServices(config);
+    const { team } = await initializeServices(config, { registryPath: tempRegistryPath });
     expect(team.members[0].systemInstruction).toBeUndefined();
-  });
+  }, 30000); // Increased timeout for real-time verification
 });
