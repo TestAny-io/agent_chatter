@@ -10,16 +10,36 @@ import { detectAllTools } from '../utils/ToolDetector.js';
 import { ConversationCoordinator } from '../services/ConversationCoordinator.js';
 import { initializeServices, type CLIConfig } from '../utils/ConversationStarter.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
-import type { Team } from '../models/Team.js';
+import type { Team, RoleDefinition } from '../models/Team.js';
+import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
 
 const commands = [
     { name: '/help', desc: 'Show this help message' },
     { name: '/status', desc: 'Check installed AI CLI tools' },
+    { name: '/agents', desc: 'Manage registered AI agents' },
     { name: '/config', desc: 'Load a configuration file' },
     { name: '/start', desc: 'Start a conversation' },
     { name: '/list', desc: 'List available configuration files' },
+    { name: '/team', desc: 'Manage team configurations' },
     { name: '/clear', desc: 'Clear the screen' },
     { name: '/exit', desc: 'Exit the application' },
+];
+
+const teamCommands = [
+    { name: '/team create', desc: 'Create a new team configuration' },
+    { name: '/team edit', desc: 'Edit an existing team configuration' },
+    { name: '/team list', desc: 'List all team configurations' },
+    { name: '/team show', desc: 'Show team configuration details' },
+    { name: '/team delete', desc: 'Delete a team configuration' },
+];
+
+const agentsCommands = [
+    { name: '/agents register', desc: 'Scan and register AI CLI tools' },
+    { name: '/agents list', desc: 'List all registered agents' },
+    { name: '/agents verify', desc: 'Verify agent availability' },
+    { name: '/agents info', desc: 'Show agent detailed information' },
+    { name: '/agents edit', desc: 'Edit agent configuration' },
+    { name: '/agents delete', desc: 'Delete a registered agent' },
 ];
 
 // 欢迎界面组件
@@ -152,8 +172,360 @@ function ConfigList({ currentConfigPath }: { currentConfigPath: string | null })
     );
 }
 
+// ============================================================================
+// Wizard UI Components
+// ============================================================================
+
+interface WizardViewProps {
+    wizardState: WizardState;
+}
+
+function WizardView({ wizardState }: WizardViewProps) {
+    const { step, totalSteps, data } = wizardState;
+
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Box borderStyle="round" borderColor="cyan" padding={1}>
+                <Box flexDirection="column">
+                    <Text bold color="cyan">Team Creation Wizard</Text>
+                    <Text dimColor>Step {step}/{totalSteps}</Text>
+                </Box>
+            </Box>
+
+            {step === 1 && <WizardStep1TeamStructure data={data} />}
+            {step === 2 && <WizardStep2DetectAgents data={data} />}
+            {step === 3 && <WizardStep3ConfigureMembers data={data} />}
+            {step === 4 && <WizardStep4TeamSettings data={data} />}
+
+            <Box marginTop={1}>
+                <Text dimColor>Press </Text>
+                <Text color="yellow">Ctrl+C</Text>
+                <Text dimColor> to cancel wizard</Text>
+            </Box>
+        </Box>
+    );
+}
+
+function WizardStep1TeamStructure({ data }: { data: WizardState['data'] }) {
+    const visibleRoles = (data.roleDefinitions || []).filter(role => role.name && role.name.trim().length > 0);
+
+    return (
+        <Box flexDirection="column" marginTop={1}>
+            <Text bold>Step 1/4: Team Structure</Text>
+            <Text dimColor>Define your team's basic structure</Text>
+            <Box marginTop={1} flexDirection="column">
+                <Text>Team Name: <Text color="cyan">{data.teamName || '(not set)'}</Text></Text>
+                <Text>Description: <Text color="cyan">{data.teamDescription || '(not set)'}</Text></Text>
+                <Text>Instruction File: <Text color="cyan">{data.teamInstructionFile || '(not set)'}</Text></Text>
+                {visibleRoles.length > 0 && (
+                    <Box flexDirection="column" marginTop={1}>
+                        <Text>Roles Defined:</Text>
+                        {visibleRoles.map((role, idx) => (
+                            <Box key={`${role.name}-${idx}`} marginLeft={2}>
+                                <Text>
+                                    • {role.name}
+                                    {role.description ? `: ${role.description}` : ''}
+                                </Text>
+                            </Box>
+                        ))}
+                    </Box>
+                )}
+            </Box>
+        </Box>
+    );
+}
+
+function WizardStep2DetectAgents({ data }: { data: WizardState['data'] }) {
+    return (
+        <Box flexDirection="column" marginTop={1}>
+            <Text bold>Step 2/4: Detect Available AI Agents</Text>
+            <Text dimColor>Scanning installed AI CLI tools...</Text>
+            <Box marginTop={1} flexDirection="column">
+                {data.availableAgents && data.availableAgents.length > 0 ? (
+                    <>
+                        <Text color="green">✓ Found {data.availableAgents.length} AI agent(s)</Text>
+                        {data.availableAgents.map((agent, idx) => (
+                            <Box key={idx} marginLeft={2}>
+                                <Text>{data.selectedAgents?.includes(agent) ? '☑' : '☐'} {agent}</Text>
+                            </Box>
+                        ))}
+                    </>
+                ) : (
+                    <Text color="yellow">No AI agents detected</Text>
+                )}
+            </Box>
+        </Box>
+    );
+}
+
+function WizardStep3ConfigureMembers({ data }: { data: WizardState['data'] }) {
+    return (
+        <Box flexDirection="column" marginTop={1}>
+            <Text bold>Step 3/4: Configure Team Members</Text>
+            <Text dimColor>Configure each team member</Text>
+            <Box marginTop={1} flexDirection="column">
+                {data.memberConfigs && data.memberConfigs.length > 0 ? (
+                    data.memberConfigs.map((member, idx) => (
+                        <Box key={idx} flexDirection="column" marginTop={1}>
+                            <Text>Member {idx + 1}: <Text color="cyan">{member.displayName || '(not configured)'}</Text></Text>
+                            <Box marginLeft={2}>
+                                <Text dimColor>Type: {member.type}, Role: {member.assignedRole}</Text>
+                            </Box>
+                        </Box>
+                    ))
+                ) : (
+                    <Text color="yellow">No members configured yet</Text>
+                )}
+            </Box>
+        </Box>
+    );
+}
+
+function WizardStep4TeamSettings({ data }: { data: WizardState['data'] }) {
+    return (
+        <Box flexDirection="column" marginTop={1}>
+            <Text bold>Step 4/4: Team Settings</Text>
+            <Text dimColor>Configure final team settings</Text>
+            <Box marginTop={1} flexDirection="column">
+                <Text>Max Rounds: <Text color="cyan">{data.maxRounds ?? '(not set)'}</Text></Text>
+            </Box>
+        </Box>
+    );
+}
+
+// ============================================================================
+// Menu UI Components
+// ============================================================================
+
+interface MenuViewProps {
+    menuState: MenuState;
+    menuItems: { label: string; value: string }[];
+    selectedIndex: number;
+}
+
+function MenuView({ menuState, menuItems, selectedIndex }: MenuViewProps) {
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Box borderStyle="round" borderColor="cyan" padding={1}>
+                <Text bold color="cyan">Team Configuration Editor</Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+                <Text bold>Team: {menuState.config.team?.name || 'Unknown'}</Text>
+                <Text dimColor>File: {menuState.configPath}</Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+                <Text bold>Main Menu</Text>
+                <Text dimColor>{'─'.repeat(60)}</Text>
+                {menuItems.map((item, idx) => (
+                    <Box key={idx}>
+                        <Text color={idx === selectedIndex ? 'green' : 'gray'} bold={idx === selectedIndex}>
+                            {idx === selectedIndex ? '▶ ' : '  '}{item.label}
+                        </Text>
+                    </Box>
+                ))}
+            </Box>
+
+            <Box marginTop={1}>
+                <Text dimColor>Use </Text>
+                <Text color="yellow">↑↓</Text>
+                <Text dimColor> to navigate, </Text>
+                <Text color="yellow">Enter</Text>
+                <Text dimColor> to select, </Text>
+                <Text color="yellow">Ctrl+C</Text>
+                <Text dimColor> to cancel</Text>
+            </Box>
+        </Box>
+    );
+}
+
+// ============================================================================
+// Form UI Components
+// ============================================================================
+
+interface FormViewProps {
+    formState: FormState;
+}
+
+function FormView({ formState }: FormViewProps) {
+    const currentField = formState.fields[formState.currentFieldIndex];
+    const error = formState.errors[currentField?.name];
+
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Box borderStyle="round" borderColor="cyan" padding={1}>
+                <Text bold color="cyan">Input Form</Text>
+            </Box>
+
+            {currentField && (
+                <Box marginTop={1} flexDirection="column">
+                    <Text bold>{currentField.label}</Text>
+                    {currentField.required && <Text dimColor>(required)</Text>}
+                    
+                    <Box marginTop={1}>
+                        <Text>{currentField.value}</Text>
+                    </Box>
+
+                    {error && (
+                        <Box marginTop={1}>
+                            <Text color="red">✗ {error}</Text>
+                        </Box>
+                    )}
+
+                    <Box marginTop={1}>
+                        <Text dimColor>Press </Text>
+                        <Text color="yellow">Enter</Text>
+                        <Text dimColor> to confirm, </Text>
+                        <Text color="yellow">Ctrl+C</Text>
+                        <Text dimColor> to cancel</Text>
+                    </Box>
+                </Box>
+            )}
+        </Box>
+    );
+}
+
+// ============================================================================
+// Select UI Components
+// ============================================================================
+
+interface SelectViewProps {
+    title: string;
+    options: string[];
+    selectedIndex: number;
+    multiSelect?: boolean;
+    selectedItems?: Set<string>;
+}
+
+function SelectView({ title, options, selectedIndex, multiSelect, selectedItems }: SelectViewProps) {
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Box borderStyle="round" borderColor="cyan" padding={1}>
+                <Text bold color="cyan">{title}</Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+                {options.map((option, idx) => {
+                    const isSelected = idx === selectedIndex;
+                    const isChecked = multiSelect && selectedItems?.has(option);
+                    
+                    return (
+                        <Box key={idx}>
+                            <Text color={isSelected ? 'green' : 'gray'} bold={isSelected}>
+                                {isSelected ? '▶ ' : '  '}
+                                {multiSelect ? (isChecked ? '☑' : '☐') : ''}
+                                {' '}{option}
+                            </Text>
+                        </Box>
+                    );
+                })}
+            </Box>
+
+            <Box marginTop={1}>
+                <Text dimColor>Use </Text>
+                <Text color="yellow">↑↓</Text>
+                <Text dimColor> to navigate, </Text>
+                {multiSelect && (
+                    <>
+                        <Text color="yellow">Space</Text>
+                        <Text dimColor> to toggle, </Text>
+                    </>
+                )}
+                <Text color="yellow">Enter</Text>
+                <Text dimColor> to confirm</Text>
+            </Box>
+        </Box>
+    );
+}
+
 // 应用模式
-type AppMode = 'normal' | 'conversation';
+type AppMode = 'normal' | 'conversation' | 'wizard' | 'menu' | 'form' | 'select';
+
+// ============================================================================
+// Wizard State Types
+// ============================================================================
+
+interface MemberAssignment {
+    memberIndex: number;
+    assignedRole: string;
+}
+
+interface MemberConfig {
+    memberIndex: number;
+    type: 'ai' | 'human';
+    assignedRole: string;
+    displayName: string;
+    themeColor: string;
+    roleDir: string;
+    workDir: string;
+    instructionFile?: string;
+    env?: Record<string, string>;
+    agentType?: string;
+}
+
+interface WizardState {
+    step: number;
+    totalSteps: number;
+    data: {
+        // Step 1: Team Structure
+        teamName?: string;
+        teamDescription?: string;
+        teamInstructionFile?: string;
+        roleDefinitions?: RoleDefinition[];
+        members?: MemberAssignment[];
+
+        // Step 2: Detect Agents
+        availableAgents?: string[];
+        selectedAgents?: string[];
+
+        // Step 3: Configure Members
+        memberConfigs?: MemberConfig[];
+
+        // Step 4: Team Settings
+        maxRounds?: number;
+        
+        // Internal state (temporary fields used during wizard flow)
+        _roleCount?: number;
+        _currentRoleIndex?: number;
+        _memberCount?: number;
+        _currentMemberIndex?: number;
+    };
+}
+
+// ============================================================================
+// Menu State Types
+// ============================================================================
+
+interface MenuState {
+    configPath: string;
+    config: CLIConfig;
+    selectedIndex: number;
+    editing: boolean;
+    editingMember?: number;
+    changes: Partial<CLIConfig>;
+}
+
+// ============================================================================
+// Form State Types
+// ============================================================================
+
+interface FormField {
+    name: string;
+    label: string;
+    type: 'text' | 'number' | 'multiline' | 'select';
+    value: string | number;
+    required?: boolean;
+    options?: string[];
+    validation?: (value: any) => string | null;
+}
+
+interface FormState {
+    fields: FormField[];
+    currentFieldIndex: number;
+    values: Record<string, any>;
+    errors: Record<string, string | undefined>;
+}
 
 // 主应用组件
 function App() {
@@ -166,11 +538,39 @@ function App() {
     const [mode, setMode] = useState<AppMode>('normal');
     const [activeCoordinator, setActiveCoordinator] = useState<ConversationCoordinator | null>(null);
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
+    
+    // Wizard state
+    const [wizardState, setWizardState] = useState<WizardState | null>(null);
+    
+    // Menu state
+    const [menuState, setMenuState] = useState<MenuState | null>(null);
+    const [menuItems, setMenuItems] = useState<{ label: string; value: string }[]>([]);
+    
+    // Form state
+    const [formState, setFormState] = useState<FormState | null>(null);
+    
+    // Select state
+    const [selectState, setSelectState] = useState<{
+        title: string;
+        options: string[];
+        multiSelect: boolean;
+        selectedItems: Set<string>;
+        onComplete: (selected: string | string[]) => void;
+    } | null>(null);
+    
+    // Confirmation state
+    const [confirmState, setConfirmState] = useState<{
+        message: string;
+        onConfirm: () => void;
+        onCancel: () => void;
+    } | null>(null);
+    
     const { exit } = useApp();
 
     const getNextKey = () => {
+        const currentKey = keyCounter;
         setKeyCounter(prev => prev + 1);
-        return keyCounter;
+        return currentKey;
     };
 
     // 获取当前匹配的命令
@@ -180,7 +580,7 @@ function App() {
     };
 
     useInput((inputChar: string, key: any) => {
-        // Ctrl+C 退出
+        // Ctrl+C 退出或取消
         if (key.ctrl && inputChar === 'c') {
             if (mode === 'conversation' && activeCoordinator) {
                 // 退出对话模式
@@ -189,6 +589,35 @@ function App() {
                 setActiveCoordinator(null);
                 setActiveTeam(null);
                 setOutput(prev => [...prev, <Text key={`conv-stopped-${getNextKey()}`} color="yellow">Conversation stopped.</Text>]);
+                setInput('');
+                return;
+            } else if (mode === 'wizard') {
+                // 取消向导
+                setMode('normal');
+                setWizardState(null);
+                setOutput(prev => [...prev, <Text key={`wizard-cancelled-${getNextKey()}`} color="yellow">Wizard cancelled.</Text>]);
+                setInput('');
+                return;
+            } else if (mode === 'menu') {
+                // 退出菜单
+                setMode('normal');
+                setMenuState(null);
+                setMenuItems([]);
+                setOutput(prev => [...prev, <Text key={`menu-cancelled-${getNextKey()}`} color="yellow">Menu editor closed.</Text>]);
+                setInput('');
+                return;
+            } else if (mode === 'form') {
+                // 取消表单
+                setMode('normal');
+                setFormState(null);
+                setOutput(prev => [...prev, <Text key={`form-cancelled-${getNextKey()}`} color="yellow">Form cancelled.</Text>]);
+                setInput('');
+                return;
+            } else if (mode === 'select') {
+                // 取消选择
+                setMode('normal');
+                setSelectState(null);
+                setOutput(prev => [...prev, <Text key={`select-cancelled-${getNextKey()}`} color="yellow">Selection cancelled.</Text>]);
                 setInput('');
                 return;
             } else {
@@ -211,6 +640,20 @@ function App() {
                 // 对话模式：处理用户消息
                 handleConversationInput(input.trim());
                 setInput('');
+            } else if (mode === 'wizard') {
+                // 向导模式：处理当前步骤的输入
+                handleWizardInput(input.trim());
+                setInput('');
+            } else if (mode === 'form') {
+                // 表单模式：提交当前字段
+                handleFormSubmit();
+                setInput('');
+            } else if (mode === 'select') {
+                // 选择模式：确认选择
+                handleSelectConfirm();
+            } else if (mode === 'menu') {
+                // 菜单模式：选择菜单项
+                handleMenuSelect();
             } else {
                 // Normal模式：处理命令
                 const matches = getMatches();
@@ -228,26 +671,76 @@ function App() {
             return;
         }
 
-        // 只在normal模式下处理命令提示的上下键
-        if (mode === 'normal') {
+        // 处理不同模式下的上下键导航
+        if (key.upArrow) {
+            if (mode === 'normal') {
+                const matches = getMatches();
+                if (matches.length > 0) {
+                    setSelectedIndex(prev => (prev > 0 ? prev - 1 : matches.length - 1));
+                    return;
+                }
+            } else if (mode === 'menu' && menuItems.length > 0) {
+                setSelectedIndex(prev => (prev > 0 ? prev - 1 : menuItems.length - 1));
+                return;
+            } else if (mode === 'select' && selectState) {
+                setSelectedIndex(prev => (prev > 0 ? prev - 1 : selectState.options.length - 1));
+                return;
+            }
+        }
+
+        if (key.downArrow) {
+            if (mode === 'normal') {
+                const matches = getMatches();
+                if (matches.length > 0) {
+                    setSelectedIndex(prev => (prev < matches.length - 1 ? prev + 1 : 0));
+                    return;
+                }
+            } else if (mode === 'menu' && menuItems.length > 0) {
+                setSelectedIndex(prev => (prev < menuItems.length - 1 ? prev + 1 : 0));
+                return;
+            } else if (mode === 'select' && selectState) {
+                setSelectedIndex(prev => (prev < selectState.options.length - 1 ? prev + 1 : 0));
+                return;
+            }
+        }
+
+        // 处理空格键 (用于多选模式)
+        if (inputChar === ' ' && mode === 'select' && selectState && selectState.multiSelect) {
+            const option = selectState.options[selectedIndex];
+            setSelectState(prev => {
+                if (!prev) return prev;
+                const newSelected = new Set(prev.selectedItems);
+                if (newSelected.has(option)) {
+                    newSelected.delete(option);
+                } else {
+                    newSelected.add(option);
+                }
+                return { ...prev, selectedItems: newSelected };
+            });
+            return;
+        }
+
+        // Tab键自动补全 (只在normal模式)
+        if (mode === 'normal' && key.tab) {
             const matches = getMatches();
-
-            // 上方向键 - 向上选择命令
-            if (key.upArrow && matches.length > 0) {
-                setSelectedIndex(prev => (prev > 0 ? prev - 1 : matches.length - 1));
-                return;
-            }
-
-            // 下方向键 - 向下选择命令
-            if (key.downArrow && matches.length > 0) {
-                setSelectedIndex(prev => (prev < matches.length - 1 ? prev + 1 : 0));
-                return;
-            }
-
-            // Tab键 - 自动补全选中的命令
-            if (key.tab && matches.length > 0) {
+            if (matches.length > 0) {
                 setInput(matches[selectedIndex].name + ' ');
                 setSelectedIndex(0);
+                return;
+            }
+        }
+
+        // 处理确认对话框
+        if (confirmState) {
+            if (inputChar === 'y' || inputChar === 'Y') {
+                confirmState.onConfirm();
+                setConfirmState(null);
+                setInput('');
+                return;
+            } else if (inputChar === 'n' || inputChar === 'N' || key.return) {
+                confirmState.onCancel();
+                setConfirmState(null);
+                setInput('');
                 return;
             }
         }
@@ -351,6 +844,14 @@ function App() {
                 }
                 break;
 
+            case '/team':
+                handleTeamCommand(args);
+                break;
+
+            case '/agents':
+                handleAgentsCommand(args);
+                break;
+
             case '/clear':
                 setOutput([]);
                 break;
@@ -365,6 +866,468 @@ function App() {
                 setOutput(prev => [...prev, <Text key={`unknown-${getNextKey()}`} color="yellow">Unknown command: {command}</Text>]);
                 setOutput(prev => [...prev, <Text key={`help-hint-${getNextKey()}`} dimColor>Type /help for available commands.</Text>]);
         }
+    };
+
+    const handleTeamCommand = (args: string[]) => {
+        if (args.length === 0) {
+            setOutput(prev => [...prev, 
+                <Box key={`team-help-${getNextKey()}`} flexDirection="column" marginY={1}>
+                    <Text bold>Team Management Commands:</Text>
+                    {teamCommands.map(cmd => (
+                        <Box key={cmd.name} marginLeft={2}>
+                            <Text color="green">{cmd.name.padEnd(20)}</Text>
+                            <Text dimColor>{cmd.desc}</Text>
+                        </Box>
+                    ))}
+                </Box>
+            ]);
+            return;
+        }
+
+        const subcommand = args[0].toLowerCase();
+        const subargs = args.slice(1);
+
+        switch (subcommand) {
+            case 'create':
+                startTeamCreationWizard();
+                break;
+
+            case 'edit':
+                if (subargs.length === 0) {
+                    setOutput(prev => [...prev, <Text key={`team-edit-usage-${getNextKey()}`} color="yellow">Usage: /team edit &lt;filename&gt;</Text>]);
+                } else {
+                    startTeamEditMenu(subargs[0]);
+                }
+                break;
+
+            case 'list':
+                listTeamConfigurations();
+                break;
+
+            case 'show':
+                if (subargs.length === 0) {
+                    setOutput(prev => [...prev, <Text key={`team-show-usage-${getNextKey()}`} color="yellow">Usage: /team show &lt;filename&gt;</Text>]);
+                } else {
+                    showTeamConfiguration(subargs[0]);
+                }
+                break;
+
+            case 'delete':
+                if (subargs.length === 0) {
+                    setOutput(prev => [...prev, <Text key={`team-delete-usage-${getNextKey()}`} color="yellow">Usage: /team delete &lt;filename&gt;</Text>]);
+                } else {
+                    deleteTeamConfiguration(subargs[0]);
+                }
+                break;
+
+            default:
+                setOutput(prev => [...prev,
+                    <Text key={`team-unknown-${getNextKey()}`} color="yellow">Unknown team subcommand: {subcommand}</Text>,
+                    <Text key={`team-hint-${getNextKey()}`} dimColor>Type /team for available commands.</Text>
+                ]);
+        }
+    };
+
+    const handleAgentsCommand = (args: string[]) => {
+        if (args.length === 0) {
+            setOutput(prev => [...prev,
+                <Box key={`agents-help-${getNextKey()}`} flexDirection="column" marginY={1}>
+                    <Text bold>Agents Management Commands:</Text>
+                    {agentsCommands.map(cmd => (
+                        <Box key={cmd.name} marginLeft={2}>
+                            <Text color="green">{cmd.name.padEnd(20)}</Text>
+                            <Text dimColor>{cmd.desc}</Text>
+                        </Box>
+                    ))}
+                    <Box marginTop={1}>
+                        <Text dimColor>Note: Use <Text color="cyan">agent-chatter agents &lt;subcommand&gt;</Text> from the shell for full functionality</Text>
+                    </Box>
+                </Box>
+            ]);
+            return;
+        }
+
+        const subcommand = args[0].toLowerCase();
+
+        // 对于 agents 命令，建议用户使用 CLI，因为需要复杂的交互
+        setOutput(prev => [...prev,
+            <Box key={`agents-cli-hint-${getNextKey()}`} flexDirection="column" marginY={1}>
+                <Text color="yellow">For agents management, please use the CLI:</Text>
+                <Box marginLeft={2} marginTop={1}>
+                    <Text color="cyan">agent-chatter agents {subcommand} {args.slice(1).join(' ')}</Text>
+                </Box>
+                <Box marginTop={1}>
+                    <Text dimColor>Examples:</Text>
+                    <Box marginLeft={2} flexDirection="column">
+                        <Text dimColor>• agent-chatter agents register --auto</Text>
+                        <Text dimColor>• agent-chatter agents list</Text>
+                        <Text dimColor>• agent-chatter agents verify</Text>
+                        <Text dimColor>• agent-chatter agents info claude</Text>
+                    </Box>
+                </Box>
+            </Box>
+        ]);
+    };
+
+    // ============================================================================
+    // Wizard Input Handlers
+    // ============================================================================
+
+    const handleWizardInput = (value: string) => {
+        if (!wizardState) return;
+
+        const { step, data } = wizardState;
+
+        if (step === 1) {
+            handleWizardStep1Input(value);
+        } else if (step === 2) {
+            // Step 2: Detect Agents (在 Phase 2 实现)
+            setOutput(prev => [...prev, <Text key={`wizard-step2-${getNextKey()}`} color="yellow">Step 2 interaction not yet implemented</Text>]);
+        } else if (step === 3) {
+            // Step 3: Configure Members (在 Phase 2 实现)
+            setOutput(prev => [...prev, <Text key={`wizard-step3-${getNextKey()}`} color="yellow">Step 3 interaction not yet implemented</Text>]);
+        } else if (step === 4) {
+            // Step 4: Team Settings (在 Phase 2 实现)
+            setOutput(prev => [...prev, <Text key={`wizard-step4-${getNextKey()}`} color="yellow">Step 4 interaction not yet implemented</Text>]);
+        }
+    };
+
+    const renderWizardEvent = (event: WizardStep1Event, key: number) => {
+        switch (event.type) {
+            case 'info':
+                return <Text key={`wizard-info-${key}`} color="green">{event.message}</Text>;
+            case 'prompt':
+                return <Text key={`wizard-prompt-${key}`} color="cyan">{event.message}</Text>;
+            case 'error':
+                return <Text key={`wizard-error-${key}`} color="red">{event.message}</Text>;
+            case 'divider':
+                return <Text key={`wizard-divider-${key}`} color="green">{(event.char || '─').repeat(60)}</Text>;
+            default:
+                return null;
+        }
+    };
+
+    const handleWizardStep1Input = (value: string) => {
+        if (!wizardState) {
+            return;
+        }
+
+        const result = processWizardStep1Input(wizardState.data, value);
+
+        setWizardState(prev => prev ? {
+            ...prev,
+            data: result.data,
+            step: result.stepCompleted ? 2 : prev.step
+        } : null);
+
+        const nodes = result.events
+            .map(event => renderWizardEvent(event, getNextKey()))
+            .filter(Boolean) as React.ReactNode[];
+
+        if (nodes.length > 0) {
+            setOutput(prev => [...prev, ...nodes]);
+        }
+    };
+
+    const handleFormSubmit = () => {
+        if (!formState) return;
+        
+        const currentField = formState.fields[formState.currentFieldIndex];
+        if (!currentField) return;
+        
+        // 验证
+        if (currentField.validation) {
+            const error = currentField.validation(input);
+            if (error) {
+                setFormState(prev => prev ? {
+                    ...prev,
+                    errors: { ...prev.errors, [currentField.name]: error }
+                } : null);
+                return;
+            }
+        }
+        
+        // 保存值并移动到下一个字段
+        const newValues = { ...formState.values, [currentField.name]: input };
+        const nextIndex = formState.currentFieldIndex + 1;
+        
+        if (nextIndex < formState.fields.length) {
+            // 还有更多字段
+            setFormState(prev => prev ? {
+                ...prev,
+                currentFieldIndex: nextIndex,
+                values: newValues,
+                errors: { ...prev.errors, [currentField.name]: undefined }
+            } : null);
+        } else {
+            // 表单完成
+            setOutput(prev => [...prev, <Text key={`form-complete-${getNextKey()}`} color="green">Form completed!</Text>]);
+            setMode('normal');
+            setFormState(null);
+        }
+    };
+
+    const handleSelectConfirm = () => {
+        if (!selectState) return;
+        
+        if (selectState.multiSelect) {
+            // 多选：返回所有选中项
+            const selected = Array.from(selectState.selectedItems);
+            selectState.onComplete(selected);
+        } else {
+            // 单选：返回当前选中项
+            const selected = selectState.options[selectedIndex];
+            selectState.onComplete(selected);
+        }
+        
+        setSelectState(null);
+        setMode('normal');
+    };
+
+    const handleMenuSelect = () => {
+        if (!menuState || !menuItems[selectedIndex]) return;
+        
+        const selected = menuItems[selectedIndex];
+        
+        switch (selected.value) {
+            case 'save':
+                // 保存并退出
+                setOutput(prev => [...prev, <Text key={`menu-save-${getNextKey()}`} color="green">Changes saved!</Text>]);
+                setMode('normal');
+                setMenuState(null);
+                setMenuItems([]);
+                break;
+                
+            case 'cancel':
+                // 取消并退出
+                setOutput(prev => [...prev, <Text key={`menu-cancel-${getNextKey()}`} color="yellow">Changes discarded</Text>]);
+                setMode('normal');
+                setMenuState(null);
+                setMenuItems([]);
+                break;
+                
+            default:
+                setOutput(prev => [...prev, <Text key={`menu-todo-${getNextKey()}`} color="yellow">Menu item "{selected.label}" not yet implemented</Text>]);
+        }
+    };
+
+    const startTeamCreationWizard = () => {
+        setOutput(prev => [...prev, 
+            <Text key={`wizard-start-${getNextKey()}`} color="cyan">{'═'.repeat(60)}</Text>,
+            <Text key={`wizard-title-${getNextKey()}`} bold color="cyan">Team Creation Wizard</Text>,
+            <Text key={`wizard-subtitle-${getNextKey()}`} dimColor>Step 1/4: Team Structure</Text>,
+            <Text key={`wizard-divider-${getNextKey()}`} color="cyan">{'─'.repeat(60)}</Text>,
+            <Text key={`wizard-prompt-name-${getNextKey()}`} color="cyan">Enter team name:</Text>
+        ]);
+        
+        // 初始化向导状态 - 从第一个字段开始
+        setWizardState({
+            step: 1,
+            totalSteps: 4,
+            data: {}
+        });
+        setMode('wizard');
+        setInput('');
+        setSelectedIndex(0);
+    };
+
+    const startTeamEditMenu = (filename: string) => {
+        try {
+            const fullPath = path.resolve(filename);
+            if (!fs.existsSync(fullPath)) {
+                setOutput(prev => [...prev, <Text key={`edit-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filename}</Text>]);
+                return;
+            }
+
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const config = JSON.parse(content);
+
+            setOutput(prev => [...prev, <Text key={`edit-start-${getNextKey()}`} color="cyan">Opening team editor for: {filename}</Text>]);
+
+            // 初始化菜单状态
+            setMenuState({
+                configPath: filename,
+                config,
+                selectedIndex: 0,
+                editing: false,
+                changes: {}
+            });
+
+            setMenuItems([
+                { label: 'Edit team information', value: 'edit_info' },
+                { label: 'Add new member', value: 'add_member' },
+                ...(config.team?.members || []).map((member: any, idx: number) => ({
+                    label: `Edit member: ${member.displayName || member.name}`,
+                    value: `edit_member_${idx}`
+                })),
+                { label: 'Remove member', value: 'remove_member' },
+                { label: 'Change member order', value: 'change_order' },
+                { label: 'Save and exit', value: 'save' },
+                { label: 'Exit without saving', value: 'cancel' }
+            ]);
+
+            setMode('menu');
+            setInput('');
+            setSelectedIndex(0);
+        } catch (error) {
+            setOutput(prev => [...prev, <Text key={`edit-err-${getNextKey()}`} color="red">Error: Failed to load configuration: {String(error)}</Text>]);
+        }
+    };
+
+    const listTeamConfigurations = () => {
+        const cwd = process.cwd();
+        const files = fs.readdirSync(cwd).filter(f =>
+            f.endsWith('-config.json') || f === 'agent-chatter-config.json'
+        );
+
+        if (files.length === 0) {
+            setOutput(prev => [...prev, <Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found in current directory</Text>]);
+            return;
+        }
+
+        setOutput(prev => [...prev,
+            <Box key={`list-${getNextKey()}`} flexDirection="column" marginY={1}>
+                <Text bold>Available Team Configurations:</Text>
+                {files.map(file => {
+                    try {
+                        const content = fs.readFileSync(path.resolve(file), 'utf-8');
+                        const config = JSON.parse(content);
+                        const isActive = currentConfigPath && file === path.basename(currentConfigPath);
+                        
+                        return (
+                            <Box key={file} flexDirection="column" marginLeft={2} marginTop={1}>
+                                <Box>
+                                    <Text color={isActive ? 'green' : 'gray'}>{isActive ? '●' : '○'} </Text>
+                                    <Text bold>{file}</Text>
+                                </Box>
+                                <Box marginLeft={2}>
+                                    <Text dimColor>Team: {config.team?.name || 'Unknown'}</Text>
+                                </Box>
+                                <Box marginLeft={2}>
+                                    <Text dimColor>Members: {config.team?.members?.length || 0}</Text>
+                                </Box>
+                            </Box>
+                        );
+                    } catch {
+                        return (
+                            <Box key={file} marginLeft={2}>
+                                <Text dimColor>○ {file} (invalid)</Text>
+                            </Box>
+                        );
+                    }
+                })}
+            </Box>
+        ]);
+    };
+
+    const showTeamConfiguration = (filename: string) => {
+        try {
+            const fullPath = path.resolve(filename);
+            if (!fs.existsSync(fullPath)) {
+                setOutput(prev => [...prev, <Text key={`show-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filename}</Text>]);
+                return;
+            }
+
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            const config = JSON.parse(content);
+
+            setOutput(prev => [...prev,
+                <Box key={`show-${getNextKey()}`} flexDirection="column" marginY={1}>
+                    <Text bold color="cyan">Team: {config.team?.displayName || config.team?.name || 'Unknown'}</Text>
+                    <Text dimColor>File: {filename}</Text>
+                    <Text dimColor>{'─'.repeat(60)}</Text>
+                    
+                    <Box marginTop={1} flexDirection="column">
+                        <Text>Description: {config.team?.description || 'N/A'}</Text>
+                        {config.team?.instructionFile && (
+                            <Text>Instruction File: {config.team.instructionFile}</Text>
+                        )}
+                        <Text>Max Rounds: {config.maxRounds || 'Unlimited'}</Text>
+                    </Box>
+
+                    {config.team?.roleDefinitions && config.team.roleDefinitions.length > 0 && (
+                        <Box marginTop={1} flexDirection="column">
+                            <Text bold>Role Definitions:</Text>
+                            {config.team.roleDefinitions.map((role: any, idx: number) => (
+                                <Box key={idx} marginLeft={2}>
+                                    <Text>• {role.name}: {role.description || 'N/A'}</Text>
+                                </Box>
+                            ))}
+                        </Box>
+                    )}
+
+                    {config.team?.members && config.team.members.length > 0 && (
+                        <Box marginTop={1} flexDirection="column">
+                            <Text bold>Members ({config.team.members.length}):</Text>
+                            {config.team.members.map((member: any, idx: number) => (
+                                <Box key={idx} flexDirection="column" marginLeft={2} marginTop={1}>
+                                    <Text>{idx + 1}. <Text bold>{member.displayName}</Text> ({member.type}) - Role: {member.role}</Text>
+                                    {member.roleDir && (
+                                        <Box marginLeft={2}>
+                                            <Text dimColor>Role Dir: {member.roleDir}</Text>
+                                        </Box>
+                                    )}
+                                    {member.workDir && (
+                                        <Box marginLeft={2}>
+                                            <Text dimColor>Work Dir: {member.workDir}</Text>
+                                        </Box>
+                                    )}
+                                </Box>
+                            ))}
+                        </Box>
+                    )}
+                </Box>
+            ]);
+        } catch (error) {
+            setOutput(prev => [...prev, <Text key={`show-err-${getNextKey()}`} color="red">Error: Failed to read configuration: {String(error)}</Text>]);
+        }
+    };
+
+    const deleteTeamConfiguration = (filename: string) => {
+        // 安全检查
+        if (currentConfigPath && filename === path.basename(currentConfigPath)) {
+            setOutput(prev => [...prev, <Text key={`delete-active-${getNextKey()}`} color="red">Error: Cannot delete currently loaded configuration</Text>]);
+            return;
+        }
+
+        if (mode === 'conversation') {
+            setOutput(prev => [...prev, <Text key={`delete-conv-${getNextKey()}`} color="red">Error: Cannot delete configuration with active conversation</Text>]);
+            return;
+        }
+
+        const fullPath = path.resolve(filename);
+        if (!fs.existsSync(fullPath)) {
+            setOutput(prev => [...prev, <Text key={`delete-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filename}</Text>]);
+            return;
+        }
+
+        // 显示确认对话框
+        setOutput(prev => [...prev, 
+            <Box key={`delete-confirm-${getNextKey()}`} flexDirection="column" marginY={1}>
+                <Text color="yellow">⚠  Delete Team Configuration</Text>
+                <Text dimColor>{'─'.repeat(60)}</Text>
+                <Text>File: {filename}</Text>
+                <Text color="red">This will permanently delete this configuration file.</Text>
+                <Text color="red">This action cannot be undone.</Text>
+                <Text dimColor>{'─'.repeat(60)}</Text>
+                <Text>Confirm deletion? [y/N]</Text>
+            </Box>
+        ]);
+
+        setConfirmState({
+            message: `Delete ${filename}?`,
+            onConfirm: () => {
+                try {
+                    fs.unlinkSync(fullPath);
+                    setOutput(prev => [...prev, <Text key={`delete-success-${getNextKey()}`} color="green">✓ Team configuration deleted: {filename}</Text>]);
+                } catch (error) {
+                    setOutput(prev => [...prev, <Text key={`delete-err-${getNextKey()}`} color="red">Error: Failed to delete configuration: {String(error)}</Text>]);
+                }
+            },
+            onCancel: () => {
+                setOutput(prev => [...prev, <Text key={`delete-cancel-${getNextKey()}`} color="yellow">Deletion cancelled</Text>]);
+            }
+        });
     };
 
     const loadConfig = (filePath: string) => {
@@ -442,22 +1405,59 @@ function App() {
 
     return (
         <Box flexDirection="column">
-            <WelcomeScreen />
+            {/* 欢迎屏幕（只在normal和conversation模式下显示） */}
+            {(mode === 'normal' || mode === 'conversation') && <WelcomeScreen />}
 
             {/* 输出历史 */}
             {output.map((item, idx) => (
                 <Box key={idx}>{item}</Box>
             ))}
 
+            {/* Wizard UI */}
+            {mode === 'wizard' && wizardState && (
+                <WizardView wizardState={wizardState} />
+            )}
+
+            {/* Menu UI */}
+            {mode === 'menu' && menuState && (
+                <MenuView 
+                    menuState={menuState} 
+                    menuItems={menuItems}
+                    selectedIndex={selectedIndex}
+                />
+            )}
+
+            {/* Form UI */}
+            {mode === 'form' && formState && (
+                <FormView formState={formState} />
+            )}
+
+            {/* Select UI */}
+            {mode === 'select' && selectState && (
+                <SelectView
+                    title={selectState.title}
+                    options={selectState.options}
+                    selectedIndex={selectedIndex}
+                    multiSelect={selectState.multiSelect}
+                    selectedItems={selectState.selectedItems}
+                />
+            )}
+
             {/* 当前输入行 */}
-            <Box>
-                {mode === 'conversation' ? (
-                    <Text color="green" bold>you&gt; </Text>
-                ) : (
-                    <Text color="cyan">agent-chatter&gt; </Text>
-                )}
-                <Text>{input}</Text>
-            </Box>
+            {(mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
+                <Box marginTop={1}>
+                    {mode === 'conversation' ? (
+                        <Text color="green" bold>you&gt; </Text>
+                    ) : mode === 'wizard' ? (
+                        <Text color="cyan" bold>wizard&gt; </Text>
+                    ) : mode === 'form' ? (
+                        <Text color="cyan" bold>input&gt; </Text>
+                    ) : (
+                        <Text color="cyan">agent-chatter&gt; </Text>
+                    )}
+                    <Text>{input}</Text>
+                </Box>
+            )}
 
             {/* 命令提示（只在normal模式下显示） */}
             {mode === 'normal' && <CommandHints input={input} selectedIndex={selectedIndex} />}

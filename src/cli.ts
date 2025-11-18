@@ -17,6 +17,7 @@ import {
   startConversation,
   type CLIConfig,
 } from './utils/ConversationStarter.js';
+import { createAgentsCommand } from './commands/AgentsCommand.js';
 
 const program = new Command();
 
@@ -228,6 +229,9 @@ program
             process.exit(1);
         }
     });
+
+// 添加 agents 命令
+program.addCommand(createAgentsCommand());
 
 // 解析命令行参数
 program.parse();

@@ -14,6 +14,8 @@ import { TeamManager } from '../services/TeamManager.js';
 import { MockStorageService } from '../infrastructure/StorageService.js';
 import type { Team, Role } from '../models/Team.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
+import { AgentRegistry } from '../registry/AgentRegistry.js';
+import type { AgentDefinition as RegistryAgentDefinition } from '../registry/RegistryStorage.js';
 
 const colors = {
   reset: '\x1b[0m',
@@ -69,7 +71,7 @@ export interface TeamConfig {
 
 export interface CLIConfig {
   schemaVersion?: string;
-  agents: AgentDefinition[];
+  agents?: AgentDefinition[]; // Optional in schema 1.1+, agents loaded from global registry
   team: TeamConfig;
   maxRounds?: number;
 }
@@ -206,6 +208,22 @@ export function loadInstructionContent(filePath?: string): string | undefined {
 }
 
 /**
+ * 从全局 registry 加载 agents
+ */
+async function loadAgentsFromRegistry(): Promise<AgentDefinition[]> {
+  const registry = new AgentRegistry();
+  const registryAgents = await registry.listAgents();
+
+  return registryAgents.map((agent: RegistryAgentDefinition) => ({
+    name: agent.name,
+    command: agent.command,
+    args: agent.args,
+    endMarker: agent.endMarker,
+    usePty: agent.usePty
+  }));
+}
+
+/**
  * 初始化服务和团队
  */
 export async function initializeServices(
@@ -223,7 +241,11 @@ export async function initializeServices(
   const teamManager = new TeamManager(storage);
   const agentManager = new AgentManager(processManager, agentConfigManager);
 
-  const agentDefinitionMap = normalizeAgentDefinitions(config.agents);
+  // Schema 1.1+: Load agents from global registry if not in config
+  // Schema 1.0: Use agents from config (backward compatibility)
+  const agents = config.agents ?? await loadAgentsFromRegistry();
+
+  const agentDefinitionMap = normalizeAgentDefinitions(agents);
   const teamMembers: Array<Omit<Role, 'id'>> = [];
 
   for (const [index, member] of config.team.members.entries()) {
