@@ -45,7 +45,7 @@
     "node": ">=18.0.0"
   },
   "publishConfig": {
-    "access": "restricted"
+    "access": "public"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
