@@ -7,6 +7,7 @@ import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { detectAllTools } from '../utils/ToolDetector.js';
 import { ConversationCoordinator } from '../services/ConversationCoordinator.js';
 import { initializeServices, type CLIConfig } from '../utils/ConversationStarter.js';
@@ -15,6 +16,13 @@ import type { Team, RoleDefinition } from '../models/Team.js';
 import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
 import { AgentsMenu } from './components/AgentsMenu.js';
 import { RegistryStorage } from '../registry/RegistryStorage.js';
+
+// Read version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJsonPath = path.join(__dirname, '..', '..', 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const VERSION = packageJson.version;
 
 const commands = [
     { name: '/help', desc: 'Show this help message' },
@@ -55,7 +63,7 @@ function WelcomeScreen() {
                     <Text dimColor>          Multi-AI Conversation Orchestrator</Text>
                 </Box>
             </Box>
-            <Text dimColor>  Version 0.0.1 • TestAny.io</Text>
+            <Text dimColor>  Version {VERSION} • TestAny.io</Text>
             <Text dimColor>  Type <Text color="green">/help</Text> for available commands</Text>
             <Text dimColor>  Type <Text color="green">/exit</Text> to quit</Text>
         </Box>
