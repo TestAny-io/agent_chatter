@@ -42,6 +42,14 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
   // 0: Command, 1: Args, 2: End Marker, 3: Use PTY, 4: Save, 5: Cancel
   const EDIT_MENU_ITEMS = ['Command', 'Arguments', 'End Marker', 'Use PTY', 'Save Changes', 'Cancel'];
 
+  const filterNewAgents = (
+    scanned: ScannedAgent[],
+    existing: AgentDefinition[]
+  ): ScannedAgent[] => {
+    const registeredNames = new Set(existing.map(agent => agent.name.toLowerCase()));
+    return scanned.filter(agent => agent.found && !registeredNames.has(agent.name.toLowerCase()));
+  };
+
   // Handler functions for each menu option
   const showList = async () => {
     setLoading(true);
@@ -66,13 +74,22 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
     setLoadingMessage('Scanning system for AI CLI tools...');
 
     try {
-      const result = await registry.scanAgents();
-      // CRITICAL: Only show agents that were actually found on the system
-      const foundAgents = result.filter(a => a.found);
-      setScanResult(foundAgents);
-      setSelectedAgents(new Set());
-      setView('register');
-      setSelectedIndex(0);
+      const [existingAgents, scanResults] = await Promise.all([
+        registry.listAgents(),
+        registry.scanAgents()
+      ]);
+      const newAgents = filterNewAgents(scanResults, existingAgents);
+      if (newAgents.length === 0) {
+        onShowMessage('No unregistered new agent found.', 'yellow');
+        setScanResult([]);
+        setView('main');
+        setSelectedIndex(0);
+      } else {
+        setScanResult(newAgents);
+        setSelectedAgents(new Set());
+        setView('register');
+        setSelectedIndex(0);
+      }
     } catch (error: any) {
       onShowMessage(`Scan failed: ${error.message || error}`, 'red');
       setView('main');
@@ -184,13 +201,18 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
 
           try {
             const result = await registry.scanAgents();
-            // CRITICAL: Only show agents that were actually found on the system
-            const foundAgents = result.filter(a => a.found);
+            const newAgents = filterNewAgents(result, []);
             if (mounted) {
-              setScanResult(foundAgents);
-              setSelectedAgents(new Set());
-              setView('register');
-              setSelectedIndex(0);
+              if (newAgents.length === 0) {
+                onShowMessage('No unregistered new agent found.', 'yellow');
+                setView('main');
+                setSelectedIndex(0);
+              } else {
+                setScanResult(newAgents);
+                setSelectedAgents(new Set());
+                setView('register');
+                setSelectedIndex(0);
+              }
             }
           } catch (error: any) {
             if (mounted) {
@@ -527,7 +549,7 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
               {selectedIndex === 5 ? '▶ ' : '  '}Delete an agent
             </Text>
             <Text color={selectedIndex === 6 ? 'cyan' : undefined}>
-              {selectedIndex === 6 ? '▶ ' : '  '}Back to REPL
+              {selectedIndex === 6 ? '▶ ' : '  '}Exit agents menu
             </Text>
             <Box marginTop={1}>
               <Text dimColor>Use ↑↓ to navigate, Enter to select, Ctrl+C to cancel</Text>
@@ -577,7 +599,7 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
 
           {scanResult.length === 0 ? (
             <Box marginTop={1}>
-              <Text color="yellow">No AI CLI tools detected on your system.</Text>
+              <Text color="yellow">No unregistered new agent found.</Text>
             </Box>
           ) : (
             <Box flexDirection="column" marginTop={1}>

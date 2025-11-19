@@ -188,4 +188,38 @@ describe('AgentsMenu Component', () => {
         // Should be back to main menu
         expect(lastFrame()).toContain('Main Menu');
     });
+
+    it('should not list already registered agents during scan', async () => {
+        const mockOnShowMessage = vi.fn();
+        const existingAgent = { name: 'existing', displayName: 'Existing', command: 'cmd', args: [], source: 'user' };
+
+        // First call (initial mount) returns one registered agent
+        mockRegistryInstance.listAgents.mockResolvedValueOnce([existingAgent]);
+        // Second call (within showRegister) also returns the same registered agent
+        mockRegistryInstance.listAgents.mockResolvedValueOnce([existingAgent]);
+        mockRegistryInstance.scanAgents.mockResolvedValue([
+            { name: 'existing', displayName: 'Existing', command: 'cmd', found: true }
+        ]);
+
+        const { lastFrame, stdin } = render(
+            <AgentsMenu
+                registryPath="/tmp/test"
+                onClose={vi.fn()}
+                onShowMessage={mockOnShowMessage}
+            />
+        );
+
+        await flushPromises();
+
+        // Navigate to "Register new agents"
+        stdin.write('\u001B[B');
+        await flushPromises();
+        expect(lastFrame()).toContain('▶ Register new agents');
+
+        stdin.write('\r');
+        await flushPromises();
+
+        expect(mockOnShowMessage).toHaveBeenCalledWith('No unregistered new agent found.', 'yellow');
+        expect(lastFrame()).toContain('Main Menu');
+    });
 });

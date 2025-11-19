@@ -292,7 +292,12 @@ export class AgentValidator {
       try {
         const auth = JSON.parse(fs.readFileSync(authPath, 'utf-8'));
 
-        if (!auth.token) {
+        // Codex 支持多种认证方式：
+        // 1. ChatGPT OAuth: { OPENAI_API_KEY, tokens, last_refresh }
+        // 2. API Key: { token, expiresAt }
+        const hasAuth = auth.OPENAI_API_KEY || auth.tokens || auth.token;
+
+        if (!hasAuth) {
           return {
             name: 'Authentication Check',
             passed: false,
@@ -300,7 +305,7 @@ export class AgentValidator {
           };
         }
 
-        // 检查 token 是否过期
+        // 检查 token 是否过期（仅对 API key 方式）
         if (auth.expiresAt) {
           const expiryDate = new Date(auth.expiresAt);
           if (expiryDate < new Date()) {
