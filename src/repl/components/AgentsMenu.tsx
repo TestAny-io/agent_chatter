@@ -250,7 +250,9 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
       } else if (key.downArrow) {
         setSelectedIndex(prev => prev < 6 ? prev + 1 : 0);
       } else if (key.return) {
-        handleMainMenuSelect(selectedIndex);
+        // Note: handleMainMenuSelect is async, but we don't await it here
+        // because useInput cannot be async. The function handles its own errors.
+        void handleMainMenuSelect(selectedIndex);
       } else if (key.escape) {
         onClose();
       }

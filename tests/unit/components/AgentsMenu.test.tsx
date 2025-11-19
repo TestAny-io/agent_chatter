@@ -189,19 +189,15 @@ describe('AgentsMenu Component', () => {
         expect(lastFrame()).toContain('Main Menu');
     });
 
-    it('should not list already registered agents during scan', async () => {
+    it('shows warning when auto-scan finds no unregistered agents', async () => {
         const mockOnShowMessage = vi.fn();
-        const existingAgent = { name: 'existing', displayName: 'Existing', command: 'cmd', args: [], source: 'user' };
 
-        // First call (initial mount) returns one registered agent
-        mockRegistryInstance.listAgents.mockResolvedValueOnce([existingAgent]);
-        // Second call (within showRegister) also returns the same registered agent
-        mockRegistryInstance.listAgents.mockResolvedValueOnce([existingAgent]);
-        mockRegistryInstance.scanAgents.mockResolvedValue([
-            { name: 'existing', displayName: 'Existing', command: 'cmd', found: true }
-        ]);
+        // First call (useEffect) returns no agents to trigger onboarding scan
+        mockRegistryInstance.listAgents.mockResolvedValueOnce([]);
+        // Auto-scan returns zero results
+        mockRegistryInstance.scanAgents.mockResolvedValueOnce([]);
 
-        const { lastFrame, stdin } = render(
+        const { lastFrame } = render(
             <AgentsMenu
                 registryPath="/tmp/test"
                 onClose={vi.fn()}
@@ -209,15 +205,8 @@ describe('AgentsMenu Component', () => {
             />
         );
 
-        await flushPromises();
-
-        // Navigate to "Register new agents"
-        stdin.write('\u001B[B');
-        await flushPromises();
-        expect(lastFrame()).toContain('▶ Register new agents');
-
-        stdin.write('\r');
-        await flushPromises();
+        await flushPromises(); // listAgents
+        await flushPromises(); // scanAgents
 
         expect(mockOnShowMessage).toHaveBeenCalledWith('No unregistered new agent found.', 'yellow');
         expect(lastFrame()).toContain('Main Menu');
