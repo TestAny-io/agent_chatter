@@ -1,0 +1,66 @@
+name: Publish Package
+
+on:
+  push:
+    tags:
+      - 'v*'  # 触发条件: 推送 v1.0.0 等标签
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package verification (smoke test)
+        run: |
+          # 打包
+          PACKAGE_FILE=$(npm pack | tail -1)
+          echo "Created package: $PACKAGE_FILE"
+
+          # 查看包内容
+          echo "Package contents:"
+          tar -tzf "$PACKAGE_FILE"
+
+          # 验证必需文件存在
+          tar -tzf "$PACKAGE_FILE" | grep -q "package/out/cli.js" || exit 1
+          tar -tzf "$PACKAGE_FILE" | grep -q "package/package.json" || exit 1
+          tar -tzf "$PACKAGE_FILE" | grep -q "package/README.md" || exit 1
+
+          # 全局安装包
+          npm install -g "$PACKAGE_FILE"
+
+          # 验证可执行文件
+          which agent-chatter || exit 1
+
+          # 运行核心命令 (smoke tests)
+          agent-chatter --version
+          agent-chatter --help
+          agent-chatter status
+          agent-chatter agents list  # 应返回空列表或已注册的 agents
+
+          # 验证 registry 参数
+          agent-chatter --registry /tmp/test-registry.json agents list
+
+          echo "✓ Package smoke tests passed"
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

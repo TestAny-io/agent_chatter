@@ -316,6 +316,26 @@ export async function initializeServices(
   team: Team;
   processManager: ProcessManager;
 }> {
+  // Enforce Schema 1.1: Reject all other versions
+  if (config.schemaVersion !== '1.1') {
+    const foundVersion = config.schemaVersion || 'missing';
+    throw new Error(
+      `Unsupported configuration schema version.\n\n` +
+      `  Found: schemaVersion = "${foundVersion}"\n` +
+      `  Required: schemaVersion = "1.1"\n\n` +
+      `Schema 1.0 is no longer supported. Please migrate your configuration to Schema 1.1.\n` +
+      `Migration guide: design/team-configuration.md\n\n` +
+      `Key changes in Schema 1.1:\n` +
+      `  - Agents must be registered in global registry (~/.agent-chatter/agents/config.json)\n` +
+      `  - Team config only references agent names, not full definitions\n` +
+      `  - Team config can override args/endMarker/usePty, but NOT command path\n\n` +
+      `Quick migration steps:\n` +
+      `  1. Run: agent-chatter agents register <agent-name>\n` +
+      `  2. Update config: Remove 'command' field from config.agents[]\n` +
+      `  3. Set: "schemaVersion": "1.1"`
+    );
+  }
+
   const storage = new MockStorageService();
   const processManager = new ProcessManager();
   const messageRouter = new MessageRouter();

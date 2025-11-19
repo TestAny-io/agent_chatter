@@ -109,6 +109,7 @@ program
     .name('agent-chatter')
     .description('让多个 CLI AI agents 自动对话的命令行工具')
     .version('0.0.1')
+    .option('--registry <path>', 'Custom agent registry path (default: ~/.agent-chatter/agents/config.json)')
     .action(async () => {
         // 当没有子命令时，启动REPL模式
         startReplInk();
@@ -130,9 +131,12 @@ program
             // 加载配置
             const config = loadConfig(options.config);
 
+            // 获取全局 registry 选项
+            const registryPath = program.opts().registry;
+
             // 初始化服务
             console.log(colorize('正在初始化服务...', 'cyan'));
-            const { coordinator, team } = await initializeServices(config);
+            const { coordinator, team } = await initializeServices(config, { registryPath });
 
             // 启动对话
             await startConversation(coordinator, team, options.message, options.speaker);
@@ -149,11 +153,12 @@ program
     .option('-o, --output <path>', '输出文件路径', 'agent-chatter-config.json')
     .action((options) => {
         const exampleConfig: CLIConfig = {
-            schemaVersion: '1.0',
+            schemaVersion: '1.1',
             agents: [
                 {
                     name: 'claude',
-                    command: 'claude',
+                    // Schema 1.1: No 'command' field - agent must be registered in global registry
+                    // Run: agent-chatter agents register claude
                     args: [
                         '--append-system-prompt',
                         'Always end your response with the exact text [DONE] on a new line. Keep responses concise.'

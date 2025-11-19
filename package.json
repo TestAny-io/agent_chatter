@@ -1,18 +1,51 @@
 {
-  "name": "agent-chatter",
-  "description": "A CLI application for orchestrating multi-agent conversations between different AI assistants",
+  "name": "@testany/agent-chatter",
+  "description": "Multi-agent conversation orchestration CLI for AI assistants",
   "version": "0.0.1",
   "type": "module",
+  "main": "./out/cli.js",
   "bin": {
     "agent-chatter": "./out/cli.js"
   },
   "scripts": {
     "compile": "tsc -p ./",
+    "build": "tsc",
     "watch": "tsc -watch -p ./",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration",
-    "test:watch": "vitest watch"
+    "test:watch": "vitest watch",
+    "prepublishOnly": "npm run build && npm test",
+    "pack:local": "npm pack",
+    "install:global": "npm install -g $(npm pack | tail -1)",
+    "uninstall:global": "npm uninstall -g @testany/agent-chatter",
+    "link:dev": "npm run build && npm link",
+    "unlink:dev": "npm unlink -g"
+  },
+  "files": [
+    "out/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "cli",
+    "ai",
+    "agent",
+    "conversation",
+    "orchestration",
+    "claude",
+    "gemini",
+    "openai",
+    "multi-agent"
+  ],
+  "author": "TestAny.io <support@testany.io>",
+  "license": "UNLICENSED",
+  "private": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -50,8 +50,8 @@ function question(rl: readline.Interface, prompt: string): Promise<string> {
 /**
  * Register 命令处理器 - 交互式扫描和注册
  */
-export async function handleRegister(options: { auto?: boolean }): Promise<void> {
-  const registry = new AgentRegistry();
+export async function handleRegister(options: { auto?: boolean }, registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
 
   console.log(colorize('\n=== 注册 AI Agents ===\n', 'bright'));
   console.log('正在扫描系统中已安装的 AI CLI 工具...\n');
@@ -170,8 +170,8 @@ export async function handleRegister(options: { auto?: boolean }): Promise<void>
 /**
  * List 命令处理器 - 显示所有已注册的 agents
  */
-export async function handleList(options: { verbose?: boolean }): Promise<void> {
-  const registry = new AgentRegistry();
+export async function handleList(options: { verbose?: boolean }, registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
 
   console.log(colorize('\n=== 已注册的 AI Agents ===\n', 'bright'));
 
@@ -206,8 +206,8 @@ export async function handleList(options: { verbose?: boolean }): Promise<void> 
 /**
  * Verify 命令处理器 - 验证 agent 可用性
  */
-export async function handleVerify(agentName?: string): Promise<void> {
-  const registry = new AgentRegistry();
+export async function handleVerify(agentName: string | undefined, registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
 
   if (!agentName) {
     // 验证所有 agents
@@ -269,8 +269,8 @@ export async function handleVerify(agentName?: string): Promise<void> {
 /**
  * Info 命令处理器 - 显示 agent 详细信息
  */
-export async function handleInfo(agentName: string): Promise<void> {
-  const registry = new AgentRegistry();
+export async function handleInfo(agentName: string, registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
 
   console.log(colorize(`\n=== Agent 详细信息: ${agentName} ===\n`, 'bright'));
 
@@ -320,8 +320,8 @@ export async function handleInfo(agentName: string): Promise<void> {
 /**
  * Delete 命令处理器 - 删除 agent
  */
-export async function handleDelete(agentName: string, options: { force?: boolean }): Promise<void> {
-  const registry = new AgentRegistry();
+export async function handleDelete(agentName: string, options: { force?: boolean }, registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
 
   console.log(colorize(`\n=== 删除 Agent: ${agentName} ===\n`, 'bright'));
 
@@ -365,8 +365,8 @@ export async function handleDelete(agentName: string, options: { force?: boolean
 /**
  * Edit 命令处理器 - 编辑 agent 配置
  */
-export async function handleEdit(agentName: string): Promise<void> {
-  const registry = new AgentRegistry();
+export async function handleEdit(agentName: string, registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
 
   console.log(colorize(`\n=== 编辑 Agent: ${agentName} ===\n`, 'bright'));
 
@@ -465,28 +465,41 @@ export function createAgentsCommand(): Command {
     .command('register')
     .description('扫描并注册 AI CLI 工具')
     .option('-a, --auto', '自动注册所有检测到的工具')
-    .action(handleRegister);
+    .action(function (options) {
+      // Access parent command's registry option
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleRegister(options, registryPath);
+    });
 
   // list 子命令
   agents
     .command('list')
     .description('列出所有已注册的 agents')
     .option('-v, --verbose', '显示详细信息')
-    .action(handleList);
+    .action(function (options) {
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleList(options, registryPath);
+    });
 
   // verify 子命令
   agents
     .command('verify')
     .description('验证 agent 可用性')
     .argument('[name]', 'Agent 名称 (不指定则验证所有)')
-    .action(handleVerify);
+    .action(function (name) {
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleVerify(name, registryPath);
+    });
 
   // info 子命令
   agents
     .command('info')
     .description('显示 agent 详细信息')
     .argument('<name>', 'Agent 名称')
-    .action(handleInfo);
+    .action(function (name) {
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleInfo(name, registryPath);
+    });
 
   // delete 子命令
   agents
@@ -494,14 +507,20 @@ export function createAgentsCommand(): Command {
     .description('删除已注册的 agent')
     .argument('<name>', 'Agent 名称')
     .option('-f, --force', '强制删除，不询问确认')
-    .action(handleDelete);
+    .action(function (name, options) {
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleDelete(name, options, registryPath);
+    });
 
   // edit 子命令
   agents
     .command('edit')
     .description('编辑 agent 配置')
     .argument('<name>', 'Agent 名称')
-    .action(handleEdit);
+    .action(function (name) {
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleEdit(name, registryPath);
+    });
 
   return agents;
 }
