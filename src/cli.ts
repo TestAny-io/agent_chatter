@@ -9,6 +9,7 @@
 import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { detectAllTools } from './utils/ToolDetector.js';
 import type { ToolStatus } from './utils/ToolDetector.js';
 import { startReplInk } from './repl/ReplModeInk.js';
@@ -18,6 +19,13 @@ import {
   type CLIConfig,
 } from './utils/ConversationStarter.js';
 import { createAgentsCommand } from './commands/AgentsCommand.js';
+
+// Read version from package.json
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const packageJsonPath = path.join(__dirname, '..', 'package.json');
+const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+const VERSION = packageJson.version;
 
 const program = new Command();
 
@@ -108,7 +116,7 @@ function loadConfig(configPath: string): CLIConfig {
 program
     .name('agent-chatter')
     .description('让多个 CLI AI agents 自动对话的命令行工具')
-    .version('0.0.1')
+    .version(VERSION)
     .option('--registry <path>', 'Custom agent registry path (default: ~/.agent-chatter/agents/config.json)')
     .action(async (options) => {
         // 当没有子命令时，启动REPL模式
