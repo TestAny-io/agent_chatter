@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import TextInput from 'ink-text-input';
 import { AgentRegistry } from '../../registry/AgentRegistry.js';
 import type { AgentDefinition } from '../../registry/RegistryStorage.js';
 import type { ScannedAgent } from '../../registry/AgentScanner.js';
@@ -30,6 +31,16 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [verificationResults, setVerificationResults] = useState<VerificationResult[]>([]);
   const [currentAgent, setCurrentAgent] = useState<AgentDefinition | null>(null);
+
+  // Edit state
+  const [editData, setEditData] = useState<Partial<AgentDefinition>>({});
+  const [argsInput, setArgsInput] = useState(''); // Separate state for raw args input
+  const [selectedEditField, setSelectedEditField] = useState(0); // Index in edit menu
+  const [isEditingField, setIsEditingField] = useState(false); // Whether we are currently typing in a field
+
+  // Edit menu options
+  // 0: Command, 1: Args, 2: End Marker, 3: Use PTY, 4: Save, 5: Cancel
+  const EDIT_MENU_ITEMS = ['Command', 'Arguments', 'End Marker', 'Use PTY', 'Save Changes', 'Cancel'];
 
   // Handler functions for each menu option
   const showList = async () => {
@@ -116,6 +127,9 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
       setAgents(agentList);
       setView('edit');
       setSelectedIndex(0);
+      setEditData({}); // Reset edit data
+      setSelectedEditField(0);
+      setIsEditingField(false);
     } catch (error: any) {
       onShowMessage(`Error loading agents: ${error.message || error}`, 'red');
       setView('main');
@@ -155,15 +169,58 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
     }
   };
 
+  // Onboarding: Check if we have any agents, if not, guide to register
+  useEffect(() => {
+    let mounted = true;
+    const checkAgents = async () => {
+      try {
+        const agentList = await registry.listAgents();
+        if (mounted && agentList.length === 0) {
+          // Auto-trigger registration as per design
+          onShowMessage('Welcome! No agents found. Starting auto-discovery...', 'cyan');
+
+          setLoading(true);
+          setLoadingMessage('Scanning system for AI CLI tools... (Ctrl+C to cancel)');
+
+          try {
+            const result = await registry.scanAgents();
+            // CRITICAL: Only show agents that were actually found on the system
+            const foundAgents = result.filter(a => a.found);
+            if (mounted) {
+              setScanResult(foundAgents);
+              setSelectedAgents(new Set());
+              setView('register');
+              setSelectedIndex(0);
+            }
+          } catch (error: any) {
+            if (mounted) {
+              onShowMessage(`Scan failed: ${error.message || error}`, 'red');
+              setView('main');
+              setSelectedIndex(0);
+            }
+          } finally {
+            if (mounted) setLoading(false);
+          }
+        }
+      } catch (error) {
+        // Ignore error on auto-check
+      }
+    };
+
+    checkAgents();
+
+    return () => { mounted = false; };
+  }, []);
+
   // Input handling
   useInput((input, key) => {
-    if (loading) return; // Ignore input during loading
-
-    // Ctrl+C always closes the menu (from any view)
+    // Ctrl+C always closes the menu (from any view), even during loading
     if (key.ctrl && input === 'c') {
       onClose();
       return;
     }
+
+    if (loading) return; // Ignore other input during loading
 
     if (view === 'main') {
       if (key.upArrow) {
@@ -319,10 +376,121 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
         }
       }
     } else if (view === 'edit') {
-      // Edit not implemented fully, just go back
-      if (key.escape) {
-        setView('main');
-        setSelectedIndex(0);
+      if (!currentAgent) {
+        // Selection mode (Select agent to edit)
+        if (key.upArrow) {
+          setSelectedIndex(prev => prev > 0 ? prev - 1 : agents.length - 1);
+        } else if (key.downArrow) {
+          setSelectedIndex(prev => prev < agents.length - 1 ? prev + 1 : 0);
+        } else if (key.return) {
+          if (agents.length === 0) return;
+          const agent = agents[selectedIndex];
+          if (!agent) return;
+          setCurrentAgent(agent);
+          setEditData({
+            command: agent.command,
+            args: [...agent.args],
+            endMarker: agent.endMarker,
+            usePty: agent.usePty
+          });
+          setSelectedEditField(0);
+          setIsEditingField(false);
+          // Initialize args string for editing
+          setArgsInput(JSON.stringify(agent.args));
+        } else if (key.escape) {
+          setView('main');
+          setSelectedIndex(0);
+        }
+      } else {
+        // Editing mode (Inside the form)
+        if (isEditingField) {
+          // We are typing in a TextInput
+          if (key.return) {
+            // Commit field edit
+            setIsEditingField(false);
+          } else if (key.escape) {
+            // Cancel field edit (revert logic could be added here, but for now just exit edit mode)
+            setIsEditingField(false);
+          }
+        } else {
+          // Navigating the edit menu
+          if (key.upArrow) {
+            setSelectedEditField(prev => prev > 0 ? prev - 1 : EDIT_MENU_ITEMS.length - 1);
+          } else if (key.downArrow) {
+            setSelectedEditField(prev => prev < EDIT_MENU_ITEMS.length - 1 ? prev + 1 : 0);
+          } else if (key.escape) {
+            // Cancel editing entirely
+            setCurrentAgent(null);
+            setEditData({});
+            setArgsInput(''); // Reset args input
+          } else if (key.return) {
+            const selectedItem = EDIT_MENU_ITEMS[selectedEditField];
+            if (selectedItem === 'Save Changes') {
+              // Save logic
+              (async () => {
+                setLoading(true);
+                setLoadingMessage(`Updating ${currentAgent.name}...`);
+
+                const updates: Partial<AgentDefinition> = {};
+                if (editData.command !== currentAgent.command) updates.command = editData.command;
+
+                // Parse args
+                let newArgs: string[] = [];
+                try {
+                  const parsed = JSON.parse(argsInput);
+                  if (Array.isArray(parsed) && parsed.every(s => typeof s === 'string')) {
+                    newArgs = parsed;
+                  } else {
+                    onShowMessage('Invalid args format: must be a JSON string array', 'red');
+                    setLoading(false);
+                    return;
+                  }
+                } catch (e) {
+                  onShowMessage('Invalid args JSON syntax', 'red');
+                  setLoading(false);
+                  return;
+                }
+                const currentArgsStr = JSON.stringify(currentAgent.args || []);
+                const newArgsStr = JSON.stringify(newArgs);
+                if (currentArgsStr !== newArgsStr) updates.args = newArgs;
+
+                if (editData.endMarker !== currentAgent.endMarker) updates.endMarker = editData.endMarker;
+                if (editData.usePty !== currentAgent.usePty) updates.usePty = editData.usePty;
+
+                if (Object.keys(updates).length === 0) {
+                  setLoading(false);
+                  onShowMessage('No changes to save', 'yellow');
+                  return;
+                }
+
+                const res = await registry.updateAgent(currentAgent.name, updates);
+                setLoading(false);
+
+                if (res.success) {
+                  onShowMessage(`Updated ${currentAgent.displayName}`, 'green');
+                  setCurrentAgent(null);
+                  setArgsInput(''); // Reset args input
+                  const newList = await registry.listAgents();
+                  setAgents(newList);
+                } else {
+                  onShowMessage(`Failed to update: ${res.error}`, 'red');
+                }
+              })();
+            } else if (selectedItem === 'Cancel') {
+              setCurrentAgent(null);
+              setEditData({});
+              setArgsInput(''); // Reset args input
+            } else if (selectedItem === 'Use PTY') {
+              // Toggle immediately
+              setEditData(prev => ({ ...prev, usePty: !prev.usePty }));
+            } else {
+              // Enter edit mode for text fields
+              setIsEditingField(true);
+            }
+          } else if (input === ' ' && EDIT_MENU_ITEMS[selectedEditField] === 'Use PTY') {
+            setEditData(prev => ({ ...prev, usePty: !prev.usePty }));
+          }
+        }
       }
     }
   });
@@ -527,13 +695,108 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
             <Text bold>Edit Agent Configuration</Text>
           </Box>
 
-          <Box marginTop={1}>
-            <Text color="yellow">Editing is not yet implemented in this version.</Text>
-            <Text dimColor>Please use the CLI or edit the config file directly.</Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text dimColor>Press Esc to go back</Text>
-          </Box>
+          {!currentAgent ? (
+            <Box flexDirection="column" marginTop={1}>
+              <Text>Select agent to edit:</Text>
+              <Box marginTop={1} flexDirection="column">
+                {agents.map((agent, index) => (
+                  <Text key={agent.name} color={index === selectedIndex ? 'cyan' : undefined}>
+                    {index === selectedIndex ? '▶ ' : '  '}{agent.displayName}
+                  </Text>
+                ))}
+              </Box>
+              <Box marginTop={1}>
+                <Text dimColor>Use ↑↓ to navigate, Enter to select, Esc to go back</Text>
+              </Box>
+            </Box>
+          ) : (
+            <Box flexDirection="column" marginTop={1}>
+              <Text bold>Editing: {currentAgent.displayName}</Text>
+              <Box marginTop={1} flexDirection="column">
+                {/* Command Field */}
+                <Box flexDirection="column" marginBottom={1}>
+                  <Text color={selectedEditField === 0 ? 'cyan' : undefined}>
+                    {selectedEditField === 0 ? '▶ ' : '  '}Command:
+                  </Text>
+                  <Box marginLeft={2}>
+                    {selectedEditField === 0 && isEditingField ? (
+                      <TextInput
+                        value={editData.command || ''}
+                        onChange={val => setEditData(prev => ({ ...prev, command: val }))}
+                        focus={true}
+                      />
+                    ) : (
+                      <Text>{editData.command}</Text>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Args Field */}
+                <Box flexDirection="column" marginBottom={1}>
+                  <Text color={selectedEditField === 1 ? 'cyan' : undefined}>
+                    {selectedEditField === 1 ? '▶ ' : '  '}Arguments (JSON array):
+                  </Text>
+                  <Box marginLeft={2}>
+                    {selectedEditField === 1 && isEditingField ? (
+                      <TextInput
+                        value={argsInput}
+                        onChange={setArgsInput}
+                        focus={true}
+                      />
+                    ) : (
+                      <Text>{JSON.stringify(editData.args || [])}</Text>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* End Marker Field */}
+                <Box flexDirection="column" marginBottom={1}>
+                  <Text color={selectedEditField === 2 ? 'cyan' : undefined}>
+                    {selectedEditField === 2 ? '▶ ' : '  '}End Marker:
+                  </Text>
+                  <Box marginLeft={2}>
+                    {selectedEditField === 2 && isEditingField ? (
+                      <TextInput
+                        value={editData.endMarker || ''}
+                        onChange={val => setEditData(prev => ({ ...prev, endMarker: val }))}
+                        focus={true}
+                      />
+                    ) : (
+                      <Text>{editData.endMarker}</Text>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Use PTY Field */}
+                <Box flexDirection="column" marginBottom={1}>
+                  <Text color={selectedEditField === 3 ? 'cyan' : undefined}>
+                    {selectedEditField === 3 ? '▶ ' : '  '}Use PTY:
+                  </Text>
+                  <Box marginLeft={2}>
+                    <Text>{editData.usePty ? 'Yes' : 'No'} {selectedEditField === 3 ? '(Press Space/Enter to toggle)' : ''}</Text>
+                  </Box>
+                </Box>
+
+                {/* Action Buttons */}
+                <Box marginTop={1} flexDirection="row" gap={2}>
+                  <Text color={selectedEditField === 4 ? 'green' : undefined}>
+                    {selectedEditField === 4 ? '▶ ' : '  '}[ Save Changes ]
+                  </Text>
+                  <Text color={selectedEditField === 5 ? 'red' : undefined}>
+                    {selectedEditField === 5 ? '▶ ' : '  '}[ Cancel ]
+                  </Text>
+                </Box>
+              </Box>
+
+              <Box marginTop={1}>
+                <Text dimColor>
+                  {isEditingField
+                    ? 'Press Enter to confirm field, Esc to cancel edit'
+                    : 'Use ↑↓ to select field, Enter to edit, Esc to cancel'}
+                </Text>
+              </Box>
+            </Box>
+          )}
         </Box>
       )}
 
