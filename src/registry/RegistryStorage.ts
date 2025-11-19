@@ -40,7 +40,12 @@ export class RegistryStorage {
   private registryPath: string;
 
   constructor(registryPath?: string) {
-    this.registryPath = registryPath || this.getDefaultRegistryPath();
+    if (registryPath) {
+      // Validate user-provided path to prevent directory traversal attacks
+      this.registryPath = this.validateRegistryPath(registryPath);
+    } else {
+      this.registryPath = this.getDefaultRegistryPath();
+    }
   }
 
   /**
@@ -48,6 +53,66 @@ export class RegistryStorage {
    */
   private getDefaultRegistryPath(): string {
     return path.join(os.homedir(), '.agent-chatter', 'agents', 'config.json');
+  }
+
+  /**
+   * 验证并规范化 registry 路径
+   *
+   * SECURITY: 防止路径遍历攻击
+   *
+   * ❌ 错误方案：使用 startsWith() 检查
+   *    - 安全漏洞：'/Users/al' 会错误允许 '/Users/alex/file.json'（路径逃逸）
+   *    - 可用性 bug：Windows 上大小写敏感，'c:\users\me' 不匹配 'C:\Users\me'
+   *
+   * ✅ 正确方案：使用 path.relative() 检查相对路径是否向上逃逸
+   */
+  private validateRegistryPath(userPath: string): string {
+    // 1. 规范化路径，解析 .. 和 .
+    const normalized = path.normalize(userPath);
+
+    // 2. 转换为绝对路径
+    const absolute = path.resolve(normalized);
+
+    // 3. 防止路径遍历攻击
+    // 确保路径在安全目录内（主目录、当前目录或系统临时目录）
+    const homeDir = os.homedir();
+    const cwd = process.cwd();
+    const tmpDir = os.tmpdir();
+
+    // Helper function to check if a path is inside a directory
+    const isInsideDirectory = (dir: string, target: string): boolean => {
+      const relativePath = path.relative(dir, target);
+      return relativePath.length > 0 &&
+             !relativePath.startsWith('..') &&
+             !relativePath.startsWith(path.sep) &&
+             !path.isAbsolute(relativePath);
+    };
+
+    // Check if path is inside one of the allowed directories
+    const isInsideHome = isInsideDirectory(homeDir, absolute);
+    const isInsideCwd = isInsideDirectory(cwd, absolute);
+    const isInsideTmp = isInsideDirectory(tmpDir, absolute);
+
+    if (!isInsideHome && !isInsideCwd && !isInsideTmp) {
+      throw new Error(
+        `Invalid registry path: ${userPath}\n` +
+        `Registry path must be within:\n` +
+        `  - Home directory: ${homeDir}\n` +
+        `  - Current directory: ${cwd}\n` +
+        `  - Temp directory: ${tmpDir}\n` +
+        `Resolved to: ${absolute}`
+      );
+    }
+
+    // 4. 确保路径以 .json 结尾
+    if (!absolute.endsWith('.json')) {
+      throw new Error(
+        `Invalid registry path: ${userPath}\n` +
+        `Registry path must end with .json`
+      );
+    }
+
+    return absolute;
   }
 
   /**

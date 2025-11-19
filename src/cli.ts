@@ -110,9 +110,9 @@ program
     .description('让多个 CLI AI agents 自动对话的命令行工具')
     .version('0.0.1')
     .option('--registry <path>', 'Custom agent registry path (default: ~/.agent-chatter/agents/config.json)')
-    .action(async () => {
+    .action(async (options) => {
         // 当没有子命令时，启动REPL模式
-        startReplInk();
+        startReplInk(options.registry);
     });
 
 program

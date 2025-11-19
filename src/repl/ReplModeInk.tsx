@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
+import TextInput from 'ink-text-input';
 import * as fs from 'fs';
 import * as path from 'path';
 import { detectAllTools } from '../utils/ToolDetector.js';
@@ -12,6 +13,8 @@ import { initializeServices, type CLIConfig } from '../utils/ConversationStarter
 import type { ConversationMessage } from '../models/ConversationMessage.js';
 import type { Team, RoleDefinition } from '../models/Team.js';
 import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
+import { AgentsMenu } from './components/AgentsMenu.js';
+import { RegistryStorage } from '../registry/RegistryStorage.js';
 
 const commands = [
     { name: '/help', desc: 'Show this help message' },
@@ -440,7 +443,7 @@ function SelectView({ title, options, selectedIndex, multiSelect, selectedItems 
 }
 
 // 应用模式
-type AppMode = 'normal' | 'conversation' | 'wizard' | 'menu' | 'form' | 'select';
+type AppMode = 'normal' | 'conversation' | 'wizard' | 'menu' | 'form' | 'select' | 'agentsMenu';
 
 // ============================================================================
 // Wizard State Types
@@ -528,7 +531,7 @@ interface FormState {
 }
 
 // 主应用组件
-function App() {
+function App({ registryPath }: { registryPath?: string } = {}) {
     const [input, setInput] = useState('');
     const [output, setOutput] = useState<React.ReactNode[]>([]);
     const [currentConfig, setCurrentConfig] = useState<CLIConfig | null>(null);
@@ -538,17 +541,23 @@ function App() {
     const [mode, setMode] = useState<AppMode>('normal');
     const [activeCoordinator, setActiveCoordinator] = useState<ConversationCoordinator | null>(null);
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
-    
+
+    // Registry path management
+    const [registry] = useState(() => {
+        const defaultPath = new RegistryStorage().getPath();
+        return registryPath || defaultPath;
+    });
+
     // Wizard state
     const [wizardState, setWizardState] = useState<WizardState | null>(null);
-    
+
     // Menu state
     const [menuState, setMenuState] = useState<MenuState | null>(null);
     const [menuItems, setMenuItems] = useState<{ label: string; value: string }[]>([]);
-    
+
     // Form state
     const [formState, setFormState] = useState<FormState | null>(null);
-    
+
     // Select state
     const [selectState, setSelectState] = useState<{
         title: string;
@@ -579,7 +588,40 @@ function App() {
         return commands.filter(cmd => cmd.name.startsWith(input));
     };
 
+    // Handle input submission (Enter key)
+    const handleInputSubmit = (value: string) => {
+        if (mode === 'conversation') {
+            handleConversationInput(value.trim());
+            setInput('');
+        } else if (mode === 'wizard') {
+            handleWizardInput(value.trim());
+            setInput('');
+        } else if (mode === 'form') {
+            handleFormSubmit();
+            setInput('');
+        } else {
+            // Normal mode - handle autocomplete
+            const matches = getMatches();
+            if (matches.length > 0 && value !== matches[selectedIndex].name) {
+                // Autocomplete
+                setInput(matches[selectedIndex].name + ' ');
+                setSelectedIndex(0);
+            } else {
+                // Execute command
+                handleCommand(value.trim());
+                setInput('');
+                setSelectedIndex(0);
+            }
+        }
+    };
+
     useInput((inputChar: string, key: any) => {
+        // CRITICAL: Prevent parent useInput from handling events in agentsMenu mode
+        // AgentsMenu component handles all input in that mode
+        if (mode === 'agentsMenu') {
+            return;
+        }
+
         // Ctrl+C 退出或取消
         if (key.ctrl && inputChar === 'c') {
             if (mode === 'conversation' && activeCoordinator) {
@@ -629,45 +671,28 @@ function App() {
 
         // 退格
         if (key.backspace || key.delete) {
+            // CRITICAL: When in modes that use TextInput (normal, conversation, wizard, form),
+            // we MUST NOT handle backspace here. ink-text-input handles it internally based on cursor position.
+            // If we handle it here, we blindly slice the end of the string, which is wrong if the cursor is in the middle.
+            if (mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') {
+                return;
+            }
+
             setInput(prev => prev.slice(0, -1));
-            if (mode === 'normal') setSelectedIndex(0);
+            // if (mode === 'normal') setSelectedIndex(0); // This logic is likely not needed for menu/select modes
             return;
         }
 
-        // 回车 - 根据模式处理
+        // 回车 - 仅在 menu/select 模式处理（TextInput 模式由 onSubmit 处理）
         if (key.return) {
-            if (mode === 'conversation') {
-                // 对话模式：处理用户消息
-                handleConversationInput(input.trim());
-                setInput('');
-            } else if (mode === 'wizard') {
-                // 向导模式：处理当前步骤的输入
-                handleWizardInput(input.trim());
-                setInput('');
-            } else if (mode === 'form') {
-                // 表单模式：提交当前字段
-                handleFormSubmit();
-                setInput('');
-            } else if (mode === 'select') {
+            if (mode === 'select') {
                 // 选择模式：确认选择
                 handleSelectConfirm();
             } else if (mode === 'menu') {
                 // 菜单模式：选择菜单项
                 handleMenuSelect();
-            } else {
-                // Normal模式：处理命令
-                const matches = getMatches();
-                if (matches.length > 0 && input !== matches[selectedIndex].name) {
-                    // 自动补全
-                    setInput(matches[selectedIndex].name + ' ');
-                    setSelectedIndex(0);
-                } else {
-                    // 执行命令
-                    handleCommand(input.trim());
-                    setInput('');
-                    setSelectedIndex(0);
-                }
             }
+            // normal/conversation/wizard/form 由 TextInput 的 onSubmit 处理
             return;
         }
 
@@ -745,10 +770,10 @@ function App() {
             }
         }
 
-        // 普通字符输入
-        if (inputChar) {
+        // 普通字符输入 - 仅在非 TextInput 模式（menu/select）中处理
+        // TextInput 模式（normal/conversation/wizard/form）由 TextInput onChange 处理
+        if (inputChar && (mode === 'menu' || mode === 'select')) {
             setInput(prev => prev + inputChar);
-            if (mode === 'normal') setSelectedIndex(0);
         }
     });
 
@@ -929,42 +954,21 @@ function App() {
     };
 
     const handleAgentsCommand = (args: string[]) => {
+        // If no arguments, enter interactive agents menu
         if (args.length === 0) {
-            setOutput(prev => [...prev,
-                <Box key={`agents-help-${getNextKey()}`} flexDirection="column" marginY={1}>
-                    <Text bold>Agents Management Commands:</Text>
-                    {agentsCommands.map(cmd => (
-                        <Box key={cmd.name} marginLeft={2}>
-                            <Text color="green">{cmd.name.padEnd(20)}</Text>
-                            <Text dimColor>{cmd.desc}</Text>
-                        </Box>
-                    ))}
-                    <Box marginTop={1}>
-                        <Text dimColor>Note: Use <Text color="cyan">agent-chatter agents &lt;subcommand&gt;</Text> from the shell for full functionality</Text>
-                    </Box>
-                </Box>
-            ]);
+            setMode('agentsMenu');
+            setInput('');
+            setSelectedIndex(0);
             return;
         }
 
         const subcommand = args[0].toLowerCase();
 
-        // 对于 agents 命令，建议用户使用 CLI，因为需要复杂的交互
+        // If user provides a subcommand, suggest using CLI
         setOutput(prev => [...prev,
             <Box key={`agents-cli-hint-${getNextKey()}`} flexDirection="column" marginY={1}>
-                <Text color="yellow">For agents management, please use the CLI:</Text>
-                <Box marginLeft={2} marginTop={1}>
-                    <Text color="cyan">agent-chatter agents {subcommand} {args.slice(1).join(' ')}</Text>
-                </Box>
-                <Box marginTop={1}>
-                    <Text dimColor>Examples:</Text>
-                    <Box marginLeft={2} flexDirection="column">
-                        <Text dimColor>• agent-chatter agents register --auto</Text>
-                        <Text dimColor>• agent-chatter agents list</Text>
-                        <Text dimColor>• agent-chatter agents verify</Text>
-                        <Text dimColor>• agent-chatter agents info claude</Text>
-                    </Box>
-                </Box>
+                <Text color="yellow">Tip: Type /agents to enter interactive menu</Text>
+                <Text dimColor>Or use the CLI: agent-chatter agents {subcommand} {args.slice(1).join(' ')}</Text>
             </Box>
         ]);
     };
@@ -1443,6 +1447,26 @@ function App() {
                 />
             )}
 
+            {/* Agents Menu */}
+            {mode === 'agentsMenu' && (
+                <AgentsMenu
+                    registryPath={registry}
+                    onClose={() => {
+                        setMode('normal');
+                        setInput('');
+                    }}
+                    onShowMessage={(message, color) => {
+                        setOutput(prev => [
+                            ...prev,
+                            <Text key={`agents-msg-${keyCounter}`} color={color || 'white'}>
+                                {message}
+                            </Text>
+                        ]);
+                        setKeyCounter(prev => prev + 1);
+                    }}
+                />
+            )}
+
             {/* 当前输入行 */}
             {(mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
                 <Box marginTop={1}>
@@ -1455,7 +1479,11 @@ function App() {
                     ) : (
                         <Text color="cyan">agent-chatter&gt; </Text>
                     )}
-                    <Text>{input}</Text>
+                    <TextInput
+                        value={input}
+                        onChange={setInput}
+                        onSubmit={handleInputSubmit}
+                    />
                 </Box>
             )}
 
@@ -1465,6 +1493,6 @@ function App() {
     );
 }
 
-export function startReplInk() {
-    render(<App />);
+export function startReplInk(registryPath?: string) {
+    render(<App registryPath={registryPath} />);
 }

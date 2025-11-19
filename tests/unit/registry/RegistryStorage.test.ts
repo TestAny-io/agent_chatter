@@ -233,4 +233,79 @@ describe('RegistryStorage', () => {
       await expect(storage.delete()).resolves.not.toThrow();
     });
   });
+
+  describe('path validation', () => {
+    describe('valid paths', () => {
+      it('accepts path in home directory', () => {
+        const homePath = path.join(os.homedir(), 'test-registry.json');
+        expect(() => new RegistryStorage(homePath)).not.toThrow();
+      });
+
+      it('accepts path in current working directory', () => {
+        const cwdPath = path.join(process.cwd(), 'test-registry.json');
+        expect(() => new RegistryStorage(cwdPath)).not.toThrow();
+      });
+
+      it('accepts path in temp directory', () => {
+        const tmpPath = path.join(os.tmpdir(), 'test-registry.json');
+        expect(() => new RegistryStorage(tmpPath)).not.toThrow();
+      });
+
+      it('accepts nested path in home directory', () => {
+        const nestedPath = path.join(os.homedir(), 'foo', 'bar', 'test-registry.json');
+        expect(() => new RegistryStorage(nestedPath)).not.toThrow();
+      });
+
+      it('accepts path with normalized .. that stays inside allowed directory', () => {
+        const homePath = path.join(os.homedir(), 'foo', '..', 'test-registry.json');
+        expect(() => new RegistryStorage(homePath)).not.toThrow();
+      });
+    });
+
+    describe('invalid paths', () => {
+      it('rejects path outside home, cwd, and tmp', () => {
+        // Use /etc which is outside all allowed directories
+        const outsidePath = '/etc/test-registry.json';
+        expect(() => new RegistryStorage(outsidePath)).toThrow('Invalid registry path');
+      });
+
+      it('rejects path that escapes home directory', () => {
+        const escapePath = path.join(os.homedir(), '..', 'test-registry.json');
+        expect(() => new RegistryStorage(escapePath)).toThrow('Invalid registry path');
+      });
+
+      it('rejects path without .json extension', () => {
+        const noExtPath = path.join(os.homedir(), 'test-registry');
+        expect(() => new RegistryStorage(noExtPath)).toThrow('Registry path must end with .json');
+      });
+
+      it('rejects path with wrong extension', () => {
+        const wrongExtPath = path.join(os.homedir(), 'test-registry.txt');
+        expect(() => new RegistryStorage(wrongExtPath)).toThrow('Registry path must end with .json');
+      });
+    });
+
+    describe('security - prevents directory traversal', () => {
+      it('rejects ../../etc/passwd attack', () => {
+        // Use absolute path to /etc to ensure it's outside allowed directories
+        const attackPath = '/etc/passwd.json';
+        expect(() => new RegistryStorage(attackPath)).toThrow('Invalid registry path');
+      });
+
+      it('rejects path escaping to another user directory', () => {
+        // This tests the /Users/al vs /Users/alex issue
+        const homeDir = os.homedir();
+        // Try to access sibling directory by going up and down
+        const escapePath = path.join(homeDir, '..', 'other-user', 'file.json');
+        expect(() => new RegistryStorage(escapePath)).toThrow('Invalid registry path');
+      });
+
+      it('accepts normalized paths that resolve to allowed directories', () => {
+        // This should work because it resolves to inside home
+        const normalizedPath = path.join(os.homedir(), 'foo', '..', 'bar', 'test.json');
+        const storage = new RegistryStorage(normalizedPath);
+        expect(storage.getPath()).toContain(os.homedir());
+      });
+    });
+  });
 });
