@@ -308,14 +308,14 @@ export class ConversationCoordinator {
 
   /**
    * 构建发送给 Agent 的完整消息
+   *
+   * Note: System instruction is NOT included here as it's now handled by
+   * the adapter layer (via --append-system-prompt for Claude, or env vars
+   * for wrapper scripts). Including it here would result in duplicate
+   * system prompts.
    */
   private buildAgentMessage(member: Member, message: string): string {
     const parts: string[] = [];
-
-    // 添加 system instruction
-    if (member.systemInstruction) {
-      parts.push(`[SYSTEM]\n${member.systemInstruction}\n`);
-    }
 
     // 添加最近的对话上下文（排除当前消息，避免重复）
     // 获取最近 N 条消息，但不包括最后一条（即当前消息）

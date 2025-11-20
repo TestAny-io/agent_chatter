@@ -119,8 +119,9 @@ describe('ConversationCoordinator', () => {
 
     const payload = (coordinator as any).buildAgentMessage(role, 'Review the patch');
 
-    expect(payload).toContain('[SYSTEM]');
-    expect(payload).toContain('You are Alpha.');
+    // System instruction is now handled by adapters (--append-system-prompt for Claude,
+    // env vars for wrappers), so [SYSTEM] and systemInstruction content are no longer
+    // in the message body
     expect(payload).toContain('[CONTEXT]');
     expect(payload).toContain('Context message');
     expect(payload).toContain('[MESSAGE]');

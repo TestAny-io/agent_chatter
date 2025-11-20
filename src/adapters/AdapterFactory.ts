@@ -30,7 +30,7 @@ export class AdapterFactory {
         return new GenericShellAdapter({
           agentType: 'google-gemini',
           command: config.command,
-          defaultArgs: config.args
+          defaultArgs: []  // No type-specific defaults; config.args will be passed via AgentManager
         });
 
       default:
@@ -38,7 +38,7 @@ export class AdapterFactory {
         return new GenericShellAdapter({
           agentType: config.type,
           command: config.command,
-          defaultArgs: config.args
+          defaultArgs: []  // No type-specific defaults; config.args will be passed via AgentManager
         });
     }
   }

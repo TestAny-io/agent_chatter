@@ -5,10 +5,13 @@
  * Suitable for custom agents, Gemini wrapper, or any other CLI tool
  */
 
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { access } from 'fs/promises';
 import { constants } from 'fs';
+import { promisify } from 'util';
 import type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult } from './IAgentAdapter.js';
+
+const execAsync = promisify(exec);
 
 export interface GenericShellAdapterConfig {
   /**
@@ -110,10 +113,6 @@ export class GenericShellAdapter implements IAgentAdapter {
 
       // For commands in PATH, try to execute with --version or --help
       // This is a basic check and may not work for all commands
-      const { exec } = require('child_process');
-      const { promisify } = require('util');
-      const execAsync = promisify(exec);
-
       try {
         await execAsync(`${this.command} --version`, { timeout: 3000 });
         return true;

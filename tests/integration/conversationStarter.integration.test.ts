@@ -152,7 +152,8 @@ describe('ConversationStarter integration', () => {
     // Now using adapters, so we check registerCalls instead of startCalls
     expect(processMock.registerCalls).toHaveLength(1);
     expect(processMock.sendCalls[0].input).toContain('Review the new feature');
-    expect(processMock.sendCalls[0].input).toContain('integration test agent');
+    // System instruction is now handled by adapters (--append-system-prompt for Claude,
+    // env vars for wrappers), so it's no longer in the message body
     expect(processMock.stopCalls).toEqual(['proc-1']);
     expect(coordinator.getStatus()).toBe('completed');
   }, 30000); // Increased timeout for real-time verification
