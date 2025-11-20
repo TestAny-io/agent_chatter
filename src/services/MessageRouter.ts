@@ -37,23 +37,21 @@ export class MessageRouter {
       isDone = true;
     }
 
-    // 如果不是 DONE，则提取 NEXT 标记中的接收者
-    if (!isDone) {
-      // 重置正则表达式的 lastIndex
-      this.NEXT_PATTERN.lastIndex = 0;
+    // 总是提取 NEXT 标记中的接收者（与 [DONE] 独立解析）
+    // 重置正则表达式的 lastIndex
+    this.NEXT_PATTERN.lastIndex = 0;
 
-      let match;
-      while ((match = this.NEXT_PATTERN.exec(message)) !== null) {
-        const addresseeList = match[1];
-        if (addresseeList && addresseeList.trim()) {
-          // 分割多个接收者（用逗号分隔）
-          const names = addresseeList
-            .split(',')
-            .map(name => name.trim())
-            .filter(name => name.length > 0);
+    let match;
+    while ((match = this.NEXT_PATTERN.exec(message)) !== null) {
+      const addresseeList = match[1];
+      if (addresseeList && addresseeList.trim()) {
+        // 分割多个接收者（用逗号分隔）
+        const names = addresseeList
+          .split(',')
+          .map(name => name.trim())
+          .filter(name => name.length > 0);
 
-          addressees.push(...names);
-        }
+        addressees.push(...names);
       }
     }
 
@@ -83,6 +81,11 @@ export class MessageRouter {
     cleaned = cleaned.replace(/^\[DONE\]\n?/gi, '');
     cleaned = cleaned.replace(/\n?\[NEXT:\s*[^\]]*\]$/gi, '');
     cleaned = cleaned.replace(/\n?\[DONE\]$/gi, '');
+
+    // 移除任何剩余的标记（包括在文本中间的）
+    // 这会移除标记本身以及前后的空格
+    cleaned = cleaned.replace(/\s*\[NEXT:\s*[^\]]*\]\s*/gi, ' ');
+    cleaned = cleaned.replace(/\s*\[DONE\]\s*/gi, ' ');
 
     return cleaned.trim();
   }

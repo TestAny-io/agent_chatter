@@ -13,13 +13,31 @@ describe('MessageRouter', () => {
     expect(result.cleanContent).toBe('Security findings\nMore text');
   });
 
-  it('ignores NEXT markers when DONE is present', () => {
+  it('parses NEXT markers independently even when DONE is present', () => {
     const router = new MessageRouter();
-    const result = router.parseMessage('[NEXT: ignored]\n[DONE]');
+    const result = router.parseMessage('[NEXT: bob]\n[DONE]');
 
-    expect(result.addressees).toEqual([]);
+    expect(result.addressees).toEqual(['bob']);
     expect(result.isDone).toBe(true);
     expect(result.cleanContent).toBe('');
+  });
+
+  it('parses both NEXT and DONE from message with content', () => {
+    const router = new MessageRouter();
+    const result = router.parseMessage('Great work! Please finish this. [NEXT: max] [DONE]');
+
+    expect(result.addressees).toEqual(['max']);
+    expect(result.isDone).toBe(true);
+    expect(result.cleanContent).toBe('Great work! Please finish this.');
+  });
+
+  it('handles multiple NEXT markers with DONE', () => {
+    const router = new MessageRouter();
+    const result = router.parseMessage('[NEXT: alice, bob] Some text [NEXT: carol] [DONE]');
+
+    expect(result.addressees).toEqual(['alice', 'bob', 'carol']);
+    expect(result.isDone).toBe(true);
+    expect(result.cleanContent).toBe('Some text');
   });
 
   it('removes markers appearing at file boundaries', () => {
