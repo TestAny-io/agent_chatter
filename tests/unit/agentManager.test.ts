@@ -3,6 +3,7 @@ import { AgentManager } from '../../src/services/AgentManager.js';
 
 const mockProcessManager = {
   startProcess: vi.fn(),
+  registerProcess: vi.fn(),
   sendAndReceive: vi.fn(),
   stopProcess: vi.fn(),
   cleanup: vi.fn()
@@ -21,10 +22,11 @@ describe('AgentManager', () => {
   it('starts agents lazily and reuses running process', async () => {
     mockAgentConfigManager.getAgentConfig.mockResolvedValue({
       id: 'cfg',
+      type: 'claude-code',
       command: 'echo',
       args: []
     });
-    mockProcessManager.startProcess.mockResolvedValue('proc-1');
+    mockProcessManager.registerProcess.mockReturnValue('proc-1');
 
     const manager = new AgentManager(
       mockProcessManager as any,
@@ -36,18 +38,19 @@ describe('AgentManager', () => {
 
     expect(processId1).toBe('proc-1');
     expect(processId2).toBe('proc-1');
-    expect(mockProcessManager.startProcess).toHaveBeenCalledTimes(1);
+    expect(mockProcessManager.registerProcess).toHaveBeenCalledTimes(1);
   });
 
   it('sendAndReceive applies endMarker and options', async () => {
     mockAgentConfigManager.getAgentConfig.mockResolvedValue({
       id: 'cfg',
+      type: 'claude-code',
       command: 'echo',
       args: [],
       endMarker: '[DONE]',
       useEndOfMessageMarker: false
     });
-    mockProcessManager.startProcess.mockResolvedValue('proc-2');
+    mockProcessManager.registerProcess.mockReturnValue('proc-2');
     mockProcessManager.sendAndReceive.mockResolvedValue('result');
 
     const manager = new AgentManager(
@@ -69,10 +72,11 @@ describe('AgentManager', () => {
   it('stopAgent stops running process and removes cache', async () => {
     mockAgentConfigManager.getAgentConfig.mockResolvedValue({
       id: 'cfg',
+      type: 'claude-code',
       command: 'echo',
       args: []
     });
-    mockProcessManager.startProcess.mockResolvedValue('proc-3');
+    mockProcessManager.registerProcess.mockReturnValue('proc-3');
 
     const manager = new AgentManager(
       mockProcessManager as any,

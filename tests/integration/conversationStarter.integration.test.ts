@@ -8,6 +8,7 @@ import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
 
 vi.mock('../../src/infrastructure/ProcessManager.js', () => {
   const startCalls: Array<{ command: string; args: string[]; env?: Record<string, string>; cwd?: string }> = [];
+  const registerCalls: Array<{ childProcess: any; config: any }> = [];
   const sendCalls: Array<{ processId: string; input: string }> = [];
   const stopCalls: string[] = [];
   let counter = 0;
@@ -15,6 +16,12 @@ vi.mock('../../src/infrastructure/ProcessManager.js', () => {
   class ProcessManager {
     async startProcess(config: { command: string; args: string[]; env?: Record<string, string>; cwd?: string }): Promise<string> {
       startCalls.push(config);
+      counter += 1;
+      return `proc-${counter}`;
+    }
+
+    registerProcess(childProcess: any, config: { command: string; args: string[]; env?: Record<string, string>; cwd?: string }): string {
+      registerCalls.push({ childProcess, config });
       counter += 1;
       return `proc-${counter}`;
     }
@@ -37,10 +44,12 @@ vi.mock('../../src/infrastructure/ProcessManager.js', () => {
     ProcessManager,
     __processMock: {
       startCalls,
+      registerCalls,
       sendCalls,
       stopCalls,
       reset() {
         startCalls.length = 0;
+        registerCalls.length = 0;
         sendCalls.length = 0;
         stopCalls.length = 0;
         counter = 0;
@@ -140,7 +149,8 @@ describe('ConversationStarter integration', () => {
     const firstSpeaker = team.members[0].id;
     await coordinator.startConversation(team, 'Review the new feature', firstSpeaker);
 
-    expect(processMock.startCalls).toHaveLength(1);
+    // Now using adapters, so we check registerCalls instead of startCalls
+    expect(processMock.registerCalls).toHaveLength(1);
     expect(processMock.sendCalls[0].input).toContain('Review the new feature');
     expect(processMock.sendCalls[0].input).toContain('integration test agent');
     expect(processMock.stopCalls).toEqual(['proc-1']);

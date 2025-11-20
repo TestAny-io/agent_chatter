@@ -11,6 +11,8 @@
 import { ProcessManager } from '../infrastructure/ProcessManager.js';
 import type { SendOptions } from '../infrastructure/ProcessManager.js';
 import { AgentConfigManager } from './AgentConfigManager.js';
+import { AdapterFactory } from '../adapters/AdapterFactory.js';
+import type { AgentSpawnConfig } from '../adapters/IAgentAdapter.js';
 
 /**
  * Agent 实例信息
@@ -19,6 +21,18 @@ interface AgentInstance {
   roleId: string;
   configId: string;
   processId: string;
+  cleanup?: () => Promise<void>;  // Adapter cleanup function
+}
+
+/**
+ * Member-specific configuration for spawning agents
+ * Extracted from Member model to avoid circular dependencies
+ */
+export interface MemberSpawnConfig {
+  workDir?: string;
+  env?: Record<string, string>;
+  additionalArgs?: string[];
+  systemInstruction?: string;
 }
 
 /**
@@ -38,8 +52,16 @@ export class AgentManager {
    *
    * 如果 Agent 已经在运行，返回现有的 process ID
    * 否则启动新的 Agent 进程
+   *
+   * @param roleId - Role/Member ID
+   * @param configId - Agent config ID
+   * @param memberConfig - Optional member-specific configuration (workDir, env, additionalArgs, systemInstruction)
    */
-  async ensureAgentStarted(roleId: string, configId: string): Promise<string> {
+  async ensureAgentStarted(
+    roleId: string,
+    configId: string,
+    memberConfig?: MemberSpawnConfig
+  ): Promise<string> {
     // 检查是否已经启动
     const existing = this.agents.get(roleId);
     if (existing) {
@@ -52,19 +74,40 @@ export class AgentManager {
       throw new Error(`Agent config ${configId} not found`);
     }
 
-    // 启动新进程
-    const processId = await this.processManager.startProcess({
+    // 创建适配器
+    const adapter = AdapterFactory.createAdapter(config);
+
+    // 准备 spawn 配置
+    const spawnConfig: AgentSpawnConfig = {
+      workDir: memberConfig?.workDir || config.cwd || process.cwd(),
+      env: {
+        ...config.env,
+        ...memberConfig?.env
+      },
+      additionalArgs: [
+        ...(config.args || []),
+        ...(memberConfig?.additionalArgs || [])
+      ],
+      systemInstruction: memberConfig?.systemInstruction
+    };
+
+    // 使用适配器启动进程
+    const spawnResult = await adapter.spawn(spawnConfig);
+
+    // 将进程注册到 ProcessManager
+    const processId = this.processManager.registerProcess(spawnResult.process, {
       command: config.command,
-      args: config.args,
+      args: config.args || [],
       env: config.env,
-      cwd: config.cwd
+      cwd: spawnConfig.workDir
     });
 
     // 记录实例
     this.agents.set(roleId, {
       roleId,
       configId,
-      processId
+      processId,
+      cleanup: spawnResult.cleanup
     });
 
     return processId;
@@ -106,6 +149,11 @@ export class AgentManager {
     const agent = this.agents.get(roleId);
     if (!agent) {
       return;  // 静默返回
+    }
+
+    // Call adapter cleanup if available
+    if (agent.cleanup) {
+      await agent.cleanup();
     }
 
     await this.processManager.stopProcess(agent.processId);

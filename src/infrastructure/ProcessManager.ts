@@ -105,6 +105,62 @@ export class ProcessManager {
   }
 
   /**
+   * Register an already-spawned process
+   * This is used when the process is spawned by an adapter
+   *
+   * @param childProcess - The spawned child process
+   * @param config - Process configuration (for reference)
+   * @returns Process ID
+   */
+  registerProcess(childProcess: ChildProcess, config: ProcessConfig): string {
+    const processId = this.generateProcessId();
+
+    const managed: ManagedProcess = {
+      id: processId,
+      process: childProcess,
+      config,
+      running: true,
+      outputBuffer: ''
+    };
+
+    // Set up event handlers
+    childProcess.on('error', () => {
+      managed.running = false;
+      this.processes.delete(processId);
+    });
+
+    childProcess.on('exit', () => {
+      managed.running = false;
+      this.outputCallbacks.delete(processId);
+    });
+
+    // Handle stdout
+    childProcess.stdout?.on('data', (data: Buffer) => {
+      const output = data.toString();
+      const callback = this.outputCallbacks.get(processId);
+      if (callback) {
+        callback(output);
+      } else {
+        managed.outputBuffer += output;
+      }
+    });
+
+    // Handle stderr
+    childProcess.stderr?.on('data', (data: Buffer) => {
+      const error = data.toString();
+      const callback = this.outputCallbacks.get(processId);
+      if (callback) {
+        callback(error);
+      } else {
+        managed.outputBuffer += error;
+      }
+    });
+
+    this.processes.set(processId, managed);
+    return processId;
+  }
+
+  /**
    * 向进程发送输入并等待响应
    */
   async sendAndReceive(

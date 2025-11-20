@@ -282,8 +282,16 @@ export class ConversationCoordinator {
       throw new Error(`Member ${member.id} has no agent config`);
     }
 
+    // 准备 member-specific spawn configuration
+    const memberConfig = {
+      workDir: member.workDir,
+      env: member.env,
+      additionalArgs: member.additionalArgs,
+      systemInstruction: member.systemInstruction
+    };
+
     // 确保 Agent 已启动
-    await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId);
+    await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId, memberConfig);
 
     // 准备完整消息（包含 system instruction 和上下文）
     const fullMessage = this.buildAgentMessage(member, message);
