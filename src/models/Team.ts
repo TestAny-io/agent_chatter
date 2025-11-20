@@ -39,6 +39,7 @@ export interface Member {
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string;
+  additionalArgs?: string[];  // 成员特定的额外 CLI 参数（用于 Adapter）
   order: number;
 }
 
@@ -69,9 +70,44 @@ export class TeamUtils {
       errors.push('成员名称不能重复');
     }
 
-    for (const role of team.members) {
-      if (role.type === 'ai' && !role.agentConfigId) {
-        errors.push(`AI 成员 "${role.name}" 缺少 agentConfigId`);
+    for (const member of team.members) {
+      // Validate AI members have agentConfigId
+      if (member.type === 'ai' && !member.agentConfigId) {
+        errors.push(`AI 成员 "${member.name}" 缺少 agentConfigId`);
+      }
+
+      // Validate member name pattern
+      if (!/^[a-zA-Z0-9_-]+$/.test(member.name)) {
+        errors.push(`成员名称 "${member.name}" 包含无效字符。仅允许字母、数字、下划线和连字符`);
+      }
+
+      // Validate additionalArgs if present
+      if (member.additionalArgs !== undefined) {
+        if (!Array.isArray(member.additionalArgs)) {
+          errors.push(`成员 "${member.name}" 的 additionalArgs 必须是数组`);
+        } else {
+          for (const arg of member.additionalArgs) {
+            if (typeof arg !== 'string') {
+              errors.push(`成员 "${member.name}" 的 additionalArgs 必须包含字符串`);
+              break;
+            }
+          }
+        }
+      }
+
+      // Validate env if present
+      if (member.env !== undefined && typeof member.env !== 'object') {
+        errors.push(`成员 "${member.name}" 的 env 必须是对象`);
+      }
+
+      // Validate workDir if present
+      if (member.workDir !== undefined && typeof member.workDir !== 'string') {
+        errors.push(`成员 "${member.name}" 的 workDir 必须是字符串`);
+      }
+
+      // Validate order
+      if (typeof member.order !== 'number' || member.order < 0) {
+        errors.push(`成员 "${member.name}" 的 order 必须是非负数`);
       }
     }
 

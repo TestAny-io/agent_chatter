@@ -81,4 +81,105 @@ describe('TeamUtils', () => {
 
     expect(result.valid).toBe(true);
   });
+
+  describe('New Member fields validation', () => {
+    it('validates additionalArgs must be an array', () => {
+      const roleA = buildRole({ additionalArgs: 'not-an-array' as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('additionalArgs 必须是数组'))).toBe(true);
+    });
+
+    it('validates additionalArgs must contain strings', () => {
+      const roleA = buildRole({ additionalArgs: ['--flag', 123 as any], order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('additionalArgs 必须包含字符串'))).toBe(true);
+    });
+
+    it('accepts valid additionalArgs', () => {
+      const roleA = buildRole({ additionalArgs: ['--flag', '--option=value'], order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('validates env must be an object', () => {
+      const roleA = buildRole({ env: 'not-an-object' as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('env 必须是对象'))).toBe(true);
+    });
+
+    it('accepts valid env', () => {
+      const roleA = buildRole({ env: { FOO: 'bar', BAZ: 'qux' }, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('validates workDir must be a string', () => {
+      const roleA = buildRole({ workDir: 123 as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('workDir 必须是字符串'))).toBe(true);
+    });
+
+    it('accepts valid workDir', () => {
+      const roleA = buildRole({ workDir: '/path/to/work', order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('validates member name pattern', () => {
+      const roleA = buildRole({ name: 'invalid name!', order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'valid-name', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('包含无效字符'))).toBe(true);
+    });
+
+    it('accepts valid member names with alphanumeric, underscore, and hyphen', () => {
+      const roleA = buildRole({ name: 'valid_name-123', order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'another-valid-name_456', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('validates order must be a non-negative number', () => {
+      const roleA = buildRole({ order: -1 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('order 必须是非负数'))).toBe(true);
+    });
+
+    it('accepts all new fields together', () => {
+      const roleA = buildRole({
+        workDir: '/custom/work/dir',
+        additionalArgs: ['--verbose', '--debug'],
+        env: { DEBUG: 'true', LOG_LEVEL: 'info' },
+        order: 0
+      });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(true);
+    });
+  });
 });
