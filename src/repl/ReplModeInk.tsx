@@ -24,6 +24,80 @@ const packageJsonPath = path.join(__dirname, '..', '..', 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
 const VERSION = packageJson.version;
 
+/**
+ * Get the team configuration directory path (.agent-chatter/team-config/)
+ */
+function getTeamConfigDir(): string {
+    return path.join(process.cwd(), '.agent-chatter', 'team-config');
+}
+
+/**
+ * Ensure the team configuration directory exists
+ */
+function ensureTeamConfigDir(): void {
+    const dir = getTeamConfigDir();
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+}
+
+/**
+ * Resolve a config filename to its full path in the team config directory
+ */
+interface ConfigResolution {
+    path: string;
+    exists: boolean;
+    warning?: string;
+    searchedPaths: string[];
+}
+
+function resolveTeamConfigPath(filename: string): ConfigResolution {
+    if (path.isAbsolute(filename)) {
+        return {
+            path: filename,
+            exists: fs.existsSync(filename),
+            searchedPaths: [filename]
+        };
+    }
+
+    const teamConfigPath = path.join(getTeamConfigDir(), filename);
+    const legacyPath = path.join(process.cwd(), filename);
+
+    if (fs.existsSync(teamConfigPath)) {
+        return {
+            path: teamConfigPath,
+            exists: true,
+            searchedPaths: [teamConfigPath]
+        };
+    }
+
+    if (fs.existsSync(legacyPath)) {
+        return {
+            path: legacyPath,
+            exists: true,
+            warning: `Configuration "${filename}" was not found in ${teamConfigPath}. Using ${legacyPath}.`,
+            searchedPaths: [teamConfigPath, legacyPath]
+        };
+    }
+
+    return {
+        path: teamConfigPath,
+        exists: false,
+        searchedPaths: [teamConfigPath, legacyPath]
+    };
+}
+
+function formatMissingConfigError(filename: string, resolution: ConfigResolution): string {
+    if (resolution.searchedPaths.length > 1) {
+        return [
+            `Error: Configuration "${filename}" was not found.`,
+            'Checked:',
+            ...resolution.searchedPaths.map(p => `  - ${p}`)
+        ].join('\n');
+    }
+    return `Error: Configuration file not found: ${resolution.searchedPaths[0]}`;
+}
+
 const commands = [
     { name: '/help', desc: 'Show this help message' },
     { name: '/status', desc: 'Check installed AI CLI tools' },
@@ -154,16 +228,27 @@ function StatusDisplay({ tools }: { tools: any[] }) {
 
 // 配置文件列表
 function ConfigList({ currentConfigPath }: { currentConfigPath: string | null }) {
-    const cwd = process.cwd();
-    const files = fs.readdirSync(cwd).filter(f =>
+    const configDir = getTeamConfigDir();
+
+    // Check if directory exists, if not return empty message
+    if (!fs.existsSync(configDir)) {
+        return (
+            <Box flexDirection="column" marginY={1}>
+                <Text color="yellow">No configuration files found</Text>
+                <Text dimColor>Use /team create to create a team configuration</Text>
+            </Box>
+        );
+    }
+
+    const files = fs.readdirSync(configDir).filter(f =>
         f.endsWith('-config.json') || f === 'agent-chatter-config.json'
     );
 
     if (files.length === 0) {
         return (
             <Box flexDirection="column" marginY={1}>
-                <Text color="yellow">No configuration files found in current directory</Text>
-                <Text dimColor>Use agent-chatter config-example to create one</Text>
+                <Text color="yellow">No configuration files found</Text>
+                <Text dimColor>Use /team create to create a team configuration</Text>
             </Box>
         );
     }
@@ -1145,13 +1230,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     const startTeamEditMenu = (filename: string) => {
         try {
-            const fullPath = path.resolve(filename);
-            if (!fs.existsSync(fullPath)) {
-                setOutput(prev => [...prev, <Text key={`edit-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filename}</Text>]);
+            const resolution = resolveTeamConfigPath(filename);
+            if (!resolution.exists) {
+                setOutput(prev => [...prev, <Text key={`edit-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>]);
                 return;
             }
+            if (resolution.warning) {
+                setOutput(prev => [...prev, <Text key={`edit-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+            }
 
-            const content = fs.readFileSync(fullPath, 'utf-8');
+            const content = fs.readFileSync(resolution.path, 'utf-8');
             const config = JSON.parse(content);
 
             setOutput(prev => [...prev, <Text key={`edit-start-${getNextKey()}`} color="cyan">Opening team editor for: {filename}</Text>]);
@@ -1187,13 +1275,20 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     };
 
     const listTeamConfigurations = () => {
-        const cwd = process.cwd();
-        const files = fs.readdirSync(cwd).filter(f =>
+        const configDir = getTeamConfigDir();
+
+        // Check if directory exists, if not create it
+        if (!fs.existsSync(configDir)) {
+            setOutput(prev => [...prev, <Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found</Text>]);
+            return;
+        }
+
+        const files = fs.readdirSync(configDir).filter(f =>
             f.endsWith('-config.json') || f === 'agent-chatter-config.json'
         );
 
         if (files.length === 0) {
-            setOutput(prev => [...prev, <Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found in current directory</Text>]);
+            setOutput(prev => [...prev, <Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found</Text>]);
             return;
         }
 
@@ -1202,10 +1297,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 <Text bold>Available Team Configurations:</Text>
                 {files.map(file => {
                     try {
-                        const content = fs.readFileSync(path.resolve(file), 'utf-8');
+                        const fullPath = path.join(configDir, file);
+                        const content = fs.readFileSync(fullPath, 'utf-8');
                         const config = JSON.parse(content);
                         const isActive = currentConfigPath && file === path.basename(currentConfigPath);
-                        
+
                         return (
                             <Box key={file} flexDirection="column" marginLeft={2} marginTop={1}>
                                 <Box>
@@ -1234,13 +1330,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     const showTeamConfiguration = (filename: string) => {
         try {
-            const fullPath = path.resolve(filename);
-            if (!fs.existsSync(fullPath)) {
-                setOutput(prev => [...prev, <Text key={`show-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filename}</Text>]);
+            const resolution = resolveTeamConfigPath(filename);
+            if (!resolution.exists) {
+                setOutput(prev => [...prev, <Text key={`show-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>]);
                 return;
             }
+            if (resolution.warning) {
+                setOutput(prev => [...prev, <Text key={`show-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+            }
 
-            const content = fs.readFileSync(fullPath, 'utf-8');
+            const content = fs.readFileSync(resolution.path, 'utf-8');
             const config = JSON.parse(content);
 
             setOutput(prev => [...prev,
@@ -1307,14 +1406,17 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             return;
         }
 
-        const fullPath = path.resolve(filename);
-        if (!fs.existsSync(fullPath)) {
-            setOutput(prev => [...prev, <Text key={`delete-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filename}</Text>]);
+        const resolution = resolveTeamConfigPath(filename);
+        if (!resolution.exists) {
+            setOutput(prev => [...prev, <Text key={`delete-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>]);
             return;
+        }
+        if (resolution.warning) {
+            setOutput(prev => [...prev, <Text key={`delete-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
         }
 
         // 显示确认对话框
-        setOutput(prev => [...prev, 
+        setOutput(prev => [...prev,
             <Box key={`delete-confirm-${getNextKey()}`} flexDirection="column" marginY={1}>
                 <Text color="yellow">⚠  Delete Team Configuration</Text>
                 <Text dimColor>{'─'.repeat(60)}</Text>
@@ -1330,7 +1432,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             message: `Delete ${filename}?`,
             onConfirm: () => {
                 try {
-                    fs.unlinkSync(fullPath);
+                    fs.unlinkSync(resolution.path);
                     setOutput(prev => [...prev, <Text key={`delete-success-${getNextKey()}`} color="green">✓ Team configuration deleted: {filename}</Text>]);
                 } catch (error) {
                     setOutput(prev => [...prev, <Text key={`delete-err-${getNextKey()}`} color="red">Error: Failed to delete configuration: {String(error)}</Text>]);
@@ -1344,13 +1446,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     const loadConfig = (filePath: string) => {
         try {
-            const fullPath = path.resolve(filePath);
-            if (!fs.existsSync(fullPath)) {
-                setOutput(prev => [...prev, <Text key={`config-notfound-${getNextKey()}`} color="red">Error: Configuration file not found: {filePath}</Text>]);
+            const resolution = resolveTeamConfigPath(filePath);
+            if (!resolution.exists) {
+                setOutput(prev => [...prev, <Text key={`config-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filePath, resolution)}</Text>]);
                 return;
             }
+            if (resolution.warning) {
+                setOutput(prev => [...prev, <Text key={`config-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+            }
 
-            const content = fs.readFileSync(fullPath, 'utf-8');
+            const content = fs.readFileSync(resolution.path, 'utf-8');
             const config = JSON.parse(content);
             setCurrentConfig(config);
             setCurrentConfigPath(filePath);
