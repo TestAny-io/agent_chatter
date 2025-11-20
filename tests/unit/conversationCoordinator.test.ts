@@ -147,4 +147,47 @@ describe('ConversationCoordinator', () => {
     const helper = (coordinator as any).normalizeIdentifier('A l-p h a');
     expect(helper).toBe('alpha');
   });
+
+  it('terminates conversation immediately when [DONE] present, ignoring [NEXT]', async () => {
+    // Regression test: when AI returns "[NEXT: bob] [DONE]",
+    // MessageRouter parses both, but ConversationCoordinator should terminate immediately
+    const responses = {
+      'ai-alpha': ['Alpha response [NEXT: ai-bravo] [DONE]']
+    };
+    const stub = new StubAgentManager(responses);
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const receivedMessages: ConversationMessage[] = [];
+
+    const coordinator = new ConversationCoordinator(agentManager, router, {
+      onMessage: (msg) => receivedMessages.push(msg)
+    });
+
+    const team = buildTeam([
+      createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+      createMember({ id: 'ai-bravo', name: 'bravo', order: 1, type: 'ai', agentConfigId: 'config-bravo' })
+    ]);
+
+    await coordinator.startConversation(team, 'Start task', 'ai-alpha');
+
+    // Verify conversation terminated
+    expect(coordinator.getStatus()).toBe('completed');
+
+    // Verify no waiting for next agent
+    expect(coordinator.getWaitingForRoleId()).toBeNull();
+
+    // Verify ai-bravo was never started (only ai-alpha should have been called)
+    expect(stub.startCalls.length).toBe(1);
+    expect(stub.startCalls[0].roleId).toBe('ai-alpha');
+
+    // Verify only one agent sent message (ai-alpha)
+    expect(stub.sendCalls.length).toBe(1);
+    expect(stub.sendCalls[0].roleId).toBe('ai-alpha');
+
+    // Verify the [NEXT] addressee was parsed but ignored
+    const alphaMessage = receivedMessages.find(msg => msg.speaker.roleId === 'ai-alpha');
+    expect(alphaMessage).toBeDefined();
+    expect(alphaMessage!.routing?.isDone).toBe(true);
+    expect(alphaMessage!.routing?.rawNextMarkers).toEqual(['ai-bravo']);
+  });
 });
