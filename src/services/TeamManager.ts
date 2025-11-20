@@ -7,7 +7,7 @@
 
 import type { IStorageService } from '../infrastructure/StorageService.js';
 import { StorageKeys } from '../infrastructure/StorageService.js';
-import type { Team, Role, RoleDefinition } from '../models/Team.js';
+import type { Team, Member, RoleDefinition } from '../models/Team.js';
 import { TeamUtils } from '../models/Team.js';
 
 export interface CreateTeamInput {
@@ -16,7 +16,7 @@ export interface CreateTeamInput {
   displayName?: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
-  members: Array<Omit<Role, 'id'>>;
+  members: Array<Omit<Member, 'id'>>;
 }
 
 export interface UpdateTeamInput {
@@ -25,7 +25,7 @@ export interface UpdateTeamInput {
   displayName?: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
-  members?: Array<Partial<Role> & { id?: string }>;
+  members?: Array<Partial<Member> & { id?: string }>;
   replaceMembers?: boolean;
 }
 
@@ -39,8 +39,8 @@ export class TeamManager {
    * 创建新团队
    */
   async createTeam(input: CreateTeamInput): Promise<Team> {
-    // 生成角色 ID
-    const membersWithIds = input.members.map(role => TeamUtils.createRole(role));
+    // 生成成员 ID
+    const membersWithIds = input.members.map(member => TeamUtils.createMember(member));
 
     // 创建团队对象
     const team = TeamUtils.createTeam(
@@ -92,60 +92,60 @@ export class TeamManager {
 
     const existingTeam = teams[index];
 
-    // 处理角色更新
+    // 处理成员更新
     let updatedMembers = existingTeam.members;
     if (input.members) {
       if (input.replaceMembers) {
-        // 完全替换模式：直接使用提供的角色列表
-        updatedMembers = input.members.map(roleInput => {
-          if (roleInput.id) {
-            // 如果提供了ID，查找现有角色以保留ID
-            const existingRole = existingTeam.members.find(r => r.id === roleInput.id);
-            if (existingRole) {
+        // 完全替换模式：直接使用提供的成员列表
+        updatedMembers = input.members.map(memberInput => {
+          if (memberInput.id) {
+            // 如果提供了ID，查找现有成员以保留ID
+            const existingMember = existingTeam.members.find(m => m.id === memberInput.id);
+            if (existingMember) {
               // 合并更新
               return {
-                ...existingRole,
-                ...roleInput,
-                id: existingRole.id
-              } as Role;
+                ...existingMember,
+                ...memberInput,
+                id: existingMember.id
+              } as Member;
             }
-            // ID存在但找不到，视为新角色（保留ID）
-            return roleInput as Role;
+            // ID存在但找不到，视为新成员（保留ID）
+            return memberInput as Member;
           }
-          // 没有ID，创建新角色
-          return TeamUtils.createRole(roleInput as Omit<Role, 'id'>);
+          // 没有ID，创建新成员
+          return TeamUtils.createMember(memberInput as Omit<Member, 'id'>);
         });
       } else {
-        // 合并模式（默认）：保留现有角色，只更新提供的角色
-        const roleMap = new Map<string, Role>();
+        // 合并模式（默认）：保留现有成员，只更新提供的成员
+        const memberMap = new Map<string, Member>();
 
-        // 首先，添加所有现有角色到Map
-        for (const role of existingTeam.members) {
-          roleMap.set(role.id, role);
+        // 首先，添加所有现有成员到Map
+        for (const member of existingTeam.members) {
+          memberMap.set(member.id, member);
         }
 
-        // 然后，处理input中的角色更新
-        for (const roleInput of input.members) {
-          if (roleInput.id && roleMap.has(roleInput.id)) {
-            // 如果提供了ID且存在，合并更新现有角色
-            const existingRole = roleMap.get(roleInput.id)!;
-            roleMap.set(roleInput.id, {
-              ...existingRole,
-              ...roleInput,
-              id: existingRole.id  // 确保ID不变
-            } as Role);
-          } else if (roleInput.id) {
-            // 提供了ID但不存在，添加为新角色（保留提供的ID）
-            roleMap.set(roleInput.id, roleInput as Role);
+        // 然后，处理input中的成员更新
+        for (const memberInput of input.members) {
+          if (memberInput.id && memberMap.has(memberInput.id)) {
+            // 如果提供了ID且存在，合并更新现有成员
+            const existingMember = memberMap.get(memberInput.id)!;
+            memberMap.set(memberInput.id, {
+              ...existingMember,
+              ...memberInput,
+              id: existingMember.id  // 确保ID不变
+            } as Member);
+          } else if (memberInput.id) {
+            // 提供了ID但不存在，添加为新成员（保留提供的ID）
+            memberMap.set(memberInput.id, memberInput as Member);
           } else {
-            // 没有ID，创建新角色（生成新ID）
-            const newRole = TeamUtils.createRole(roleInput as Omit<Role, 'id'>);
-            roleMap.set(newRole.id, newRole);
+            // 没有ID，创建新成员（生成新ID）
+            const newMember = TeamUtils.createMember(memberInput as Omit<Member, 'id'>);
+            memberMap.set(newMember.id, newMember);
           }
         }
 
         // 转换回数组
-        updatedMembers = Array.from(roleMap.values());
+        updatedMembers = Array.from(memberMap.values());
       }
     }
 
@@ -194,15 +194,20 @@ export class TeamManager {
   }
 
   /**
-   * 根据 ID 获取角色
+   * 根据 ID 获取成员
    */
-  async getRoleById(teamId: string, roleId: string): Promise<Role | undefined> {
+  async getMemberById(teamId: string, memberId: string): Promise<Member | undefined> {
     const team = await this.getTeam(teamId);
     if (!team) {
       return undefined;
     }
 
-    return team.members.find(r => r.id === roleId);
+    return team.members.find(m => m.id === memberId);
+  }
+
+  // Deprecated: Use getMemberById instead
+  async getRoleById(teamId: string, memberId: string): Promise<Member | undefined> {
+    return this.getMemberById(teamId, memberId);
   }
 
   /**

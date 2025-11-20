@@ -8,7 +8,7 @@
  * 4. 协调 Agent 之间的交互
  */
 
-import type { Team, Role } from '../models/Team.js';
+import type { Team, Member } from '../models/Team.js';
 import type { ConversationMessage, MessageDelivery } from '../models/ConversationMessage.js';
 import { MessageUtils } from '../models/ConversationMessage.js';
 import type { ConversationSession } from '../models/ConversationSession.js';
@@ -79,16 +79,16 @@ export class ConversationCoordinator {
     this.notifyMessage(initialSystemMessage);
 
     // 发送初始消息给第一个发言者
-    const firstRole = team.members.find(r => r.id === firstSpeakerId);
-    if (!firstRole) {
-      throw new Error(`Role ${firstSpeakerId} not found in team`);
+    const firstMember = team.members.find(m => m.id === firstSpeakerId);
+    if (!firstMember) {
+      throw new Error(`Member ${firstSpeakerId} not found in team`);
     }
 
-    if (firstRole.type === 'ai') {
-      await this.sendToAgent(firstRole, initialMessage);
+    if (firstMember.type === 'ai') {
+      await this.sendToAgent(firstMember, initialMessage);
     } else {
       // 如果第一个发言者是人类，暂停并等待输入
-      this.waitingForRoleId = firstRole.id;
+      this.waitingForRoleId = firstMember.id;
       this.status = 'paused';
       this.notifyStatusChange();
     }
@@ -97,14 +97,14 @@ export class ConversationCoordinator {
   /**
    * 处理 Agent 响应
    */
-  async onAgentResponse(roleId: string, rawResponse: string): Promise<void> {
+  async onAgentResponse(memberId: string, rawResponse: string): Promise<void> {
     if (!this.session || !this.team) {
       throw new Error('No active conversation');
     }
 
-    const role = this.team.members.find(r => r.id === roleId);
-    if (!role) {
-      throw new Error(`Role ${roleId} not found`);
+    const member = this.team.members.find(m => m.id === memberId);
+    if (!member) {
+      throw new Error(`Member ${memberId} not found`);
     }
 
     // 解析消息
@@ -112,10 +112,10 @@ export class ConversationCoordinator {
 
     // 创建 ConversationMessage
     const message: ConversationMessage = MessageUtils.createMessage(
-      role.id,
-      role.name,
-      role.displayName,
-      role.type,
+      member.id,
+      member.name,
+      member.displayName,
+      member.type,
       parsed.cleanContent,
       {
         rawNextMarkers: parsed.addressees,
@@ -141,14 +141,14 @@ export class ConversationCoordinator {
   /**
    * 注入人类消息
    */
-  async injectMessage(roleId: string, content: string): Promise<void> {
+  async injectMessage(memberId: string, content: string): Promise<void> {
     if (!this.session || !this.team) {
       throw new Error('No active conversation');
     }
 
-    const role = this.team.members.find(r => r.id === roleId);
-    if (!role) {
-      throw new Error(`Role ${roleId} not found`);
+    const member = this.team.members.find(m => m.id === memberId);
+    if (!member) {
+      throw new Error(`Member ${memberId} not found`);
     }
 
     // 清除等待状态
@@ -159,10 +159,10 @@ export class ConversationCoordinator {
 
     // 创建消息
     const message: ConversationMessage = MessageUtils.createMessage(
-      role.id,
-      role.name,
-      role.displayName,
-      role.type,
+      member.id,
+      member.name,
+      member.displayName,
+      member.type,
       parsed.cleanContent,
       {
         rawNextMarkers: parsed.addressees,
@@ -200,30 +200,30 @@ export class ConversationCoordinator {
     }
 
     const addressees = message.routing?.rawNextMarkers || [];
-    let resolvedRoles: Role[] = [];
+    let resolvedMembers: Member[] = [];
 
     if (addressees.length === 0) {
-      // 没有指定接收者，使用轮询机制选择下一个角色
-      const currentRole = this.team.members.find(r => r.id === message.speaker.roleId);
-      if (currentRole) {
-        // 根据 order 字段找到下一个角色
-        const sortedRoles = [...this.team.members].sort((a, b) => a.order - b.order);
-        const currentIndex = sortedRoles.findIndex(r => r.id === currentRole.id);
-        const nextIndex = (currentIndex + 1) % sortedRoles.length;
-        resolvedRoles = [sortedRoles[nextIndex]];
+      // 没有指定接收者，使用轮询机制选择下一个成员
+      const currentMember = this.team.members.find(m => m.id === message.speaker.roleId);
+      if (currentMember) {
+        // 根据 order 字段找到下一个成员
+        const sortedMembers = [...this.team.members].sort((a, b) => a.order - b.order);
+        const currentIndex = sortedMembers.findIndex(m => m.id === currentMember.id);
+        const nextIndex = (currentIndex + 1) % sortedMembers.length;
+        resolvedMembers = [sortedMembers[nextIndex]];
       } else {
-        // 找不到当前角色，暂停对话
+        // 找不到当前成员，暂停对话
         this.status = 'paused';
         this.notifyStatusChange();
         return;
       }
     } else {
       // 解析接收者
-      resolvedRoles = this.resolveAddressees(addressees);
+      resolvedMembers = this.resolveAddressees(addressees);
     }
 
     // 检查是否有无法解析的地址
-    if (resolvedRoles.length === 0) {
+    if (resolvedMembers.length === 0) {
       // 所有地址都无法解析，暂停对话并通知
       this.status = 'paused';
       this.notifyStatusChange();
@@ -236,22 +236,22 @@ export class ConversationCoordinator {
 
     // 更新消息的 resolvedAddressees
     if (message.routing) {
-      message.routing.resolvedAddressees = resolvedRoles.map(role => ({
-        identifier: role.name,
-        roleId: role.id,
-        roleName: role.name
+      message.routing.resolvedAddressees = resolvedMembers.map(member => ({
+        identifier: member.name,
+        roleId: member.id,
+        roleName: member.name
       }));
     }
 
     // 发送给所有接收者
-    for (const role of resolvedRoles) {
-      const delivery = this.prepareDelivery(role, message.content);
+    for (const member of resolvedMembers) {
+      const delivery = this.prepareDelivery(member, message.content);
 
-      if (role.type === 'ai') {
-        await this.sendToAgent(role, delivery.content);
+      if (member.type === 'ai') {
+        await this.sendToAgent(member, delivery.content);
       } else {
         // 人类接收者，暂停对话
-        this.waitingForRoleId = role.id;
+        this.waitingForRoleId = member.id;
         this.status = 'paused';
         this.notifyStatusChange();
       }
@@ -261,7 +261,7 @@ export class ConversationCoordinator {
   /**
    * 准备消息交付（添加上下文）
    */
-  private prepareDelivery(recipient: Role, content: string): MessageDelivery {
+  private prepareDelivery(recipient: Member, content: string): MessageDelivery {
     const contextMessages = this.getRecentMessages(this.contextMessageCount);
 
     return {
@@ -277,36 +277,36 @@ export class ConversationCoordinator {
   /**
    * 发送消息给 Agent
    */
-  private async sendToAgent(role: Role, message: string): Promise<void> {
-    if (!role.agentConfigId) {
-      throw new Error(`Role ${role.id} has no agent config`);
+  private async sendToAgent(member: Member, message: string): Promise<void> {
+    if (!member.agentConfigId) {
+      throw new Error(`Member ${member.id} has no agent config`);
     }
 
     // 确保 Agent 已启动
-    await this.agentManager.ensureAgentStarted(role.id, role.agentConfigId);
+    await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId);
 
     // 准备完整消息（包含 system instruction 和上下文）
-    const fullMessage = this.buildAgentMessage(role, message);
+    const fullMessage = this.buildAgentMessage(member, message);
 
     // 发送并等待响应
-    const response = await this.agentManager.sendAndReceive(role.id, fullMessage);
+    const response = await this.agentManager.sendAndReceive(member.id, fullMessage);
 
     // 停止 Agent（因为我们关闭了 stdin，进程会退出，下次需要重新启动）
-    await this.agentManager.stopAgent(role.id);
+    await this.agentManager.stopAgent(member.id);
 
     // 处理响应
-    await this.onAgentResponse(role.id, response);
+    await this.onAgentResponse(member.id, response);
   }
 
   /**
    * 构建发送给 Agent 的完整消息
    */
-  private buildAgentMessage(role: Role, message: string): string {
+  private buildAgentMessage(member: Member, message: string): string {
     const parts: string[] = [];
 
     // 添加 system instruction
-    if (role.systemInstruction) {
-      parts.push(`[SYSTEM]\n${role.systemInstruction}\n`);
+    if (member.systemInstruction) {
+      parts.push(`[SYSTEM]\n${member.systemInstruction}\n`);
     }
 
     // 添加最近的对话上下文（排除当前消息，避免重复）
@@ -330,45 +330,45 @@ export class ConversationCoordinator {
   }
 
   /**
-   * 解析接收者标识为 Role 对象
+   * 解析接收者标识为 Member 对象
    *
    * 实现模糊匹配：
-   * - 支持 role.id 精确匹配
-   * - 支持 role.name 和 role.displayName 模糊匹配
+   * - 支持 member.id 精确匹配
+   * - 支持 member.name 和 member.displayName 模糊匹配
    * - 大小写不敏感
    * - 忽略空格和连字符
    */
-  private resolveAddressees(addressees: string[]): Role[] {
+  private resolveAddressees(addressees: string[]): Member[] {
     if (!this.team) {
       return [];
     }
 
-    const roles: Role[] = [];
+    const members: Member[] = [];
 
     for (const addressee of addressees) {
       // 规范化：转小写，移除空格和连字符
       const normalizedAddressee = this.normalizeIdentifier(addressee);
 
-      // 尝试按 ID、名称或标题匹配
-      const role = this.team.members.find(r => {
-        // 1. 先尝试精确匹配 role.id（规范化后）
-        const normalizedId = this.normalizeIdentifier(r.id);
+      // 尝试按 ID、名称或显示名称匹配
+      const member = this.team.members.find(m => {
+        // 1. 先尝试精确匹配 member.id（规范化后）
+        const normalizedId = this.normalizeIdentifier(m.id);
         if (normalizedId === normalizedAddressee) {
           return true;
         }
 
-        // 2. 再尝试匹配 name 和 title（模糊匹配）
-        const normalizedName = this.normalizeIdentifier(r.name);
-        const normalizedTitle = this.normalizeIdentifier(r.displayName);
-        return normalizedName === normalizedAddressee || normalizedTitle === normalizedAddressee;
+        // 2. 再尝试匹配 name 和 displayName（模糊匹配）
+        const normalizedName = this.normalizeIdentifier(m.name);
+        const normalizedDisplayName = this.normalizeIdentifier(m.displayName);
+        return normalizedName === normalizedAddressee || normalizedDisplayName === normalizedAddressee;
       });
 
-      if (role) {
-        roles.push(role);
+      if (member) {
+        members.push(member);
       }
     }
 
-    return roles;
+    return members;
   }
 
   /**

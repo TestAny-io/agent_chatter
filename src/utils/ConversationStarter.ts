@@ -12,7 +12,7 @@ import { MessageRouter } from '../services/MessageRouter.js';
 import { AgentConfigManager } from '../services/AgentConfigManager.js';
 import { TeamManager } from '../services/TeamManager.js';
 import { MockStorageService } from '../infrastructure/StorageService.js';
-import type { Team, Role } from '../models/Team.js';
+import type { Team, Member } from '../models/Team.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
 import { AgentRegistry, type VerificationResult } from '../registry/AgentRegistry.js';
 import type { AgentDefinition as RegistryAgentDefinition } from '../registry/RegistryStorage.js';
@@ -347,7 +347,7 @@ export async function initializeServices(
   // Schema 1.0: Team config provides complete definitions (backward compatibility)
   const registryPath = options?.registryPath;
   const agentDefinitionMap = await loadAndMergeAgents(config.agents, registryPath);
-  const teamMembers: Array<Omit<Role, 'id'>> = [];
+  const teamMembers: Array<Omit<Member, 'id'>> = [];
 
   // Schema 1.1+: Team-level workDir for all members (unless member overrides)
   const teamWorkDir = config.team.workDir;

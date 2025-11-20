@@ -9,7 +9,7 @@ export interface Team {
   description: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
-  members: Role[];
+  members: Member[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -21,14 +21,15 @@ export interface RoleDefinition {
 }
 
 /**
- * Role - 团队成员（沿用原有命名以兼容旧代码）
+ * Member - 团队成员
+ * 每个成员通过 role 字段引用 RoleDefinition
  */
-export interface Role {
+export interface Member {
   id: string;
   displayName: string;
   name: string;
   displayRole?: string;
-  role: string;
+  role: string;  // 引用 RoleDefinition 的 name
   type: 'ai' | 'human';
   agentType?: string;
   agentConfigId?: string;
@@ -83,7 +84,7 @@ export class TeamUtils {
   static createTeam(
     name: string,
     description: string,
-    members: Role[] = [],
+    members: Member[] = [],
     instructionFile?: string,
     roleDefinitions?: RoleDefinition[]
   ): Team {
@@ -100,10 +101,15 @@ export class TeamUtils {
     };
   }
 
-  static createRole(input: Omit<Role, 'id'>): Role {
+  static createMember(input: Omit<Member, 'id'>): Member {
     return {
       id: this.generateId(),
       ...input
     };
+  }
+
+  // Deprecated: Use createMember instead
+  static createRole(input: Omit<Member, 'id'>): Member {
+    return this.createMember(input);
   }
 }
