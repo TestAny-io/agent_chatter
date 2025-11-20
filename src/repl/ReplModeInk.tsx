@@ -16,6 +16,13 @@ import type { Team, RoleDefinition } from '../models/Team.js';
 import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
 import { AgentsMenu } from './components/AgentsMenu.js';
 import { RegistryStorage } from '../registry/RegistryStorage.js';
+import {
+    getTeamConfigDir,
+    ensureTeamConfigDir,
+    resolveTeamConfigPath,
+    formatMissingConfigError,
+    type ConfigResolution
+} from '../utils/TeamConfigPaths.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -23,80 +30,6 @@ const __dirname = path.dirname(__filename);
 const packageJsonPath = path.join(__dirname, '..', '..', 'package.json');
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
 const VERSION = packageJson.version;
-
-/**
- * Get the team configuration directory path (.agent-chatter/team-config/)
- */
-function getTeamConfigDir(): string {
-    return path.join(process.cwd(), '.agent-chatter', 'team-config');
-}
-
-/**
- * Ensure the team configuration directory exists
- */
-function ensureTeamConfigDir(): void {
-    const dir = getTeamConfigDir();
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-    }
-}
-
-/**
- * Resolve a config filename to its full path in the team config directory
- */
-interface ConfigResolution {
-    path: string;
-    exists: boolean;
-    warning?: string;
-    searchedPaths: string[];
-}
-
-function resolveTeamConfigPath(filename: string): ConfigResolution {
-    if (path.isAbsolute(filename)) {
-        return {
-            path: filename,
-            exists: fs.existsSync(filename),
-            searchedPaths: [filename]
-        };
-    }
-
-    const teamConfigPath = path.join(getTeamConfigDir(), filename);
-    const legacyPath = path.join(process.cwd(), filename);
-
-    if (fs.existsSync(teamConfigPath)) {
-        return {
-            path: teamConfigPath,
-            exists: true,
-            searchedPaths: [teamConfigPath]
-        };
-    }
-
-    if (fs.existsSync(legacyPath)) {
-        return {
-            path: legacyPath,
-            exists: true,
-            warning: `Configuration "${filename}" was not found in ${teamConfigPath}. Using ${legacyPath}.`,
-            searchedPaths: [teamConfigPath, legacyPath]
-        };
-    }
-
-    return {
-        path: teamConfigPath,
-        exists: false,
-        searchedPaths: [teamConfigPath, legacyPath]
-    };
-}
-
-function formatMissingConfigError(filename: string, resolution: ConfigResolution): string {
-    if (resolution.searchedPaths.length > 1) {
-        return [
-            `Error: Configuration "${filename}" was not found.`,
-            'Checked:',
-            ...resolution.searchedPaths.map(p => `  - ${p}`)
-        ].join('\n');
-    }
-    return `Error: Configuration file not found: ${resolution.searchedPaths[0]}`;
-}
 
 const commands = [
     { name: '/help', desc: 'Show this help message' },

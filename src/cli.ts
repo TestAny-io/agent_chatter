@@ -19,6 +19,12 @@ import {
   type CLIConfig,
 } from './utils/ConversationStarter.js';
 import { createAgentsCommand } from './commands/AgentsCommand.js';
+import {
+  getTeamConfigDir,
+  ensureTeamConfigDir,
+  resolveTeamConfigPath,
+  formatMissingConfigError
+} from './utils/TeamConfigPaths.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -105,34 +111,18 @@ function loadConfig(configPath: string): CLIConfig {
         }
     };
 
-    if (path.isAbsolute(configPath)) {
-        if (!fs.existsSync(configPath)) {
-            console.error(colorize(`Error: Config file not found: ${configPath}`, 'red'));
-            process.exit(1);
-        }
-        return readConfig(configPath);
+    const resolution = resolveTeamConfigPath(configPath);
+
+    if (!resolution.exists) {
+        console.error(colorize(formatMissingConfigError(configPath, resolution), 'red'));
+        process.exit(1);
     }
 
-    const teamConfigPath = path.join(process.cwd(), '.agent-chatter', 'team-config', configPath);
-    const legacyPath = path.join(process.cwd(), configPath);
-
-    if (fs.existsSync(teamConfigPath)) {
-        return readConfig(teamConfigPath);
+    if (resolution.warning) {
+        console.warn(colorize(`Warning: ${resolution.warning}`, 'yellow'));
     }
 
-    if (fs.existsSync(legacyPath)) {
-        console.warn(colorize(
-            `Warning: ${configPath} was not found under ${teamConfigPath}. Using legacy path ${legacyPath}.`,
-            'yellow'
-        ));
-        return readConfig(legacyPath);
-    }
-
-    console.error(colorize(
-        `Error: Config file not found.\nChecked:\n  - ${teamConfigPath}\n  - ${legacyPath}`,
-        'red'
-    ));
-    process.exit(1);
+    return readConfig(resolution.path);
 }
 
 /**
@@ -247,15 +237,12 @@ program
         };
 
         // Ensure team config directory exists
-        const teamConfigDir = path.join(process.cwd(), '.agent-chatter', 'team-config');
-        if (!fs.existsSync(teamConfigDir)) {
-            fs.mkdirSync(teamConfigDir, { recursive: true });
-        }
+        ensureTeamConfigDir();
 
         // Resolve output path relative to team config directory
         const outputPath = path.isAbsolute(options.output)
             ? options.output
-            : path.join(teamConfigDir, options.output);
+            : path.join(getTeamConfigDir(), options.output);
 
         fs.writeFileSync(outputPath, JSON.stringify(exampleConfig, null, 2));
         console.log(colorize(`示例配置文件已生成: ${outputPath}`, 'green'));
