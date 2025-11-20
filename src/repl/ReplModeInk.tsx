@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import * as fs from 'fs';
+import { watch } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { detectAllTools } from '../utils/ToolDetector.js';
@@ -21,7 +22,9 @@ import {
     ensureTeamConfigDir,
     resolveTeamConfigPath,
     formatMissingConfigError,
-    type ConfigResolution
+    discoverTeamConfigs,
+    type ConfigResolution,
+    type TeamConfigInfo
 } from '../utils/TeamConfigPaths.js';
 
 // Read version from package.json
@@ -35,9 +38,8 @@ const commands = [
     { name: '/help', desc: 'Show this help message' },
     { name: '/status', desc: 'Check installed AI CLI tools' },
     { name: '/agents', desc: 'Manage registered AI agents' },
-    { name: '/config', desc: 'Load a configuration file' },
     { name: '/start', desc: 'Start a conversation' },
-    { name: '/list', desc: 'List available configuration files' },
+    { name: '/list', desc: 'List available configuration files (deprecated, use /team list)' },
     { name: '/team', desc: 'Manage team configurations' },
     { name: '/clear', desc: 'Clear the screen' },
     { name: '/exit', desc: 'Exit the application' },
@@ -45,9 +47,9 @@ const commands = [
 
 const teamCommands = [
     { name: '/team create', desc: 'Create a new team configuration' },
-    { name: '/team edit', desc: 'Edit an existing team configuration' },
     { name: '/team list', desc: 'List all team configurations' },
-    { name: '/team show', desc: 'Show team configuration details' },
+    { name: '/team deploy', desc: 'Deploy and load a team configuration' },
+    { name: '/team edit', desc: 'Edit an existing team configuration' },
     { name: '/team delete', desc: 'Delete a team configuration' },
 ];
 
@@ -159,25 +161,71 @@ function StatusDisplay({ tools }: { tools: any[] }) {
     );
 }
 
-// 配置文件列表
-function ConfigList({ currentConfigPath }: { currentConfigPath: string | null }) {
-    const configDir = getTeamConfigDir();
+// Team configuration list component (using discoverTeamConfigs)
+function TeamList() {
+    const configs = discoverTeamConfigs();
 
-    // Check if directory exists, if not return empty message
-    if (!fs.existsSync(configDir)) {
+    if (configs.length === 0) {
         return (
             <Box flexDirection="column" marginY={1}>
-                <Text color="yellow">No configuration files found</Text>
+                <Text color="yellow">No team configurations found</Text>
                 <Text dimColor>Use /team create to create a team configuration</Text>
             </Box>
         );
     }
 
-    const files = fs.readdirSync(configDir).filter(f =>
-        f.endsWith('-config.json') || f === 'agent-chatter-config.json'
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Text bold>Available Teams:</Text>
+            <Box flexDirection="column" marginTop={1}>
+                {configs.map((config, idx) => (
+                    <Box key={config.filename} flexDirection="column" marginBottom={1}>
+                        <Text>
+                            <Text color="cyan" bold>[{idx + 1}]</Text>
+                            <Text> </Text>
+                            <Text color="green">{config.displayName}</Text>
+                        </Text>
+                        <Box marginLeft={4}>
+                            <Text dimColor>File: {config.filename}</Text>
+                        </Box>
+                        <Box marginLeft={4}>
+                            <Text dimColor>
+                                Members: {config.memberCount} ({config.aiCount} AI, {config.humanCount} Human)
+                            </Text>
+                        </Box>
+                    </Box>
+                ))}
+            </Box>
+            <Box marginTop={1}>
+                <Text dimColor>Type </Text>
+                <Text color="green">/team deploy &lt;filename&gt;</Text>
+                <Text dimColor> to deploy a team</Text>
+            </Box>
+        </Box>
     );
+}
 
-    if (files.length === 0) {
+// Team menu help component
+function TeamMenuHelp() {
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Text bold>Team Management Commands:</Text>
+            {teamCommands.map(cmd => (
+                <Box key={cmd.name} marginLeft={2}>
+                    <Text color="green">{cmd.name.padEnd(22)}</Text>
+                    <Text dimColor>{cmd.desc}</Text>
+                </Box>
+            ))}
+        </Box>
+    );
+}
+
+// Legacy config list (kept for /list command backward compatibility)
+// Now uses discoverTeamConfigs() for content-based discovery
+function ConfigList({ currentConfigPath }: { currentConfigPath: string | null }) {
+    const configs = discoverTeamConfigs();
+
+    if (configs.length === 0) {
         return (
             <Box flexDirection="column" marginY={1}>
                 <Text color="yellow">No configuration files found</Text>
@@ -188,15 +236,24 @@ function ConfigList({ currentConfigPath }: { currentConfigPath: string | null })
 
     return (
         <Box flexDirection="column" marginY={1}>
-            {files.map(file => {
-                const isActive = currentConfigPath && file === path.basename(currentConfigPath);
-                return (
-                    <Box key={file} marginLeft={2}>
-                        <Text color={isActive ? 'green' : 'gray'}>{isActive ? '●' : '○'}</Text>
-                        <Text> {file}</Text>
-                    </Box>
-                );
-            })}
+            <Text color="yellow" dimColor>Note: /list is deprecated. Use /team list instead.</Text>
+            <Box marginTop={1}>
+                {configs.map((config) => {
+                    const isActive = currentConfigPath && config.filename === path.basename(currentConfigPath);
+                    return (
+                        <Box key={config.filename} flexDirection="column" marginBottom={1}>
+                            <Box>
+                                <Text color={isActive ? 'green' : 'gray'}>{isActive ? '●' : '○'}</Text>
+                                <Text> </Text>
+                                <Text color={isActive ? 'green' : 'white'}>{config.displayName}</Text>
+                            </Box>
+                            <Box marginLeft={4}>
+                                <Text dimColor>File: {config.filename}</Text>
+                            </Box>
+                        </Box>
+                    );
+                })}
+            </Box>
         </Box>
     );
 }
@@ -803,6 +860,32 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         }
     });
 
+    // File watching for team config directory changes
+    useEffect(() => {
+        // Ensure directory exists before setting up watcher
+        // This handles fresh installs where directory doesn't exist yet
+        ensureTeamConfigDir();
+
+        const configDir = getTeamConfigDir();
+
+        // Watch for file changes in team-config directory
+        const watcher = watch(configDir, { recursive: false }, (eventType, filename) => {
+            if (filename && filename.endsWith('.json')) {
+                // Show notification when config files change
+                setOutput(prev => [...prev,
+                    <Text key={`file-change-${Date.now()}`} color="cyan" dimColor>
+                        Team config changed. Type /team list to refresh.
+                    </Text>
+                ]);
+            }
+        });
+
+        // Cleanup watcher on component unmount
+        return () => {
+            watcher.close();
+        };
+    }, []); // Empty dependency array: setup once on mount
+
     const handleConversationInput = (message: string) => {
         if (!message) return;
 
@@ -874,19 +957,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 setOutput(prev => [...prev, <ConfigList key={`list-${getNextKey()}`} currentConfigPath={currentConfigPath} />]);
                 break;
 
-            case '/config':
-                if (args.length === 0) {
-                    setOutput(prev => [...prev, <Text key={`config-msg-${getNextKey()}`} dimColor>Available configuration files:</Text>]);
-                    setOutput(prev => [...prev, <ConfigList key={`config-list-${getNextKey()}`} currentConfigPath={currentConfigPath} />]);
-                    setOutput(prev => [...prev, <Text key={`config-usage-${getNextKey()}`} color="yellow">Usage: /config &lt;filename&gt;</Text>]);
-                } else {
-                    loadConfig(args[0]);
-                }
-                break;
-
             case '/start':
                 if (!currentConfig) {
-                    setOutput(prev => [...prev, <Text key={`start-err-${getNextKey()}`} color="red">Error: No configuration loaded. Use /config &lt;file&gt; first.</Text>]);
+                    setOutput(prev => [...prev, <Text key={`start-err-${getNextKey()}`} color="red">Error: No configuration loaded. Use /team deploy &lt;file&gt; first.</Text>]);
                 } else if (args.length === 0) {
                     setOutput(prev => [...prev, <Text key={`start-usage-${getNextKey()}`} color="yellow">Usage: /start &lt;initial message&gt;</Text>]);
                 } else {
@@ -921,17 +994,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     const handleTeamCommand = (args: string[]) => {
         if (args.length === 0) {
-            setOutput(prev => [...prev, 
-                <Box key={`team-help-${getNextKey()}`} flexDirection="column" marginY={1}>
-                    <Text bold>Team Management Commands:</Text>
-                    {teamCommands.map(cmd => (
-                        <Box key={cmd.name} marginLeft={2}>
-                            <Text color="green">{cmd.name.padEnd(20)}</Text>
-                            <Text dimColor>{cmd.desc}</Text>
-                        </Box>
-                    ))}
-                </Box>
-            ]);
+            setOutput(prev => [...prev, <TeamMenuHelp key={`team-help-${getNextKey()}`} />]);
             return;
         }
 
@@ -943,23 +1006,24 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 startTeamCreationWizard();
                 break;
 
+            case 'list':
+                setOutput(prev => [...prev, <TeamList key={`team-list-${getNextKey()}`} />]);
+                break;
+
+            case 'deploy':
+                if (subargs.length === 0) {
+                    setOutput(prev => [...prev, <Text key={`team-deploy-usage-${getNextKey()}`} color="yellow">Usage: /team deploy &lt;filename&gt;</Text>]);
+                    setOutput(prev => [...prev, <Text key={`team-deploy-hint-${getNextKey()}`} dimColor>Use /team list to see available configurations</Text>]);
+                } else {
+                    loadConfig(subargs[0]);
+                }
+                break;
+
             case 'edit':
                 if (subargs.length === 0) {
                     setOutput(prev => [...prev, <Text key={`team-edit-usage-${getNextKey()}`} color="yellow">Usage: /team edit &lt;filename&gt;</Text>]);
                 } else {
                     startTeamEditMenu(subargs[0]);
-                }
-                break;
-
-            case 'list':
-                listTeamConfigurations();
-                break;
-
-            case 'show':
-                if (subargs.length === 0) {
-                    setOutput(prev => [...prev, <Text key={`team-show-usage-${getNextKey()}`} color="yellow">Usage: /team show &lt;filename&gt;</Text>]);
-                } else {
-                    showTeamConfiguration(subargs[0]);
                 }
                 break;
 

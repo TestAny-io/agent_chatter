@@ -13,7 +13,8 @@ import {
     getTeamConfigDir,
     ensureTeamConfigDir,
     resolveTeamConfigPath,
-    formatMissingConfigError
+    formatMissingConfigError,
+    discoverTeamConfigs
 } from '../../src/utils/TeamConfigPaths.js';
 
 describe('Team Config Directory Functions', () => {
@@ -115,82 +116,319 @@ describe('Team Config Directory Functions', () => {
             expect(result.warning).toBeUndefined();
         });
 
-        it('should fall back to legacy path if file not in team config directory', () => {
+        it('should NOT find file in root directory (legacy path removed)', () => {
             const filename = 'legacy-config.json';
-            const legacyPath = path.join(process.cwd(), filename);
+            const rootPath = path.join(process.cwd(), filename);
+            const teamConfigPath = path.join(getTeamConfigDir(), filename);
 
-            // 只在当前目录创建文件（遗留位置）
-            fs.writeFileSync(legacyPath, '{}');
+            // Create file ONLY in root directory (legacy location)
+            fs.writeFileSync(rootPath, '{}');
 
             const result = resolveTeamConfigPath(filename);
-            expect(result.path).toBe(legacyPath);
-            expect(result.exists).toBe(true);
-            expect(result.warning).toContain('was not found');
-            expect(result.warning).toContain('legacy-config.json');
-            expect(result.searchedPaths).toHaveLength(2);
+            expect(result.path).toBe(teamConfigPath); // Should look in team-config
+            expect(result.exists).toBe(false); // Should NOT find it
+            expect(result.searchedPaths).toEqual([teamConfigPath]); // Should only search team-config
+            expect(result.warning).toBeUndefined(); // No warning
         });
 
-        it('should return non-existing path with proper search paths when file not found', () => {
+        it('should return non-existing path with single search path when file not found', () => {
             const filename = 'non-existent.json';
             const teamConfigPath = path.join(getTeamConfigDir(), filename);
-            const legacyPath = path.join(process.cwd(), filename);
 
             const result = resolveTeamConfigPath(filename);
             expect(result.path).toBe(teamConfigPath);
             expect(result.exists).toBe(false);
-            expect(result.searchedPaths).toEqual([teamConfigPath, legacyPath]);
+            expect(result.searchedPaths).toEqual([teamConfigPath]);
         });
 
-        it('should prefer team config directory over legacy path', () => {
+        it('should only check team config directory, not root directory', () => {
             const filename = 'both-locations.json';
             const teamConfigDir = getTeamConfigDir();
             const teamConfigPath = path.join(teamConfigDir, filename);
-            const legacyPath = path.join(process.cwd(), filename);
+            const rootPath = path.join(process.cwd(), filename);
 
-            // 在两个位置都创建文件
+            // Create files in both locations
             fs.mkdirSync(teamConfigDir, { recursive: true });
-            fs.writeFileSync(teamConfigPath, JSON.stringify({ location: 'new' }));
-            fs.writeFileSync(legacyPath, JSON.stringify({ location: 'legacy' }));
+            fs.writeFileSync(teamConfigPath, JSON.stringify({ location: 'team-config' }));
+            fs.writeFileSync(rootPath, JSON.stringify({ location: 'root' }));
 
             const result = resolveTeamConfigPath(filename);
             expect(result.path).toBe(teamConfigPath);
             expect(result.exists).toBe(true);
-            expect(result.warning).toBeUndefined();
             expect(result.searchedPaths).toEqual([teamConfigPath]);
 
-            // Verify it actually reads from the new location
+            // Verify it reads from team-config directory
             const content = fs.readFileSync(result.path, 'utf-8');
             const config = JSON.parse(content);
-            expect(config.location).toBe('new');
+            expect(config.location).toBe('team-config');
         });
     });
 
     describe('formatMissingConfigError', () => {
-        it('should format error for single search path', () => {
+        it('should format error with expected location', () => {
             const filename = 'test.json';
+            const teamConfigPath = path.join(getTeamConfigDir(), filename);
             const resolution = {
-                path: '/path/to/test.json',
+                path: teamConfigPath,
                 exists: false,
-                searchedPaths: ['/path/to/test.json']
+                searchedPaths: [teamConfigPath]
             };
 
             const result = formatMissingConfigError(filename, resolution);
-            expect(result).toBe('Error: Configuration file not found: /path/to/test.json');
+            expect(result).toContain('Error: Configuration file not found:');
+            expect(result).toContain(teamConfigPath);
+            expect(result).toContain('Expected location:');
+            expect(result).toContain('.agent-chatter/team-config/');
         });
 
-        it('should format error for multiple search paths', () => {
+        it('should not mention root directory in error message', () => {
             const filename = 'test.json';
+            const teamConfigPath = path.join(getTeamConfigDir(), filename);
             const resolution = {
-                path: '/new/path/test.json',
+                path: teamConfigPath,
                 exists: false,
-                searchedPaths: ['/new/path/test.json', '/legacy/path/test.json']
+                searchedPaths: [teamConfigPath]
             };
 
             const result = formatMissingConfigError(filename, resolution);
-            expect(result).toContain('Error: Configuration "test.json" was not found.');
-            expect(result).toContain('Checked:');
-            expect(result).toContain('  - /new/path/test.json');
-            expect(result).toContain('  - /legacy/path/test.json');
+            expect(result).not.toContain('Checked:');
+            expect(result).not.toContain(process.cwd() + '/test.json');
+        });
+    });
+
+    describe('discoverTeamConfigs', () => {
+        const createValidTeamConfig = (overrides: any = {}) => ({
+            schemaVersion: '1.2',
+            team: {
+                name: 'test-team',
+                displayName: 'Test Team',
+                description: 'A test team',
+                members: [
+                    {
+                        name: 'alice',
+                        displayName: 'Alice',
+                        role: 'developer',
+                        type: 'ai',
+                        agentConfigId: 'claude-config',
+                        order: 0
+                    },
+                    {
+                        name: 'bob',
+                        displayName: 'Bob',
+                        role: 'reviewer',
+                        type: 'human',
+                        order: 1
+                    }
+                ],
+                ...overrides
+            }
+        });
+
+        it('should return empty array when team-config directory does not exist', () => {
+            const result = discoverTeamConfigs();
+            expect(result).toEqual([]);
+        });
+
+        it('should discover valid team config files', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Create a valid config file
+            const config = createValidTeamConfig();
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'my-team.json'),
+                JSON.stringify(config)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(1);
+            expect(result[0].filename).toBe('my-team.json');
+            expect(result[0].displayName).toBe('Test Team');
+            expect(result[0].teamName).toBe('test-team');
+            expect(result[0].memberCount).toBe(2);
+            expect(result[0].aiCount).toBe(1);
+            expect(result[0].humanCount).toBe(1);
+            expect(result[0].schemaVersion).toBe('1.2');
+        });
+
+        it('should use display name fallback chain: displayName → team.name → filename', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Config with displayName (highest priority)
+            const config1 = createValidTeamConfig({ displayName: 'Custom Display Name' });
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'config1.json'),
+                JSON.stringify(config1)
+            );
+
+            // Config without displayName (falls back to team.name)
+            const config2 = createValidTeamConfig({ displayName: undefined });
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'config2.json'),
+                JSON.stringify(config2)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(2);
+
+            const found1 = result.find(c => c.filename === 'config1.json');
+            expect(found1?.displayName).toBe('Custom Display Name');
+
+            const found2 = result.find(c => c.filename === 'config2.json');
+            expect(found2?.displayName).toBe('test-team');
+        });
+
+        it('should handle empty displayName by falling back to team.name', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Config with empty displayName (falls back to team.name)
+            const config = createValidTeamConfig({ displayName: '', name: 'my-team' });
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'test.json'),
+                JSON.stringify(config)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(1);
+            expect(result[0].displayName).toBe('my-team');
+        });
+
+        it('should silently skip malformed JSON files', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Create a malformed JSON file
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'malformed.json'),
+                '{ invalid json content'
+            );
+
+            // Create a valid config
+            const validConfig = createValidTeamConfig();
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'valid.json'),
+                JSON.stringify(validConfig)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(1);
+            expect(result[0].filename).toBe('valid.json');
+        });
+
+        it('should silently skip files failing schema validation', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Create invalid config (missing required fields)
+            const invalidConfig = {
+                team: {
+                    // Missing name
+                    members: []  // Also less than 2 members
+                }
+            };
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'invalid.json'),
+                JSON.stringify(invalidConfig)
+            );
+
+            // Create valid config
+            const validConfig = createValidTeamConfig();
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'valid.json'),
+                JSON.stringify(validConfig)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(1);
+            expect(result[0].filename).toBe('valid.json');
+        });
+
+        it('should only process .json files', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Create non-JSON file
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'readme.txt'),
+                'This is not a JSON file'
+            );
+
+            // Create valid config
+            const validConfig = createValidTeamConfig();
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'valid.json'),
+                JSON.stringify(validConfig)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(1);
+            expect(result[0].filename).toBe('valid.json');
+        });
+
+        it('should discover multiple valid configs with correct metadata', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            // Create team with 3 AI members
+            const team1 = createValidTeamConfig({
+                name: 'ai-heavy',
+                displayName: 'AI Heavy Team',
+                members: [
+                    { name: 'ai1', role: 'dev', type: 'ai', agentConfigId: 'config1', order: 0 },
+                    { name: 'ai2', role: 'dev', type: 'ai', agentConfigId: 'config2', order: 1 },
+                    { name: 'ai3', role: 'dev', type: 'ai', agentConfigId: 'config3', order: 2 }
+                ]
+            });
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'ai-heavy.json'),
+                JSON.stringify(team1)
+            );
+
+            // Create team with 3 human members
+            const team2 = createValidTeamConfig({
+                name: 'human-heavy',
+                displayName: 'Human Heavy Team',
+                members: [
+                    { name: 'h1', role: 'dev', type: 'human', order: 0 },
+                    { name: 'h2', role: 'dev', type: 'human', order: 1 },
+                    { name: 'h3', role: 'dev', type: 'human', order: 2 }
+                ]
+            });
+            fs.writeFileSync(
+                path.join(teamConfigDir, 'human-heavy.json'),
+                JSON.stringify(team2)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(2);
+
+            const aiTeam = result.find(c => c.filename === 'ai-heavy.json');
+            expect(aiTeam?.aiCount).toBe(3);
+            expect(aiTeam?.humanCount).toBe(0);
+            expect(aiTeam?.memberCount).toBe(3);
+
+            const humanTeam = result.find(c => c.filename === 'human-heavy.json');
+            expect(humanTeam?.aiCount).toBe(0);
+            expect(humanTeam?.humanCount).toBe(3);
+            expect(humanTeam?.memberCount).toBe(3);
+        });
+
+        it('should include filepath in result', () => {
+            const teamConfigDir = getTeamConfigDir();
+            fs.mkdirSync(teamConfigDir, { recursive: true });
+
+            const config = createValidTeamConfig();
+            const filename = 'test.json';
+            fs.writeFileSync(
+                path.join(teamConfigDir, filename),
+                JSON.stringify(config)
+            );
+
+            const result = discoverTeamConfigs();
+            expect(result).toHaveLength(1);
+            expect(result[0].filepath).toBe(path.join(teamConfigDir, filename));
         });
     });
 });

@@ -6,10 +6,12 @@
  * - Ensuring the directory exists
  * - Resolving config filenames to full paths with fallback to legacy locations
  * - Formatting error messages for missing configs
+ * - Discovering and validating team configuration files
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { validateTeamConfig } from '../schemas/TeamConfigSchema.js';
 
 /**
  * Get the team configuration directory path (.agent-chatter/team-config/)
@@ -43,8 +45,7 @@ export interface ConfigResolution {
  *
  * Resolution order:
  * 1. If absolute path, use as-is
- * 2. Check .agent-chatter/team-config/ directory (new location)
- * 3. Check current working directory (legacy location)
+ * 2. Check .agent-chatter/team-config/ directory
  *
  * @param filename - The config filename or path
  * @returns ConfigResolution with path, exists status, optional warning, and searched paths
@@ -59,29 +60,11 @@ export function resolveTeamConfigPath(filename: string): ConfigResolution {
     }
 
     const teamConfigPath = path.join(getTeamConfigDir(), filename);
-    const legacyPath = path.join(process.cwd(), filename);
-
-    if (fs.existsSync(teamConfigPath)) {
-        return {
-            path: teamConfigPath,
-            exists: true,
-            searchedPaths: [teamConfigPath]
-        };
-    }
-
-    if (fs.existsSync(legacyPath)) {
-        return {
-            path: legacyPath,
-            exists: true,
-            warning: `Configuration "${filename}" was not found in ${teamConfigPath}. Using ${legacyPath}.`,
-            searchedPaths: [teamConfigPath, legacyPath]
-        };
-    }
 
     return {
         path: teamConfigPath,
-        exists: false,
-        searchedPaths: [teamConfigPath, legacyPath]
+        exists: fs.existsSync(teamConfigPath),
+        searchedPaths: [teamConfigPath]
     };
 }
 
@@ -93,12 +76,99 @@ export function resolveTeamConfigPath(filename: string): ConfigResolution {
  * @returns Formatted error message
  */
 export function formatMissingConfigError(filename: string, resolution: ConfigResolution): string {
-    if (resolution.searchedPaths.length > 1) {
-        return [
-            `Error: Configuration "${filename}" was not found.`,
-            'Checked:',
-            ...resolution.searchedPaths.map(p => `  - ${p}`)
-        ].join('\n');
+    return `Error: Configuration file not found: ${resolution.searchedPaths[0]}\n` +
+           `Expected location: ${getTeamConfigDir()}/`;
+}
+
+/**
+ * Team configuration information for discovery
+ */
+export interface TeamConfigInfo {
+    /** Config filename (e.g., "phoenix-prd.json") */
+    filename: string;
+    /** Full file path */
+    filepath: string;
+    /** Display name for UI (team.displayName or team.name or filename without .json) */
+    displayName: string;
+    /** Team internal name (team.name) */
+    teamName: string;
+    /** Total number of members */
+    memberCount: number;
+    /** Number of AI members */
+    aiCount: number;
+    /** Number of human members */
+    humanCount: number;
+    /** Schema version */
+    schemaVersion?: string;
+}
+
+/**
+ * Discover and validate all team configuration files in the team-config directory
+ *
+ * This function:
+ * - Scans .agent-chatter/team-config/ for all .json files
+ * - Validates each file using validateTeamConfig()
+ * - Silently skips malformed JSON or invalid configs
+ * - Implements display name fallback: team.displayName → team.name → filename
+ * - Returns array of valid team configurations with metadata
+ *
+ * @returns Array of TeamConfigInfo objects for valid configurations
+ */
+export function discoverTeamConfigs(): TeamConfigInfo[] {
+    const configDir = getTeamConfigDir();
+
+    // If directory doesn't exist, return empty array
+    if (!fs.existsSync(configDir)) {
+        return [];
     }
-    return `Error: Configuration file not found: ${resolution.searchedPaths[0]}`;
+
+    // Get all JSON files
+    const allJsonFiles = fs.readdirSync(configDir).filter(f => f.endsWith('.json'));
+
+    const configs: TeamConfigInfo[] = [];
+
+    for (const filename of allJsonFiles) {
+        try {
+            const filepath = path.join(configDir, filename);
+            const content = fs.readFileSync(filepath, 'utf-8');
+            const config = JSON.parse(content);
+
+            // Validate using existing schema validator
+            const validation = validateTeamConfig(config);
+
+            if (validation.valid) {
+                // Display name fallback chain: displayName → team.name → filename (without .json)
+                const displayName = config.team.displayName
+                    || config.team.name
+                    || filename.replace('.json', '');
+
+                // Count AI and human members
+                const aiCount = config.team.members.filter((m: any) => m.type === 'ai').length;
+                const humanCount = config.team.members.filter((m: any) => m.type === 'human').length;
+
+                configs.push({
+                    filename,
+                    filepath,
+                    displayName,
+                    teamName: config.team.name,
+                    memberCount: config.team.members.length,
+                    aiCount,
+                    humanCount,
+                    schemaVersion: config.schemaVersion
+                });
+            } else {
+                // Debug logging for invalid files (optional)
+                if (process.env.DEBUG) {
+                    console.debug(`[TeamConfigPaths] Skipped invalid config: ${filename}`, validation.errors);
+                }
+            }
+        } catch (error) {
+            // Silently skip malformed JSON or unreadable files
+            if (process.env.DEBUG) {
+                console.debug(`[TeamConfigPaths] Skipped malformed file: ${filename}`, error);
+            }
+        }
+    }
+
+    return configs;
 }
