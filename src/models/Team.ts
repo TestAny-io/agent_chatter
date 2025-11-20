@@ -96,8 +96,17 @@ export class TeamUtils {
       }
 
       // Validate env if present
-      if (member.env !== undefined && typeof member.env !== 'object') {
-        errors.push(`成员 "${member.name}" 的 env 必须是对象`);
+      if (member.env !== undefined) {
+        if (typeof member.env !== 'object' || member.env === null || Array.isArray(member.env)) {
+          errors.push(`成员 "${member.name}" 的 env 必须是对象（不能是 null 或数组）`);
+        } else {
+          // Validate all env values are strings
+          for (const [key, value] of Object.entries(member.env)) {
+            if (typeof value !== 'string') {
+              errors.push(`成员 "${member.name}" 的 env["${key}"] 必须是字符串，当前类型为 ${typeof value}`);
+            }
+          }
+        }
       }
 
       // Validate workDir if present

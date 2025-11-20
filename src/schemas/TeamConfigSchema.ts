@@ -304,11 +304,23 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
     }
 
     // Validate optional fields if present
-    if (member.env !== undefined && typeof member.env !== 'object') {
-      errors.push({
-        path: `${basePath}.env`,
-        message: 'Member env must be an object'
-      });
+    if (member.env !== undefined) {
+      if (typeof member.env !== 'object' || member.env === null || Array.isArray(member.env)) {
+        errors.push({
+          path: `${basePath}.env`,
+          message: 'Member env must be an object (not null or array)'
+        });
+      } else {
+        // Validate all env values are strings
+        for (const [key, value] of Object.entries(member.env)) {
+          if (typeof value !== 'string') {
+            errors.push({
+              path: `${basePath}.env["${key}"]`,
+              message: `env["${key}"] must be a string, got ${typeof value}`
+            });
+          }
+        }
+      }
     }
 
     if (member.additionalArgs !== undefined) {

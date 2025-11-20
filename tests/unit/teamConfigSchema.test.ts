@@ -210,6 +210,62 @@ describe('TeamConfigSchema', () => {
       expect(result.errors.some(e => e.path.includes('[0].env'))).toBe(true);
     });
 
+    it('rejects env as null', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human', order: 0, env: null },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('[0].env') && e.message.includes('not null or array'))).toBe(true);
+    });
+
+    it('rejects env as array', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human', order: 0, env: ['FOO=bar'] },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('[0].env') && e.message.includes('not null or array'))).toBe(true);
+    });
+
+    it('rejects env with non-string values (number)', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human', order: 0, env: { FOO: 123 } },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('env["FOO"]') && e.message.includes('must be a string'))).toBe(true);
+    });
+
+    it('rejects env with non-string values (boolean)', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human', order: 0, env: { DEBUG: true } },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('env["DEBUG"]') && e.message.includes('must be a string'))).toBe(true);
+    });
+
     it('accepts valid env', () => {
       const result = validateTeamConfig({
         team: {

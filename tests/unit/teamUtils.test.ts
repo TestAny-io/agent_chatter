@@ -118,6 +118,42 @@ describe('TeamUtils', () => {
       expect(result.errors.some(e => e.includes('env 必须是对象'))).toBe(true);
     });
 
+    it('rejects env as null', () => {
+      const roleA = buildRole({ env: null as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('不能是 null 或数组'))).toBe(true);
+    });
+
+    it('rejects env as array', () => {
+      const roleA = buildRole({ env: ['FOO=bar'] as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('不能是 null 或数组'))).toBe(true);
+    });
+
+    it('rejects env with non-string values (number)', () => {
+      const roleA = buildRole({ env: { FOO: 123 } as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('env["FOO"]') && e.includes('必须是字符串'))).toBe(true);
+    });
+
+    it('rejects env with non-string values (boolean)', () => {
+      const roleA = buildRole({ env: { DEBUG: true } as any, order: 0 });
+      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.includes('env["DEBUG"]') && e.includes('必须是字符串'))).toBe(true);
+    });
+
     it('accepts valid env', () => {
       const roleA = buildRole({ env: { FOO: 'bar', BAZ: 'qux' }, order: 0 });
       const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
