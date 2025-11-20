@@ -317,22 +317,24 @@ export async function initializeServices(
   processManager: ProcessManager;
 }> {
   // Enforce Schema 1.1: Reject all other versions
-  if (config.schemaVersion !== '1.1') {
+  // Support Schema 1.1 and 1.2
+  if (config.schemaVersion !== '1.1' && config.schemaVersion !== '1.2') {
     const foundVersion = config.schemaVersion || 'missing';
     throw new Error(
       `Unsupported configuration schema version.\n\n` +
       `  Found: schemaVersion = "${foundVersion}"\n` +
-      `  Required: schemaVersion = "1.1"\n\n` +
-      `Schema 1.0 is no longer supported. Please migrate your configuration to Schema 1.1.\n` +
+      `  Required: schemaVersion = "1.1" or "1.2"\n\n` +
+      `Schema 1.0 is no longer supported. Please migrate your configuration to Schema 1.1 or 1.2.\n` +
       `Migration guide: design/team-configuration.md\n\n` +
-      `Key changes in Schema 1.1:\n` +
+      `Key changes in Schema 1.1/1.2:\n` +
       `  - Agents must be registered in global registry (~/.agent-chatter/agents/config.json)\n` +
       `  - Team config only references agent names, not full definitions\n` +
-      `  - Team config can override args/endMarker/usePty, but NOT command path\n\n` +
+      `  - Team config can override args/endMarker/usePty, but NOT command path\n` +
+      `  - Schema 1.2: Members can have systemInstruction field (overrides agent args)\n\n` +
       `Quick migration steps:\n` +
       `  1. Run: agent-chatter agents register <agent-name>\n` +
       `  2. Update config: Remove 'command' field from config.agents[]\n` +
-      `  3. Set: "schemaVersion": "1.1"`
+      `  3. Set: "schemaVersion": "1.1" or "1.2"`
     );
   }
 

@@ -8,7 +8,7 @@
  * - Member names are unique
  * - At least 2 members in the team
  *
- * Schema Version: 1.1
+ * Schema Version: 1.1 and 1.2 supported
  */
 
 export const TeamConfigSchema = {
@@ -18,7 +18,7 @@ export const TeamConfigSchema = {
   properties: {
     schemaVersion: {
       type: "string",
-      enum: ["1.0", "1.1"],
+      enum: ["1.0", "1.1", "1.2"],
       description: "Team config schema version"
     },
     agents: {
