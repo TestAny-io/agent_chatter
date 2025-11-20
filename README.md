@@ -29,7 +29,7 @@ Combine multiple AI agents with human observers or participants. Perfect for AI-
 
 ## System Requirements
 
-- **Node.js**: Version 18 or higher
+- **Node.js**: Version 20 or higher (LTS recommended)
 - **Operating System**:
   - macOS (fully supported)
   - Linux (fully supported)
