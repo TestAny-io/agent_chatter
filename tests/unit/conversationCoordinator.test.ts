@@ -190,4 +190,50 @@ describe('ConversationCoordinator', () => {
     expect(alphaMessage!.routing?.isDone).toBe(true);
     expect(alphaMessage!.routing?.rawNextMarkers).toEqual(['ai-bravo']);
   });
+
+  it('terminates immediately when human injects [NEXT] + [DONE]', async () => {
+    // Regression test: when human uses injectMessage with "[NEXT: alice] [DONE]",
+    // the coordinator should parse both but terminate immediately without routing
+    const responses = {
+      'ai-alice': ['Should never be called']
+    };
+    const stub = new StubAgentManager(responses);
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const receivedMessages: ConversationMessage[] = [];
+
+    const coordinator = new ConversationCoordinator(agentManager, router, {
+      onMessage: (msg) => receivedMessages.push(msg)
+    });
+
+    const team = buildTeam([
+      createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', order: 0, type: 'human' }),
+      createMember({ id: 'ai-alice', name: 'alice', order: 1, type: 'ai', agentConfigId: 'config-alice' })
+    ]);
+
+    // Start conversation with human as first speaker
+    await coordinator.startConversation(team, 'Initial task', 'human-bob');
+
+    // Verify conversation is paused, waiting for human input
+    expect(coordinator.getStatus()).toBe('paused');
+    expect(coordinator.getWaitingForRoleId()).toBe('human-bob');
+
+    // Human injects message with both [NEXT] and [DONE]
+    await coordinator.injectMessage('human-bob', 'Here is my input [NEXT: alice] [DONE]');
+
+    // Verify conversation terminated immediately
+    expect(coordinator.getStatus()).toBe('completed');
+    expect(coordinator.getWaitingForRoleId()).toBeNull();
+
+    // Verify ai-alice was never started or called
+    expect(stub.startCalls.length).toBe(0);
+    expect(stub.sendCalls.length).toBe(0);
+
+    // Verify the human message was parsed correctly
+    const humanMessage = receivedMessages.find(msg => msg.speaker.roleId === 'human-bob');
+    expect(humanMessage).toBeDefined();
+    expect(humanMessage!.routing?.isDone).toBe(true);
+    expect(humanMessage!.routing?.rawNextMarkers).toEqual(['alice']);
+    expect(humanMessage!.content).toBe('Here is my input');
+  });
 });
