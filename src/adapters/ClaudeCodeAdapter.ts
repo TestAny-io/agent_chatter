@@ -88,4 +88,22 @@ export class ClaudeCodeAdapter implements IAgentAdapter {
       return false;
     }
   }
+
+  /**
+   * Prepare message for sending to Claude Code
+   * System instruction is already handled via --append-system-prompt in spawn()
+   * so we just return the message as-is
+   */
+  prepareMessage(message: string, _systemInstruction?: string): string {
+    // System instruction already passed via --append-system-prompt in spawn()
+    // No need to prepend it here
+    return message;
+  }
+
+  /**
+   * Get default end marker for Claude Code
+   */
+  getDefaultEndMarker(): string {
+    return '[DONE]';
+  }
 }

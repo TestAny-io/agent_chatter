@@ -1,12 +1,16 @@
 /**
- * OpenAICodexAdapter - Adapter for OpenAI Codex CLI via wrapper script
+ * OpenAICodexAdapter - Adapter for OpenAI Codex CLI
  *
- * Uses a wrapper script to provide a unified stdin/stdout interface for Codex
+ * Self-contained adapter that:
+ * - Prepends [SYSTEM] section to messages
+ * - Intercepts stdout to append [DONE] marker
+ * - No dependency on external wrapper scripts
  */
 
 import { spawn } from 'child_process';
 import { access } from 'fs/promises';
 import { constants } from 'fs';
+import { PassThrough } from 'stream';
 import type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult } from './IAgentAdapter.js';
 
 export class OpenAICodexAdapter implements IAgentAdapter {
@@ -17,15 +21,14 @@ export class OpenAICodexAdapter implements IAgentAdapter {
   ) {}
 
   /**
-   * Get default arguments for Codex wrapper
-   * Wrapper scripts typically don't need default args as they handle configuration internally
+   * Get default arguments for Codex CLI
    */
   getDefaultArgs(): string[] {
-    return [];
+    return ['exec', '--json', '--full-auto', '--skip-git-repo-check'];
   }
 
   /**
-   * Spawn a Codex wrapper process
+   * Spawn a Codex process with stdout interception
    */
   async spawn(config: AgentSpawnConfig): Promise<AgentSpawnResult> {
     const args = [...this.getDefaultArgs()];
@@ -41,19 +44,36 @@ export class OpenAICodexAdapter implements IAgentAdapter {
       ...config.env
     };
 
-    // Add system instruction as environment variable if wrapper supports it
-    if (config.systemInstruction) {
-      env.AGENT_SYSTEM_INSTRUCTION = config.systemInstruction;
-    }
+    // NOTE: systemInstruction is NOT set in env here
+    // It will be handled by prepareMessage() in AgentManager.sendAndReceive()
 
-    // Spawn the wrapper process
+    // Spawn the process
     const childProcess = spawn(this.command, args, {
       cwd: config.workDir,
       env,
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    // Return spawn result with cleanup function
+    // Create PassThrough stream to intercept stdout and append [DONE]
+    const transformedStdout = new PassThrough();
+
+    // Pipe original stdout to transformed stream
+    childProcess.stdout!.pipe(transformedStdout, { end: false });
+
+    let buffer = '';
+    childProcess.stdout!.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+    });
+
+    // When original stdout ends, append [DONE] if not present
+    childProcess.stdout!.on('end', () => {
+      if (!buffer.trim().endsWith('[DONE]')) {
+        transformedStdout.write('\n[DONE]\n');
+      }
+      transformedStdout.end();
+    });
+
+    // Return spawn result with cleanup function and custom stdout
     return {
       process: childProcess,
       cleanup: async () => {
@@ -72,12 +92,15 @@ export class OpenAICodexAdapter implements IAgentAdapter {
             resolve();
           }
         });
+      },
+      customStreams: {
+        stdout: transformedStdout
       }
     };
   }
 
   /**
-   * Validate that the wrapper script exists and is executable
+   * Validate that the Codex CLI exists and is executable
    */
   async validate(): Promise<boolean> {
     try {
@@ -87,5 +110,25 @@ export class OpenAICodexAdapter implements IAgentAdapter {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Prepare message for sending to Codex
+   * Prepends [SYSTEM] section if systemInstruction is provided
+   */
+  prepareMessage(message: string, systemInstruction?: string): string {
+    if (!systemInstruction) {
+      return message;
+    }
+
+    // Prepend [SYSTEM] section
+    return `[SYSTEM]\n${systemInstruction}\n\n${message}`;
+  }
+
+  /**
+   * Get default end marker for Codex
+   */
+  getDefaultEndMarker(): string {
+    return '[DONE]';
   }
 }

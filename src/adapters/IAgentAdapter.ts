@@ -48,6 +48,16 @@ export interface AgentSpawnResult {
    * Should handle graceful shutdown, stdin closure, etc.
    */
   cleanup: () => Promise<void>;
+
+  /**
+   * Custom streams for ProcessManager to monitor
+   * If provided, ProcessManager will listen to these instead of process.stdout/stderr
+   * This allows adapters to intercept and transform output (e.g., append [DONE] marker)
+   */
+  customStreams?: {
+    stdout?: NodeJS.ReadableStream;
+    stderr?: NodeJS.ReadableStream;
+  };
 }
 
 /**
@@ -91,4 +101,22 @@ export interface IAgentAdapter {
    * @returns Array of default CLI arguments
    */
   getDefaultArgs(): string[];
+
+  /**
+   * Prepare message for sending to agent process
+   * Handles system instruction prepending if needed
+   *
+   * @param message - The message to send (may include [CONTEXT] and [MESSAGE] sections)
+   * @param systemInstruction - Optional system instruction to prepend
+   * @returns Prepared message ready for stdin
+   */
+  prepareMessage(message: string, systemInstruction?: string): string;
+
+  /**
+   * Get default end marker for this adapter
+   * Can be overridden by SendOptions.endMarker
+   *
+   * @returns End marker string (e.g., "[DONE]")
+   */
+  getDefaultEndMarker(): string;
 }

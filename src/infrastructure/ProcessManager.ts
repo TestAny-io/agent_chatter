@@ -110,9 +110,14 @@ export class ProcessManager {
    *
    * @param childProcess - The spawned child process
    * @param config - Process configuration (for reference)
+   * @param customStreams - Optional custom streams to monitor instead of process stdout/stderr
    * @returns Process ID
    */
-  registerProcess(childProcess: ChildProcess, config: ProcessConfig): string {
+  registerProcess(
+    childProcess: ChildProcess,
+    config: ProcessConfig,
+    customStreams?: { stdout?: NodeJS.ReadableStream; stderr?: NodeJS.ReadableStream }
+  ): string {
     const processId = this.generateProcessId();
 
     const managed: ManagedProcess = {
@@ -134,8 +139,12 @@ export class ProcessManager {
       this.outputCallbacks.delete(processId);
     });
 
+    // Use custom streams if provided, otherwise use process streams
+    const stdoutStream = customStreams?.stdout || childProcess.stdout;
+    const stderrStream = customStreams?.stderr || childProcess.stderr;
+
     // Handle stdout
-    childProcess.stdout?.on('data', (data: Buffer) => {
+    stdoutStream?.on('data', (data: Buffer) => {
       const output = data.toString();
       const callback = this.outputCallbacks.get(processId);
       if (callback) {
@@ -146,7 +155,7 @@ export class ProcessManager {
     });
 
     // Handle stderr
-    childProcess.stderr?.on('data', (data: Buffer) => {
+    stderrStream?.on('data', (data: Buffer) => {
       const error = data.toString();
       const callback = this.outputCallbacks.get(processId);
       if (callback) {

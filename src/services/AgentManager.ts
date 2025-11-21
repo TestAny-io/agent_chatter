@@ -12,7 +12,7 @@ import { ProcessManager } from '../infrastructure/ProcessManager.js';
 import type { SendOptions } from '../infrastructure/ProcessManager.js';
 import { AgentConfigManager } from './AgentConfigManager.js';
 import { AdapterFactory } from '../adapters/AdapterFactory.js';
-import type { AgentSpawnConfig } from '../adapters/IAgentAdapter.js';
+import type { AgentSpawnConfig, IAgentAdapter } from '../adapters/IAgentAdapter.js';
 
 /**
  * Agent 实例信息
@@ -22,6 +22,8 @@ interface AgentInstance {
   configId: string;
   processId: string;
   cleanup?: () => Promise<void>;  // Adapter cleanup function
+  adapter: IAgentAdapter;  // Store adapter for prepareMessage()
+  systemInstruction?: string;  // Store for use in sendAndReceive()
 }
 
 /**
@@ -95,19 +97,28 @@ export class AgentManager {
     const spawnResult = await adapter.spawn(spawnConfig);
 
     // 将进程注册到 ProcessManager
-    const processId = this.processManager.registerProcess(spawnResult.process, {
-      command: config.command,
-      args: config.args || [],
-      env: config.env,
-      cwd: spawnConfig.workDir
-    });
+    // Pass customStreams to ProcessManager if adapter provides them
+    const processId = this.processManager.registerProcess(
+      spawnResult.process,
+      {
+        command: config.command,
+        args: config.args || [],
+        env: config.env,
+        cwd: spawnConfig.workDir
+      },
+      spawnResult.customStreams  // Pass custom streams for [DONE] marker injection
+    );
 
     // 记录实例
+    // CRITICAL: systemInstruction MUST be stored here, NOT on childProcess!
+    // AgentManager.sendAndReceive() will access it from agent.systemInstruction
     this.agents.set(roleId, {
       roleId,
       configId,
       processId,
-      cleanup: spawnResult.cleanup
+      cleanup: spawnResult.cleanup,
+      adapter: adapter,  // Store adapter for prepareMessage()
+      systemInstruction: memberConfig?.systemInstruction  // Store for use in sendAndReceive()
     });
 
     return processId;
@@ -129,15 +140,21 @@ export class AgentManager {
     // 获取配置以确定 endMarker 和 useEndOfMessageMarker
     const config = await this.agentConfigManager.getAgentConfig(agent.configId);
 
+    // Prepare message using adapter (handles system instruction prepending)
+    const preparedMessage = agent.adapter.prepareMessage(message, agent.systemInstruction);
+
+    // Get default end marker from adapter
+    const defaultEndMarker = agent.adapter.getDefaultEndMarker();
+
     const sendOptions: SendOptions = {
       timeout: options?.timeout,
-      endMarker: options?.endMarker || config?.endMarker,
+      endMarker: options?.endMarker || config?.endMarker || defaultEndMarker,
       useEndOfMessageMarker: config?.useEndOfMessageMarker || false
     };
 
     return this.processManager.sendAndReceive(
       agent.processId,
-      message,
+      preparedMessage,  // Send prepared message with [SYSTEM] if needed
       sendOptions
     );
   }

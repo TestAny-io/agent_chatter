@@ -1,14 +1,17 @@
 /**
  * GenericShellAdapter - Generic adapter for shell scripts and custom commands
  *
- * Provides a flexible adapter for any command-line tool or wrapper script
- * Suitable for custom agents, Gemini wrapper, or any other CLI tool
+ * Self-contained adapter that:
+ * - Prepends [SYSTEM] section to messages
+ * - Intercepts stdout to append [DONE] marker
+ * - Suitable for custom agents, Gemini CLI, or any other CLI tool
  */
 
 import { spawn, exec } from 'child_process';
 import { access } from 'fs/promises';
 import { constants } from 'fs';
 import { promisify } from 'util';
+import { PassThrough } from 'stream';
 import type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult } from './IAgentAdapter.js';
 
 const execAsync = promisify(exec);
@@ -49,7 +52,7 @@ export class GenericShellAdapter implements IAgentAdapter {
   }
 
   /**
-   * Spawn a generic shell process
+   * Spawn a generic shell process with stdout interception
    */
   async spawn(config: AgentSpawnConfig): Promise<AgentSpawnResult> {
     const args = [...this.getDefaultArgs()];
@@ -65,10 +68,8 @@ export class GenericShellAdapter implements IAgentAdapter {
       ...config.env
     };
 
-    // Add system instruction as environment variable for wrapper scripts
-    if (config.systemInstruction) {
-      env.AGENT_SYSTEM_INSTRUCTION = config.systemInstruction;
-    }
+    // NOTE: systemInstruction is NOT set in env here
+    // It will be handled by prepareMessage() in AgentManager.sendAndReceive()
 
     // Spawn the process
     const childProcess = spawn(this.command, args, {
@@ -77,7 +78,26 @@ export class GenericShellAdapter implements IAgentAdapter {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    // Return spawn result with cleanup function
+    // Create PassThrough stream to intercept stdout and append [DONE]
+    const transformedStdout = new PassThrough();
+
+    // Pipe original stdout to transformed stream
+    childProcess.stdout!.pipe(transformedStdout, { end: false });
+
+    let buffer = '';
+    childProcess.stdout!.on('data', (chunk: Buffer) => {
+      buffer += chunk.toString();
+    });
+
+    // When original stdout ends, append [DONE] if not present
+    childProcess.stdout!.on('end', () => {
+      if (!buffer.trim().endsWith('[DONE]')) {
+        transformedStdout.write('\n[DONE]\n');
+      }
+      transformedStdout.end();
+    });
+
+    // Return spawn result with cleanup function and custom stdout
     return {
       process: childProcess,
       cleanup: async () => {
@@ -96,6 +116,9 @@ export class GenericShellAdapter implements IAgentAdapter {
             resolve();
           }
         });
+      },
+      customStreams: {
+        stdout: transformedStdout
       }
     };
   }
@@ -129,5 +152,25 @@ export class GenericShellAdapter implements IAgentAdapter {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Prepare message for sending to the command
+   * Prepends [SYSTEM] section if systemInstruction is provided
+   */
+  prepareMessage(message: string, systemInstruction?: string): string {
+    if (!systemInstruction) {
+      return message;
+    }
+
+    // Prepend [SYSTEM] section
+    return `[SYSTEM]\n${systemInstruction}\n\n${message}`;
+  }
+
+  /**
+   * Get default end marker for generic shell commands
+   */
+  getDefaultEndMarker(): string {
+    return '[DONE]';
   }
 }
