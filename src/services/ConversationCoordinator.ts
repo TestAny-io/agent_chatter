@@ -116,6 +116,14 @@ export class ConversationCoordinator {
     // JSONL -> text formatting
     const formatted = formatJsonl(member.agentType as any, rawResponse);
 
+    // 如果没有输出且未检测到完成事件，暂停等待当前 Agent，避免误路由
+    if (!formatted.completed && formatted.text.trim().length === 0) {
+      this.waitingForRoleId = member.id;
+      this.status = 'paused';
+      this.notifyStatusChange();
+      return;
+    }
+
     // 解析消息
     const parsed = this.messageRouter.parseMessage(formatted.text);
 

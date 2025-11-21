@@ -32,6 +32,11 @@ export function formatJsonl(agentType: SupportedJsonlAgent | undefined, raw: str
         completed = true;
       }
 
+      // Ignore system/init lines in output
+      if (obj.type === 'system') {
+        continue;
+      }
+
       // Claude stream-json --verbose
       if (obj.type === 'assistant' && obj.message?.content) {
         for (const item of obj.message.content) {
@@ -70,7 +75,7 @@ export function formatJsonl(agentType: SupportedJsonlAgent | undefined, raw: str
 
   let text = parts.join('\n').trim();
   if (!text) {
-    text = stripAnsi(raw.trim()); // fallback to raw text when no JSON parsed
+    text = stripAnsi(raw.trim()); // fallback to raw text (for malformed lines)
   }
   return { text, completed };
 }
