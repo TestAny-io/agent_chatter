@@ -10,6 +10,24 @@ import { initializeServices } from '../../src/utils/ConversationStarter.js';
 import type { CLIConfig } from '../../src/utils/ConversationStarter.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
 
+// Mock AgentValidator to avoid calling real CLI commands in CI
+vi.mock('../../src/registry/AgentValidator.js', () => {
+  return {
+    AgentValidator: class {
+      async verify() {
+        return {
+          status: 'verified',
+          checks: [
+            { name: 'Executable Check', passed: true, message: 'Command found (mocked)' },
+            { name: 'Version Check', passed: true, message: 'Version check passed (mocked)' },
+            { name: 'Authentication Check', passed: true, message: 'Authenticated (mocked)' }
+          ]
+        };
+      }
+    }
+  };
+});
+
 vi.mock('../../src/infrastructure/ProcessManager.js', () => {
   const startCalls: Array<{ command: string; args: string[]; env?: Record<string, string>; cwd?: string }> = [];
 
