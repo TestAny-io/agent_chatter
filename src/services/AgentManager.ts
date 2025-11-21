@@ -316,6 +316,11 @@ export class AgentManager {
         }, 5000);
       }
     }
+
+    // CRITICAL: Remove agent instance from cache after cancellation
+    // This ensures the next sendAndReceive() will restart the agent via ensureAgentStarted()
+    // Fixes bug: "Process not found: proc-xxx" when reusing agent after cancellation
+    this.agents.delete(roleId);
   }
 
   /**

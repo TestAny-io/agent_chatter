@@ -1505,7 +1505,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             setOutput(prev => [...prev, <Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>]);
 
-            const { coordinator, team } = await initializeServices(currentConfig, {
+            const { coordinator, team, messageRouter } = await initializeServices(currentConfig, {
                 onMessage: (message: ConversationMessage) => {
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
                     const nameColor = message.speaker.type === 'ai' ? 'cyan' : 'green';
@@ -1532,12 +1532,50 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 throw new Error('Team has no members configured. Please update the configuration file.');
             }
 
-            const firstSpeakerId = team.members[0].id;
+            // Parse initial message for [NEXT:xxx] directive
+            const parseResult = messageRouter.parseMessage(initialMessage);
+            let firstSpeakerId = team.members[0].id;
+            let cleanMessage = initialMessage;
+
+            if (parseResult.addressees.length > 0) {
+                // Try to find the member specified in [NEXT:xxx]
+                const targetAddresseeName = parseResult.addressees[0]; // Use first addressee
+                const normalizeIdentifier = (str: string): string => {
+                    return str.toLowerCase().replace(/[\s-_]/g, '');
+                };
+
+                const targetMember = team.members.find(m => {
+                    const normalizedAddressee = normalizeIdentifier(targetAddresseeName);
+                    const normalizedId = normalizeIdentifier(m.id);
+                    const normalizedName = normalizeIdentifier(m.name);
+                    const normalizedDisplayName = normalizeIdentifier(m.displayName);
+
+                    return normalizedId === normalizedAddressee ||
+                           normalizedName === normalizedAddressee ||
+                           normalizedDisplayName === normalizedAddressee;
+                });
+
+                if (targetMember) {
+                    firstSpeakerId = targetMember.id;
+                    cleanMessage = parseResult.cleanContent; // Use cleaned message without [NEXT] markers
+                    setOutput(prev => [...prev,
+                        <Text key={`next-hint-${getNextKey()}`} dimColor>
+                            → Starting with {targetMember.displayName} as specified in [NEXT] directive
+                        </Text>
+                    ]);
+                } else {
+                    setOutput(prev => [...prev,
+                        <Text key={`next-warn-${getNextKey()}`} color="yellow">
+                            Warning: Member '{targetAddresseeName}' not found. Starting with first member.
+                        </Text>
+                    ]);
+                }
+            }
 
             setOutput(prev => [...prev,
                 <Text key={`conv-start-${getNextKey()}`} color="green">{'─'.repeat(60)}</Text>,
                 <Text key={`conv-msg-${getNextKey()}`} bold>Conversation Started</Text>,
-                <Text key={`conv-init-${getNextKey()}`} dimColor>Initial message: {initialMessage}</Text>,
+                <Text key={`conv-init-${getNextKey()}`} dimColor>Initial message: {cleanMessage}</Text>,
                 <Text key={`conv-tip-${getNextKey()}`} color="yellow">Type your messages below. Type /end to exit conversation mode.</Text>,
                 <Text key={`conv-line-${getNextKey()}`} color="green">{'─'.repeat(60)}</Text>
             ]);
@@ -1546,7 +1584,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setActiveTeam(team);
             setMode('conversation');
 
-            coordinator.startConversation(team, initialMessage, firstSpeakerId);
+            coordinator.startConversation(team, cleanMessage, firstSpeakerId);
 
         } catch (error) {
             setOutput(prev => [...prev, <Text key={`start-err2-${getNextKey()}`} color="red">Error: {String(error)}</Text>]);

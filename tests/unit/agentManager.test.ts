@@ -318,4 +318,85 @@ describe('AgentManager', () => {
       expect(mockProcessManager.cancelSend).toHaveBeenCalledWith('stateful-proc');
     });
   });
+
+  describe('Bug fix: Agent restart after cancellation', () => {
+    it('removes agent instance from cache after cancellation', () => {
+      const mockAdapter = {
+        agentType: 'test-stateful',
+        command: 'test-command',
+        executionMode: 'stateful' as const,
+        getDefaultArgs: () => [],
+        prepareMessage: (msg: string) => msg,
+        getDefaultEndMarker: () => '[DONE]',
+        validate: async () => true,
+        spawn: vi.fn()
+      };
+
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+
+      // Manually set up agent instance (simulating ensureAgentStarted)
+      (manager as any).agents.set('restart-role', {
+        roleId: 'restart-role',
+        configId: 'restart-cfg',
+        processId: 'proc-1',
+        adapter: mockAdapter
+      });
+
+      // Verify agent is cached
+      expect(manager.isRunning('restart-role')).toBe(true);
+
+      // Cancel the agent
+      manager.cancelAgent('restart-role');
+
+      // Verify agent is removed from cache
+      // This ensures next ensureAgentStarted() will create new instance
+      expect(manager.isRunning('restart-role')).toBe(false);
+    });
+
+    it('cancelAgent deletes instance for stateless agents too', () => {
+      const mockAdapter = {
+        agentType: 'test-stateless',
+        command: 'test-command',
+        executionMode: 'stateless' as const,
+        getDefaultArgs: () => [],
+        prepareMessage: (msg: string) => msg,
+        getDefaultEndMarker: () => '[DONE]',
+        validate: async () => true,
+        spawn: vi.fn()
+      };
+
+      const fakeChildProcess = new EventEmitter() as any;
+      fakeChildProcess.kill = vi.fn();
+      fakeChildProcess.killed = false;
+
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+
+      // Set up stateless agent instance
+      (manager as any).agents.set('stateless-role', {
+        roleId: 'stateless-role',
+        configId: 'stateless-cfg',
+        processId: 'stateless-proc',
+        adapter: mockAdapter,
+        currentStatelessProcess: fakeChildProcess
+      });
+
+      // Verify agent is cached
+      expect(manager.isRunning('stateless-role')).toBe(true);
+
+      // Cancel the agent
+      manager.cancelAgent('stateless-role');
+
+      // Verify agent is removed from cache
+      expect(manager.isRunning('stateless-role')).toBe(false);
+
+      // Verify process was killed
+      expect(fakeChildProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+  });
 });

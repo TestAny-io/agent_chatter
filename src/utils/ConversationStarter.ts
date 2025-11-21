@@ -324,6 +324,7 @@ export async function initializeServices(
   coordinator: ConversationCoordinator;
   team: Team;
   processManager: ProcessManager;
+  messageRouter: MessageRouter;
 }> {
   // Enforce Schema 1.1: Reject all other versions
   // Support Schema 1.1 and 1.2
@@ -484,7 +485,7 @@ export async function initializeServices(
     }
   );
 
-  return { coordinator, team, processManager };
+  return { coordinator, team, processManager, messageRouter };
 }
 
 /**
