@@ -39,7 +39,7 @@ describe('Conversation flow integration', () => {
   it('routes messages according to NEXT markers across multiple agents', async () => {
     const responses = {
       'alpha-id': ['Alpha response [NEXT: beta-id]'],
-      'beta-id': ['Beta final [DONE]']
+      'beta-id': ['Beta final']
     };
     const agentManager = new FlowAgentManager(responses) as unknown as import('../../src/services/AgentManager.js').AgentManager;
     const router = new MessageRouter();
@@ -57,7 +57,8 @@ describe('Conversation flow integration', () => {
       updatedAt: new Date(),
       members: [
         buildMember({ id: 'alpha-id', name: 'Alpha', type: 'ai', order: 0, agentConfigId: 'cfg-alpha' }),
-        buildMember({ id: 'beta-id', name: 'Beta', type: 'ai', order: 1, agentConfigId: 'cfg-beta' })
+        buildMember({ id: 'beta-id', name: 'Beta', type: 'ai', order: 1, agentConfigId: 'cfg-beta' }),
+        buildMember({ id: 'human-id', name: 'Human', type: 'human', order: 2 })
       ]
     };
 
@@ -65,6 +66,8 @@ describe('Conversation flow integration', () => {
 
     expect(received.find(content => content.includes('Alpha response'))).toBeDefined();
     expect(received.find(content => content.includes('Beta final'))).toBeDefined();
-    expect(coordinator.getStatus()).toBe('completed');
+    // After beta (AI) completes, conversation continues to human and pauses
+    expect(coordinator.getStatus()).toBe('paused');
+    expect(coordinator.getWaitingForRoleId()).toBe('human-id');
   });
 });
