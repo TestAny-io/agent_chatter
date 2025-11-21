@@ -18,8 +18,6 @@ export interface CreateAgentConfigInput {
   env?: Record<string, string>;
   cwd?: string;
   description?: string;
-  endMarker?: string;
-  useEndOfMessageMarker?: boolean;
   usePty?: boolean;
 }
 
@@ -31,8 +29,6 @@ export interface UpdateAgentConfigInput {
   env?: Record<string, string>;
   cwd?: string;
   description?: string;
-  endMarker?: string;
-  useEndOfMessageMarker?: boolean;
   usePty?: boolean;
 }
 
@@ -53,14 +49,8 @@ export class AgentConfigManager {
       input.args,
       input.env,
       input.cwd,
-      input.description,
-      input.endMarker
+      input.description
     );
-
-    // 手动添加 useEndOfMessageMarker 字段
-    if (input.useEndOfMessageMarker !== undefined) {
-      config.useEndOfMessageMarker = input.useEndOfMessageMarker;
-    }
 
     // 手动添加 usePty 字段
     if (input.usePty !== undefined) {
@@ -128,8 +118,6 @@ export class AgentConfigManager {
       env: input.env ?? existingConfig.env,
       cwd: input.cwd ?? existingConfig.cwd,
       description: input.description ?? existingConfig.description,
-      endMarker: input.endMarker ?? existingConfig.endMarker,
-      useEndOfMessageMarker: input.useEndOfMessageMarker ?? existingConfig.useEndOfMessageMarker,
       usePty: input.usePty ?? existingConfig.usePty,
       updatedAt: new Date()
     };

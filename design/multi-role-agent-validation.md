@@ -229,14 +229,14 @@ Round 11:
       "name": "security-claude",
       "command": "claude",
       "args": ["--append-system-prompt", "You are Alice, a security reviewer. Focus on vulnerabilities. Always identify yourself as Alice."],
-      "endMarker": "[DONE]",
+      "completion": "jsonl",
       "usePty": false
     },
     {
       "name": "performance-claude",
       "command": "claude",
       "args": ["--append-system-prompt", "You are Bob, a performance optimizer. Focus on efficiency. Always identify yourself as Bob."],
-      "endMarker": "[DONE]",
+      "completion": "jsonl",
       "usePty": false
     }
   ],

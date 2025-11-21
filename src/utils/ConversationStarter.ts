@@ -36,7 +36,6 @@ export interface AgentDefinition {
   name: string;
   command?: string; // Optional in schema 1.1 when referencing registry agent
   args?: string[];
-  endMarker?: string;
   usePty?: boolean;
 }
 
@@ -88,7 +87,6 @@ interface NormalizedAgent {
   name: string;
   command: string;
   args: string[];
-  endMarker?: string;
   usePty?: boolean;
 }
 
@@ -150,7 +148,6 @@ function normalizeAgentDefinitions(agents: AgentDefinition[]): Map<string, Norma
       name: agent.name,
       command: agent.command,
       args: agent.args ?? [],
-      endMarker: agent.endMarker,
       usePty: agent.usePty
     });
   }
@@ -242,7 +239,7 @@ export function loadInstructionContent(filePath?: string): string | undefined {
 
 /**
  * 从全局 registry 加载 agents 并与 team 配置合并
- * Schema 1.1: Team config 可以引用 registry agent 并覆盖 args/endMarker/usePty
+ * Schema 1.1: Team config 可以引用 registry agent 并覆盖 args/usePty
  */
 async function loadAndMergeAgents(
   teamAgents: AgentDefinition[] | undefined,
@@ -266,7 +263,6 @@ async function loadAndMergeAgents(
         name: agent.name,
         command: agent.command,
         args: agent.args || [],
-        endMarker: agent.endMarker,
         usePty: agent.usePty
       });
     }
@@ -281,15 +277,14 @@ async function loadAndMergeAgents(
           throw new Error(
             `Security violation: Team config cannot override 'command' for agent "${teamAgent.name}". ` +
             `The command path is controlled by the global registry only. ` +
-            `You can only override args, endMarker, or usePty.`
+            `You can only override args or usePty.`
           );
         }
-        // Merge: team config can override args/endMarker/usePty, but NOT command
+        // Merge: team config can override args/usePty, but NOT command
         result.set(teamAgent.name, {
           name: teamAgent.name,
           command: registryAgent.command,  // Always use registry command
           args: teamAgent.args !== undefined ? teamAgent.args : (registryAgent.args || []),
-          endMarker: teamAgent.endMarker !== undefined ? teamAgent.endMarker : registryAgent.endMarker,
           usePty: teamAgent.usePty !== undefined ? teamAgent.usePty : registryAgent.usePty
         });
       } else {
@@ -304,7 +299,6 @@ async function loadAndMergeAgents(
           name: teamAgent.name,
           command: teamAgent.command,
           args: teamAgent.args || [],
-          endMarker: teamAgent.endMarker,
           usePty: teamAgent.usePty
         });
       }
@@ -339,7 +333,7 @@ export async function initializeServices(
       `Key changes in Schema 1.1/1.2:\n` +
       `  - Agents must be registered in global registry (~/.agent-chatter/agents/config.json)\n` +
       `  - Team config only references agent names, not full definitions\n` +
-      `  - Team config can override args/endMarker/usePty, but NOT command path\n` +
+      `  - Team config can override args/usePty, but NOT command path\n` +
       `  - Schema 1.2: Members can have systemInstruction field (overrides agent args)\n\n` +
       `Quick migration steps:\n` +
       `  1. Run: agent-chatter agents register <agent-name>\n` +
@@ -431,8 +425,6 @@ export async function initializeServices(
         env,
         cwd: normalizedPaths.workDir,
         description: `CLI agent: ${member.agentType} (${member.displayName})`,
-        endMarker: agentDef.endMarker,
-        useEndOfMessageMarker: false,
         usePty: agentDef.usePty ?? false
       });
       agentConfigId = agentConfig.id;

@@ -172,7 +172,7 @@ describe('ConversationCoordinator', () => {
     // The conversation should continue to the next agent (via round-robin), not terminate.
     // Conversation termination is controlled by human actions (human [DONE] or /end command).
     const responses = {
-      'ai-alpha': ['Alpha response [DONE]']
+      'ai-alpha': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Alpha response"}]}}\\n{"type":"result"}']
     };
     const stub = new StubAgentManager(responses);
     const agentManager = stub as unknown as AgentManager;
@@ -200,19 +200,17 @@ describe('ConversationCoordinator', () => {
     expect(stub.startCalls.length).toBe(1);
     expect(stub.startCalls[0].roleId).toBe('ai-alpha');
 
-    // Verify [DONE] was parsed but conversation continued to next member
+    // Verify completion was parsed but conversation continued to next member
     const alphaMessage = receivedMessages.find(msg => msg.speaker.roleId === 'ai-alpha');
     expect(alphaMessage).toBeDefined();
-    expect(alphaMessage!.routing?.isDone).toBe(true);
+    expect(alphaMessage!.routing?.isDone).toBe(false);
   });
 
-  it('AI message with [DONE] and [NEXT] routes to specified member, not terminating', async () => {
-    // NEW BEHAVIOR: When AI returns "[NEXT: bravo] [DONE]", the [DONE] only indicates
-    // the agent's reply is complete. The conversation should route to the specified
-    // next member (bravo), not terminate. After bravo responds, round-robin continues.
+  it('AI message with [NEXT] routes to specified member, not terminating', async () => {
+    // NEW BEHAVIOR: When AI returns completion + NEXT, the conversation routes and continues.
     const responses = {
-      'ai-alpha': ['Alpha response [NEXT: ai-bravo] [DONE]'],
-      'ai-bravo': ['Bravo response [DONE]']
+      'ai-alpha': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Alpha response [NEXT: ai-bravo]"}]}}\\n{"type":"result"}'],
+      'ai-bravo': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Bravo response"}]}}\\n{"type":"result"}']
     };
     const stub = new StubAgentManager(responses);
     const agentManager = stub as unknown as AgentManager;
@@ -241,10 +239,10 @@ describe('ConversationCoordinator', () => {
     expect(stub.startCalls[0].roleId).toBe('ai-alpha');
     expect(stub.startCalls[1].roleId).toBe('ai-bravo');
 
-    // Verify [NEXT] was honored and [DONE] did not terminate
+    // Verify [NEXT] was honored and completion did not terminate
     const alphaMessage = receivedMessages.find(msg => msg.speaker.roleId === 'ai-alpha');
     expect(alphaMessage).toBeDefined();
-    expect(alphaMessage!.routing?.isDone).toBe(true);
+    expect(alphaMessage!.routing?.isDone).toBe(false);
     expect(alphaMessage!.routing?.rawNextMarkers).toEqual(['ai-bravo']);
   });
 

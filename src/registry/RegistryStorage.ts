@@ -16,7 +16,6 @@ export interface AgentDefinition {
   displayName: string;    // "Claude Code", "OpenAI Codex"
   command: string;        // CLI 命令路径或名称
   args: string[];         // 默认参数
-  endMarker: string;      // 响应结束标记
   usePty: boolean;        // 是否使用 PTY
   version?: string;       // 检测到的版本
   installedAt: string;    // 注册时间 (ISO 8601)

@@ -23,7 +23,7 @@ export class ClaudeCodeAdapter implements IAgentAdapter {
    * Uses stream-json format for better output parsing
    */
   getDefaultArgs(): string[] {
-    return ['--output-format=stream-json'];
+    return ['--output-format=stream-json', '--verbose'];
   }
 
   /**
@@ -99,12 +99,5 @@ export class ClaudeCodeAdapter implements IAgentAdapter {
     // System instruction already passed via --append-system-prompt in spawn()
     // No need to prepend it here
     return message;
-  }
-
-  /**
-   * Get default end marker for Claude Code
-   */
-  getDefaultEndMarker(): string {
-    return '[DONE]';
   }
 }

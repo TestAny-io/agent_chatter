@@ -135,7 +135,6 @@ describe('Team Commands Integration Tests', () => {
             name: 'claude',
             command: 'claude',
             args: ['--append-system-prompt', 'test'],
-            endMarker: '[DONE]',
             usePty: false
           }
         ],
@@ -518,4 +517,3 @@ describe('Team Commands Integration Tests', () => {
     });
   });
 });
-

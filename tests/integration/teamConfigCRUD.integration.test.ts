@@ -120,7 +120,7 @@ describe('Team Config CRUD Integration Tests', () => {
             fs.mkdirSync(teamConfigDir, { recursive: true });
             const testConfig = {
                 schemaVersion: '1.1',
-                agents: [{ name: 'test-agent', args: [], endMarker: '[DONE]', usePty: false }],
+                agents: [{ name: 'test-agent', args: ['--output-format=stream-json'], usePty: false }],
                 team: {
                     name: 'test-team',
                     displayName: 'Test Team',

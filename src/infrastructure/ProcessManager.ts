@@ -18,8 +18,8 @@ export interface ProcessConfig {
 
 export interface SendOptions {
   maxTimeout?: number;  // 最大响应超时时间（毫秒），默认 1800000ms (30分钟)
-  endMarker?: string;  // 响应结束标记，例如 "[END]"
-  idleTimeout?: number;  // 空闲超时（毫秒），默认 3000ms (3秒)。仅在没有 endMarker 时使用
+  endMarker?: string;  // 可选：结束标记（兼容旧逻辑，仅兜底）
+  idleTimeout?: number;  // 空闲超时（毫秒），默认 3000ms (3秒)，在未检测到完成事件时兜底
   useEndOfMessageMarker?: boolean;  // 是否添加 [END_OF_MESSAGE] 标记（仅用于自定义测试 agents）
 }
 
@@ -194,6 +194,8 @@ export class ProcessManager {
     const idleTimeout = options?.idleTimeout ?? 3000;
     const endMarker = options?.endMarker;
     const useEndOfMessageMarker = options?.useEndOfMessageMarker ?? false;
+    const completionTypes = new Set(['result', 'turn.completed', 'turn.finished']);
+    let jsonLineBuffer = '';
 
     return new Promise((resolve, reject) => {
       // 先将缓冲区的内容加入到输出
@@ -221,14 +223,6 @@ export class ProcessManager {
         timeoutHandle: null as any  // Will be set below
       });
 
-      // 检查缓冲区中是否已经包含结束标记
-      if (endMarker && output.includes(endMarker)) {
-        const result = output.substring(0, output.indexOf(endMarker));
-        cleanup();
-        resolve(result);
-        return;
-      }
-
       // 设置最大响应超时（安全网，防止进程挂起或崩溃）
       maxTimeoutTimer = setTimeout(() => {
         cleanup();
@@ -251,11 +245,6 @@ export class ProcessManager {
           clearTimeout(idleTimer);
         }
 
-        // 如果有 endMarker，不使用空闲超时
-        if (endMarker) {
-          return;
-        }
-
         // 设置空闲超时
         idleTimer = setTimeout(() => {
           cleanup();
@@ -267,9 +256,32 @@ export class ProcessManager {
       this.outputCallbacks.set(processId, (data: string) => {
         output += data;
 
-        // 检查是否包含结束标记
+        // 追加并尝试按行解析 JSON 以检测完成事件
+        jsonLineBuffer += data;
+        const parts = jsonLineBuffer.split('\n');
+        jsonLineBuffer = parts.pop() || '';
+        for (const line of parts) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed[0] !== '{') {
+            continue;
+          }
+          try {
+            const obj = JSON.parse(trimmed);
+            if (obj?.type && completionTypes.has(obj.type)) {
+              cleanup();
+              resolve(output);
+              return;
+            }
+          } catch (err) {
+            if (process.env.DEBUG) {
+              // 非致命错误，仅在 debug 时输出
+              console.error('[ProcessManager] JSONL parse error:', err);
+            }
+          }
+        }
+
+        // 同时保留旧的 endMarker 检测（兼容性兜底）
         if (endMarker && output.includes(endMarker)) {
-          // 去除结束标记
           output = output.substring(0, output.indexOf(endMarker));
           cleanup();
           resolve(output);
@@ -282,6 +294,12 @@ export class ProcessManager {
 
       // 启动空闲计时器
       resetIdleTimer();
+
+      // 监听 stdout 结束（兜底：若未匹配到完成事件，则使用当前输出）
+      managed.process.stdout?.once('end', () => {
+        cleanup();
+        resolve(output);
+      });
 
       // 发送输入
       let content = input;

@@ -40,7 +40,7 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
 
   // Edit menu options
   // 0: Command, 1: Args, 2: End Marker, 3: Use PTY, 4: Save, 5: Cancel
-  const EDIT_MENU_ITEMS = ['Command', 'Arguments', 'End Marker', 'Use PTY', 'Save Changes', 'Cancel'];
+const EDIT_MENU_ITEMS = ['Command', 'Arguments', 'Use PTY', 'Save Changes', 'Cancel'];
 
   const filterNewAgents = (
     scanned: ScannedAgent[],
@@ -414,7 +414,6 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
           setEditData({
             command: agent.command,
             args: [...agent.args],
-            endMarker: agent.endMarker,
             usePty: agent.usePty
           });
           setSelectedEditField(0);
@@ -478,7 +477,6 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
                 const newArgsStr = JSON.stringify(newArgs);
                 if (currentArgsStr !== newArgsStr) updates.args = newArgs;
 
-                if (editData.endMarker !== currentAgent.endMarker) updates.endMarker = editData.endMarker;
                 if (editData.usePty !== currentAgent.usePty) updates.usePty = editData.usePty;
 
                 if (Object.keys(updates).length === 0) {
@@ -686,7 +684,6 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
               <Text>Display Name:  {currentAgent.displayName}</Text>
               <Text>Command:       {currentAgent.command}</Text>
               <Text>Arguments:     {currentAgent.args.join(' ') || '(none)'}</Text>
-              <Text>End Marker:    {currentAgent.endMarker}</Text>
               <Text>Use PTY:       {currentAgent.usePty ? 'Yes' : 'No'}</Text>
               <Text>Version:       {currentAgent.version || 'Unknown'}</Text>
               <Text>Installed At:  {currentAgent.installedAt}</Text>
@@ -773,41 +770,23 @@ export function AgentsMenu({ registryPath, onClose, onShowMessage }: AgentsMenuP
                   </Box>
                 </Box>
 
-                {/* End Marker Field */}
-                <Box flexDirection="column" marginBottom={1}>
-                  <Text color={selectedEditField === 2 ? 'cyan' : undefined}>
-                    {selectedEditField === 2 ? '▶ ' : '  '}End Marker:
-                  </Text>
-                  <Box marginLeft={2}>
-                    {selectedEditField === 2 && isEditingField ? (
-                      <TextInput
-                        value={editData.endMarker || ''}
-                        onChange={val => setEditData(prev => ({ ...prev, endMarker: val }))}
-                        focus={true}
-                      />
-                    ) : (
-                      <Text>{editData.endMarker}</Text>
-                    )}
-                  </Box>
-                </Box>
-
                 {/* Use PTY Field */}
                 <Box flexDirection="column" marginBottom={1}>
-                  <Text color={selectedEditField === 3 ? 'cyan' : undefined}>
-                    {selectedEditField === 3 ? '▶ ' : '  '}Use PTY:
+                  <Text color={selectedEditField === 2 ? 'cyan' : undefined}>
+                    {selectedEditField === 2 ? '▶ ' : '  '}Use PTY:
                   </Text>
                   <Box marginLeft={2}>
-                    <Text>{editData.usePty ? 'Yes' : 'No'} {selectedEditField === 3 ? '(Press Space/Enter to toggle)' : ''}</Text>
+                    <Text>{editData.usePty ? 'Yes' : 'No'} {selectedEditField === 2 ? '(Press Space/Enter to toggle)' : ''}</Text>
                   </Box>
                 </Box>
 
                 {/* Action Buttons */}
                 <Box marginTop={1} flexDirection="row" gap={2}>
-                  <Text color={selectedEditField === 4 ? 'green' : undefined}>
-                    {selectedEditField === 4 ? '▶ ' : '  '}[ Save Changes ]
+                  <Text color={selectedEditField === 3 ? 'green' : undefined}>
+                    {selectedEditField === 3 ? '▶ ' : '  '}[ Save Changes ]
                   </Text>
-                  <Text color={selectedEditField === 5 ? 'red' : undefined}>
-                    {selectedEditField === 5 ? '▶ ' : '  '}[ Cancel ]
+                  <Text color={selectedEditField === 4 ? 'red' : undefined}>
+                    {selectedEditField === 4 ? '▶ ' : '  '}[ Cancel ]
                   </Text>
                 </Box>
               </Box>

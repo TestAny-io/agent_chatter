@@ -1,4 +1,6 @@
-  Architecture Committee Review: UX-Driven Timeout with Configurable Safety Net
+ Architecture Committee Review: UX-Driven Timeout with Configurable Safety Net
+
+> 更新（2025-11-21）：运行时已改为 JSONL 完成事件，`endMarker` 相关表述为历史内容，将逐步清理。当前完成检测以 JSONL 事件 + idleTimeout 为准。
 
   ---
 

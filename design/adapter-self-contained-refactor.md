@@ -1,5 +1,7 @@
 # Adapter Self-Contained Refactor - Design Proposal
 
+> 更新（2025-11-21）：运行时已改为 JSONL 完成事件并移除 `endMarker` 依赖，本文中的 endMarker 字段为历史描述，将逐步清理。
+
 **Status:** Revision 4 (Addressing Third Round Review)
 **Date:** 2025-11-21
 **Author:** Product Team

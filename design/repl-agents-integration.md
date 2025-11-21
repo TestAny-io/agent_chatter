@@ -1,5 +1,7 @@
 # REPL Agents 集成设计（修订版 v2）
 
+> 更新（2025-11-21）：运行时已改为 JSONL 完成事件，不再依赖 `endMarker`。文中出现的 endMarker 字段为历史描述，将逐步清理；以 JSONL 默认参数和完成事件为准。
+
 ## 概述
 
 本设计实现 REPL 模式下的完整 agent 管理功能，采用业务逻辑与 UI 展示分离的架构。终端 CLI 只是辅助通道，绝大多数用户会直接留在 agent-chatter REPL 里完成所有操作。

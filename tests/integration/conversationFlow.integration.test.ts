@@ -38,8 +38,8 @@ function buildMember(overrides: Partial<Role>): Role {
 describe('Conversation flow integration', () => {
   it('routes messages according to NEXT markers across multiple agents', async () => {
     const responses = {
-      'alpha-id': ['Alpha response [NEXT: beta-id]'],
-      'beta-id': ['Beta final']
+      'alpha-id': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Alpha response [NEXT: beta-id]"}]}}\\n{"type":"result"}'],
+      'beta-id': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Beta final"}]}}\\n{"type":"result"}']
     };
     const agentManager = new FlowAgentManager(responses) as unknown as import('../../src/services/AgentManager.js').AgentManager;
     const router = new MessageRouter();

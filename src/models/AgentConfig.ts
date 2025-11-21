@@ -10,8 +10,6 @@ export interface AgentConfig {
   env?: Record<string, string>;  // 环境变量
   cwd?: string;           // 工作目录
   description?: string;   // 配置描述
-  endMarker?: string;     // 响应结束标记，例如 "[END]"
-  useEndOfMessageMarker?: boolean;  // 是否在发送消息时添加 [END_OF_MESSAGE] 标记（仅用于自定义测试 agents）
   usePty?: boolean;       // 是否使用伪终端（用于交互式 CLI 工具如 Claude Code）
 
   // 元数据
@@ -51,7 +49,6 @@ export class AgentConfigUtils {
     env?: Record<string, string>,
     cwd?: string,
     description?: string,
-    endMarker?: string
   ): AgentConfig {
     const now = new Date();
     return {
@@ -63,7 +60,6 @@ export class AgentConfigUtils {
       env,
       cwd,
       description,
-      endMarker,
       createdAt: now,
       updatedAt: now
     };

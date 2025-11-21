@@ -43,7 +43,7 @@ AI CLI 工具
 {
   "command": "codex",
   "args": ["exec", "--json", "--full-auto"],
-  "endMarker": "[DONE]"  // ← codex 不输出 [DONE]！
+  "completion": "jsonl"
 }
 ```
 
@@ -103,7 +103,7 @@ ProcessManager (通用进程管理，核心逻辑不变，但支持多种完成�
 
 ### 1. ProcessManager 增强：支持多种完成检测策略
 
-**当前问题：** ProcessManager 只支持 endMarker 检测，对于不输出标记的 agent（如 Codex）无法工作。
+**当前问题（已解决）：** 需支持 JSONL 完成事件，不依赖 endMarker。
 
 **解决方案：** 支持三种完成检测策略：
 
@@ -111,7 +111,7 @@ ProcessManager (通用进程管理，核心逻辑不变，但支持多种完成�
 // src/infrastructure/ProcessManager.ts (增强)
 
 export type CompletionStrategy =
-  | { type: 'endMarker'; marker: string }           // 等待特定标记
+  | { type: 'jsonl'; completionTypes: string[] }    // 等待特定 JSON 行事件
   | { type: 'idleTimeout'; timeoutMs: number }      // 空闲超时
   | { type: 'custom'; detector: (output: string) => boolean };  // 自定义检测函数
 
@@ -147,18 +147,24 @@ async sendAndReceive(
 
     const checkCompletion = (currentOutput: string) => {
       switch (strategy.type) {
-        case 'endMarker':
-          if (currentOutput.includes(strategy.marker)) {
-            // 移除 endMarker
-            const cleanOutput = currentOutput.substring(
-              0,
-              currentOutput.indexOf(strategy.marker)
-            );
-            cleanup();
-            resolve(cleanOutput);
-            return true;
+        case 'jsonl': {
+          const lines = currentOutput.split('\\n');
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('{')) continue;
+            try {
+              const obj = JSON.parse(trimmed);
+              if (strategy.completionTypes.includes(obj?.type)) {
+                cleanup();
+                resolve(currentOutput);
+                return true;
+              }
+            } catch {
+              continue;
+            }
           }
           break;
+        }
 
         case 'idleTimeout':
           // 重置空闲计时器
@@ -219,7 +225,7 @@ async sendAndReceive(
 **关键改进：**
 - ✅ 支持三种完成检测策略
 - ✅ Codex 可以使用 `idleTimeout` 或自定义检测器
-- ✅ Claude 继续使用 `endMarker`
+- ✅ Claude 改为 `--output-format=stream-json --verbose`，完成信号 `result`
 - ✅ **idleTimeout 立即启动**：发送消息后立即启动计时器，即使 agent 没有任何输出也会超时返回
 - ✅ 核心 ProcessManager 逻辑保持通用性
 
@@ -296,8 +302,8 @@ export interface MemberAgentConfig {
       "capabilities": {
         "supportsSystemPrompt": true,
         "systemPromptFlag": "--append-system-prompt",
-        "completionDetection": "endMarker",  // "endMarker" | "idleTimeout" | "custom"
-        "endMarker": "[DONE]"
+        "completionDetection": "jsonl",  // "jsonl" | "idleTimeout" | "custom"
+        "completionTypes": ["result"]
       },
       "usePty": false,
       "version": "2.0.44",
@@ -362,9 +368,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   private buildSystemPrompt(memberInstruction: string): string {
     // 合并成员指令与技术要求
-    const endMarkerInstruction =
-      '\n\nIMPORTANT: Always end your response with [DONE] on a new line.';
-    return memberInstruction + endMarkerInstruction;
+    return memberInstruction;
   }
 
   prepareMessage(message: string, memberConfig: MemberAgentConfig): string {
@@ -374,14 +378,14 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   parseResponse(rawOutput: string): string {
-    // 移除 [DONE] 标记（如果存在）
-    return rawOutput.replace(/\[DONE\]\s*$/m, '').trim();
+    // JSONL 模式下交由上层解析
+    return rawOutput.trim();
   }
 
   getCompletionStrategy(): CompletionStrategy {
     return {
-      type: 'endMarker',
-      marker: this.registryConfig.capabilities.endMarker || '[DONE]'
+      type: 'jsonl',
+      completionTypes: ['result']
     };
   }
 }
@@ -802,7 +806,7 @@ private buildAgentMessage(member: Member, message: string): string {
 
 | Agent | 策略 | 原因 | 实现 |
 |-------|------|------|------|
-| **Claude Code** | `endMarker: "[DONE]"` | Claude 被强制输出 [DONE] | CLI args 注入系统提示词 |
+| **Claude Code** | `completion: jsonl (result)` | 流式 JSON | CLI args 注入系统提示词 |
 | **Codex** | `idleTimeout: 2000ms` | Codex 不输出标记 | 空闲 2 秒后认为完成 |
 | **Gemini** | `idleTimeout: 2000ms` | Gemini 不输出标记 | 空闲 2 秒后认为完成 |
 
@@ -880,12 +884,12 @@ describe('ClaudeAdapter', () => {
     expect(promptValue).toContain('[DONE]');
   });
 
-  it('使用 endMarker 完成策略', () => {
+  it('使用 JSONL 完成策略', () => {
     const adapter = new ClaudeAdapter(registryConfig);
     const strategy = adapter.getCompletionStrategy();
 
-    expect(strategy.type).toBe('endMarker');
-    expect(strategy.marker).toBe('[DONE]');
+    expect(strategy.type).toBe('jsonl');
+    expect(strategy.completionTypes).toContain('result');
   });
 });
 
@@ -1017,8 +1021,8 @@ export interface Member {
 - ProcessManager 会一直等待标记
 
 **解决方案：**
-1. **增强 ProcessManager** 支持多种完成检测策略（endMarker, idleTimeout, custom）
-2. **CodexAdapter** 使用 `idleTimeout` 策略而不是 `endMarker`
+1. **增强 ProcessManager** 支持 JSONL 完成检测 + idleTimeout/custom
+2. **CodexAdapter** 使用 JSONL 完成事件（turn.completed）
 3. **ProcessManager** 根据策略选择合适的检测方式
 4. **无需 shell wrapper** 注入 [DONE]
 
@@ -1107,7 +1111,7 @@ export interface Member {
 **缓解措施**：
 - 设置合理的 idleTimeout 值（2秒）
 - 在 Registry 中可配置
-- 对于支持 endMarker 的 agent 优先使用 endMarker
+- JSONL 完成事件优先；idleTimeout 为兜底
 
 ---
 
@@ -1345,7 +1349,7 @@ parseResponse(rawOutput: string): string {
 
 1. **ProcessManager 层（不变）**：
    - `[DONE]` 仍然作为消息完成标记
-   - 用于检测 Agent 响应结束（通过 `endMarker` 或 `idleTimeout`）
+   - 用于检测 Agent 响应结束（通过 JSONL 完成事件或 `idleTimeout`）
    - Adapter 层负责注入 `[DONE]`（如果原始输出不包含）
 
 2. **ConversationCoordinator 层（已变更）**：

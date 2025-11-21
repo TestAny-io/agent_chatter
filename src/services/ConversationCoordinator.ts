@@ -16,6 +16,7 @@ import { SessionUtils } from '../models/ConversationSession.js';
 import { AgentManager } from './AgentManager.js';
 import { MessageRouter } from './MessageRouter.js';
 import type { ConversationConfig } from '../utils/ConversationStarter.js';
+import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -112,8 +113,11 @@ export class ConversationCoordinator {
       throw new Error(`Member ${memberId} not found`);
     }
 
+    // JSONL -> text formatting
+    const formatted = formatJsonl(member.agentType as any, rawResponse);
+
     // 解析消息
-    const parsed = this.messageRouter.parseMessage(rawResponse);
+    const parsed = this.messageRouter.parseMessage(formatted.text);
 
     // 创建 ConversationMessage
     const message: ConversationMessage = MessageUtils.createMessage(

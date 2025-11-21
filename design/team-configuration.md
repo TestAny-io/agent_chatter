@@ -604,21 +604,21 @@ Confirm deletion? [y/N] y
       "name": "claude",
       "command": "claude",
       "args": ["--append-system-prompt", "..."],
-      "endMarker": "[DONE]",
+      "completion": "jsonl",
       "usePty": false
     },
     {
       "name": "codex",
       "command": "codex",
       "args": ["--color", "auto"],
-      "endMarker": "[DONE]",
+      "completion": "jsonl",
       "usePty": false
     },
     {
       "name": "gemini",
       "command": "gemini",
       "args": [],
-      "endMarker": "<END>",
+      "completion": "jsonl",
       "usePty": false
     }
   ],
@@ -697,13 +697,13 @@ Confirm deletion? [y/N] y
 **字段说明**：
 
 **顶层字段**：
-- `schemaVersion`: 配置文件schema版本号，用于未来版本兼容性管理。当前版本为 "1.0"
+- `schemaVersion`: 配置文件schema版本号，用于未来版本兼容性管理。当前版本为 "1.2"
 
 **agents数组**：定义可复用的AI CLI agent配置
 - `name`: Agent标识符
 - `command`: CLI命令
 - `args`: 默认命令参数
-- `endMarker`: 默认结束标记
+- （移除）`endMarker`: JSONL-only 模式不再使用结束标记
 - `usePty`: 是否使用PTY（默认false）
 
 **team对象**：
@@ -745,9 +745,9 @@ Confirm deletion? [y/N] y
    - 多个成员可以分配到同一个角色
 
 2. **成员级指令文件与目录**：
-   - 成员通过`agentType`引用agents数组中的基础配置（命令、默认参数、endMarker、usePty等）
+   - 成员通过`agentType`引用agents数组中的基础配置（命令、默认参数、usePty等）
    - 通过`instructionFile`指定每个成员自己的人格文件（AGENTS.md/GEMINI.md/CLAUDE.md等）
-   - 不再允许成员级别覆盖endMarker/usePty/args；如需定制，请创建新的agent类型或在指令文件中说明
+   - 不再允许成员级别覆盖usePty/args；如需定制，请创建新的agent类型或在指令文件中说明
 
 3. **目录与环境隔离**：
    - `roleDir` 是角色入口目录，用于存放该成员的指令文件、启动脚本、符号链接等"人格资产"；它是用户交互和团队结构的锚点
@@ -904,7 +904,7 @@ Looks good? [Y/n]
 - [ ] 实现Step 2: Detect Agents（检测可用AI）
   - [ ] 集成ToolDetector检测已安装agents
   - [ ] 单个agent自动选择，多个agents提供多选
-  - [ ] 为每个选中的agent生成agents数组条目（command, default args, endMarker, usePty）
+  - [ ] 为每个选中的agent生成agents数组条目（command, default args, usePty）
 - [ ] 实现Step 3: Configure Members（逐个配置成员）
   - [ ] 遍历每个成员，配置type, display name, theme color
   - [ ] 为每个成员收集目录/环境：roleDir、workDir、instructionFile（可自动推导）
@@ -929,7 +929,7 @@ Looks good? [Y/n]
 - [ ] 实现编辑成员（嵌套菜单 → 选择属性 → 修改值）
   - [ ] 支持修改display name与theme color
   - [ ] 支持更新目录/环境字段（roleDir/workDir/instructionFile/env），并实时校验路径有效性
-  - [ ] 支持Change AI Agent（带警告和重新配置默认args/endMarker）
+  - [ ] 支持Change AI Agent（带警告和重新配置默认args）
   - [ ] 支持Change Type AI↔Human（带警告）
   - [ ] ~~支持Change Role~~（不允许，角色分配创建后不可修改）
 - [ ] 实现删除成员（带警告，显示角色会变为0成员的提示）
@@ -1021,7 +1021,7 @@ Looks good? [Y/n]
 
 3. **成员级配置覆盖**：
    - 成员的`agentType`引用顶层`agents`数组中的基础配置
-   - 成员可以有可选的`endMarker`, `usePty`, `args`字段覆盖基础配置
+  - 成员可以有可选的`usePty`, `args`字段覆盖基础配置
    - 如果成员未指定这些字段，使用agents中的默认值
    - 这样两个成员可以使用同一个CLI agent但有不同的运行参数
 
@@ -1059,14 +1059,14 @@ team: {
     return {
       command: baseAgent.command,
       args: baseAgent.args,
-      endMarker: baseAgent.endMarker,
+      // endMarker removed in JSONL-only mode
       usePty: baseAgent.usePty
     };
   }
   ```
 
 2. **向后兼容性**：
-  - 旧版本成员如果带有`endMarker`/`usePty`/`args`字段，需手动移除以回退到agent默认值
+  - 旧版本成员如果带有`endMarker`字段，需手动移除；仍可覆盖 usePty/args
    - legacy配置中的`teamGoal`内容会提示用户写入新的team instruction file
 
 3. **编辑时的智能显示**：

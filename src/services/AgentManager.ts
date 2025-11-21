@@ -14,6 +14,7 @@ import type { SendOptions } from '../infrastructure/ProcessManager.js';
 import { AgentConfigManager } from './AgentConfigManager.js';
 import { AdapterFactory } from '../adapters/AdapterFactory.js';
 import type { AgentSpawnConfig, IAgentAdapter } from '../adapters/IAgentAdapter.js';
+import type { AgentConfig } from '../models/AgentConfig.js';
 
 /**
  * Agent 实例信息
@@ -158,8 +159,9 @@ export class AgentManager {
       throw new Error(`Role ${roleId} has no running agent`);
     }
 
-    // 获取配置以确定 endMarker 和 useEndOfMessageMarker
+    // 获取配置用于追加参数、环境等
     const config = await this.agentConfigManager.getAgentConfig(agent.configId);
+    const producesJsonOutput = this.producesJsonOutput(config);
 
     // Prepare message using adapter (handles system instruction prepending)
     const preparedMessage = agent.adapter.prepareMessage(message, agent.systemInstruction);
@@ -241,24 +243,15 @@ export class AgentManager {
             return;
           }
 
-          // Append [DONE] marker if not present
-          const endMarker = agent.adapter.getDefaultEndMarker();
-          if (!stdout.trim().endsWith(endMarker)) {
-            stdout += `\n${endMarker}\n`;
-          }
-
           resolve(stdout);
         });
       });
     } else {
       // Stateful mode: Use ProcessManager to send via stdin/stdout
-      // Get default end marker from adapter
-      const defaultEndMarker = agent.adapter.getDefaultEndMarker();
-
       const sendOptions: SendOptions = {
         maxTimeout: options?.maxTimeout,
-        endMarker: options?.endMarker || config?.endMarker || defaultEndMarker,
-        useEndOfMessageMarker: config?.useEndOfMessageMarker || false
+        endMarker: producesJsonOutput ? undefined : options?.endMarker,
+        useEndOfMessageMarker: false
       };
 
       return this.processManager.sendAndReceive(
@@ -350,5 +343,17 @@ export class AgentManager {
    */
   getAgentInfo(roleId: string): AgentInstance | undefined {
     return this.agents.get(roleId);
+  }
+
+  /**
+   * Detect whether an agent configuration is set to emit JSONL output.
+   * Used to avoid endMarker waiting (stream-json / --json flows emit completion events instead).
+   */
+  private producesJsonOutput(config?: AgentConfig): boolean {
+    const args = config?.args || [];
+    return args.some(arg =>
+      typeof arg === 'string' &&
+      (arg.includes('stream-json') || arg === '--json' || arg === '--output-format=stream-json')
+    );
   }
 }

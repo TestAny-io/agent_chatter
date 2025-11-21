@@ -540,7 +540,7 @@ function getMemberEffectiveConfig(member: TeamRole, agents: AgentConfig[]): Effe
   return {
     command: baseAgent.command,  // ❌ 如果baseAgent是undefined会崩溃
     args: baseAgent.args,
-    endMarker: baseAgent.endMarker,
+    // endMarker removed in JSONL-only mode（JSONL 完成事件优先）
     usePty: baseAgent.usePty
   };
 }
@@ -566,7 +566,7 @@ function getMemberEffectiveConfig(member: TeamRole, agents: AgentConfig[]): Effe
   return {
     command: baseAgent.command,
     args: baseAgent.args,
-    endMarker: baseAgent.endMarker,
+    // endMarker removed in JSONL-only mode（JSONL 完成事件优先）
     usePty: baseAgent.usePty
   };
 }

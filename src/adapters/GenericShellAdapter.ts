@@ -5,7 +5,6 @@
  * - Executes command with prompt as CLI argument
  * - Each message spawns a new process (one-shot execution)
  * - Prepends [SYSTEM] section to messages
- * - Appends [DONE] marker to responses
  * - Suitable for custom agents, Gemini CLI, or any other CLI tool
  */
 
@@ -13,7 +12,6 @@ import { spawn, exec } from 'child_process';
 import { access } from 'fs/promises';
 import { constants } from 'fs';
 import { promisify } from 'util';
-import { PassThrough } from 'stream';
 import type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult } from './IAgentAdapter.js';
 
 const execAsync = promisify(exec);
@@ -81,26 +79,7 @@ export class GenericShellAdapter implements IAgentAdapter {
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    // Create PassThrough stream to intercept stdout and append [DONE]
-    const transformedStdout = new PassThrough();
-
-    // Pipe original stdout to transformed stream
-    childProcess.stdout!.pipe(transformedStdout, { end: false });
-
-    let buffer = '';
-    childProcess.stdout!.on('data', (chunk: Buffer) => {
-      buffer += chunk.toString();
-    });
-
-    // When original stdout ends, append [DONE] if not present
-    childProcess.stdout!.on('end', () => {
-      if (!buffer.trim().endsWith('[DONE]')) {
-        transformedStdout.write('\n[DONE]\n');
-      }
-      transformedStdout.end();
-    });
-
-    // Return spawn result with cleanup function and custom stdout
+    // Return spawn result with cleanup function
     return {
       process: childProcess,
       cleanup: async () => {
@@ -119,9 +98,6 @@ export class GenericShellAdapter implements IAgentAdapter {
             resolve();
           }
         });
-      },
-      customStreams: {
-        stdout: transformedStdout
       }
     };
   }
@@ -168,13 +144,6 @@ export class GenericShellAdapter implements IAgentAdapter {
 
     // Prepend [SYSTEM] section
     return `[SYSTEM]\n${systemInstruction}\n\n${message}`;
-  }
-
-  /**
-   * Get default end marker for generic shell commands
-   */
-  getDefaultEndMarker(): string {
-    return '[DONE]';
   }
 
   /**

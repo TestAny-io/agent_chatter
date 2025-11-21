@@ -128,13 +128,6 @@ export class OpenAICodexAdapter implements IAgentAdapter {
   }
 
   /**
-   * Get default end marker for Codex
-   */
-  getDefaultEndMarker(): string {
-    return '[DONE]';
-  }
-
-  /**
    * Execute a one-shot command (stateless mode)
    * Spawns a new Codex process for each message, passes message as CLI argument
    */
@@ -182,12 +175,6 @@ export class OpenAICodexAdapter implements IAgentAdapter {
           reject(new Error(`Codex process exited with code ${code}. stderr: ${stderr}`));
           return;
         }
-
-        // Append [DONE] marker if not present
-        if (!stdout.trim().endsWith('[DONE]')) {
-          stdout += '\n[DONE]\n';
-        }
-
         resolve(stdout);
       });
     });

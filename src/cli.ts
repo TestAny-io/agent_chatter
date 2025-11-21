@@ -198,11 +198,7 @@ program
                     name: 'claude',
                     // Schema 1.1: No 'command' field - agent must be registered in global registry
                     // Run: agent-chatter agents register claude
-                    args: [
-                        '--append-system-prompt',
-                        'Always end your response with the exact text [DONE] on a new line. Keep responses concise.'
-                    ],
-                    endMarker: '[DONE]',
+                    args: ['--output-format=stream-json', '--verbose'],
                     usePty: false
                 }
             ],

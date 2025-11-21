@@ -18,14 +18,21 @@ export const TeamConfigSchema = {
   properties: {
     schemaVersion: {
       type: "string",
-      enum: ["1.0", "1.1", "1.2"],
+      enum: ["1.2"],
       description: "Team config schema version"
     },
     agents: {
       type: "array",
-      description: "Legacy agent definitions (deprecated, use global registry)",
+      description: "Agent definitions (refer to global registry; command cannot be overridden)",
       items: {
-        type: "object"
+        type: "object",
+        required: ["name"],
+        properties: {
+          name: { type: "string" },
+          args: { type: "array", items: { type: "string" } },
+          usePty: { type: "boolean" }
+        },
+        additionalProperties: false
       }
     },
     team: {

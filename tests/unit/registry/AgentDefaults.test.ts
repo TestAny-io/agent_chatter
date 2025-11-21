@@ -9,21 +9,17 @@ import {
 
 describe('AgentDefaults', () => {
   describe('getDefaultAgentConfig', () => {
-    it('returns default config for claude', () => {
-      const config = getDefaultAgentConfig('claude');
+  it('returns default config for claude', () => {
+    const config = getDefaultAgentConfig('claude');
 
-      expect(config).toEqual({
-        name: 'claude',
-        displayName: 'Claude Code',
-        command: 'claude',
-        args: [
-          '--append-system-prompt',
-          'Always end your response with [DONE] on a new line. Keep responses concise.'
-        ],
-        endMarker: '[DONE]',
-        usePty: false
-      });
+    expect(config).toEqual({
+      name: 'claude',
+      displayName: 'Claude Code',
+      command: 'claude',
+      args: ['--output-format=stream-json', '--verbose'],
+      usePty: false
     });
+  });
 
     it('returns default config for codex', () => {
       const config = getDefaultAgentConfig('codex');
@@ -33,23 +29,21 @@ describe('AgentDefaults', () => {
         displayName: 'OpenAI Codex',
         command: 'codex',
         args: ['exec', '--json', '--full-auto', '--skip-git-repo-check'],
-        endMarker: '[DONE]',
         usePty: false
       });
     });
 
-    it('returns default config for gemini', () => {
-      const config = getDefaultAgentConfig('gemini');
+  it('returns default config for gemini', () => {
+    const config = getDefaultAgentConfig('gemini');
 
-      expect(config).toEqual({
-        name: 'gemini',
-        displayName: 'Google Gemini CLI',
-        command: 'gemini',
-        args: ['-p'],
-        endMarker: '[DONE]',
-        usePty: false
-      });
+    expect(config).toEqual({
+      name: 'gemini',
+      displayName: 'Google Gemini CLI',
+      command: 'gemini',
+      args: ['--output-format', 'stream-json'],
+      usePty: false
     });
+  });
 
     it('allows custom command path', () => {
       const config = getDefaultAgentConfig('claude', '/custom/path/claude');

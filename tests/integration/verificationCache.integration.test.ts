@@ -97,8 +97,8 @@ describe('Verification Cache Integration', () => {
     const config: CLIConfig = {
       schemaVersion: '1.1',
       agents: [
-        // Schema 1.1: Reference agent from registry, can override args/endMarker/usePty
-        { name: 'claude', args: [], endMarker: '[DONE]', usePty: false }
+        // Schema 1.1: Reference agent from registry, can override args/usePty
+        { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false }
       ],
       team: {
         name: 'cache-test',
@@ -178,7 +178,7 @@ describe('Verification Cache Integration', () => {
       schemaVersion: '1.1',
       agents: [
         // Schema 1.1: Reference agent from registry
-        { name: 'claude', args: [], endMarker: '[DONE]', usePty: false }
+        { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false }
       ],
       team: {
         name: 'member-workdir-test',

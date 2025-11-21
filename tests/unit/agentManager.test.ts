@@ -78,14 +78,12 @@ describe('AgentManager', () => {
     expect(mockProcessManager.registerProcess).toHaveBeenCalledTimes(1);
   });
 
-  it('sendAndReceive applies endMarker and options', async () => {
+  it('sendAndReceive applies options (maxTimeout) and disables endMarker for JSON agents', async () => {
     mockAgentConfigManager.getAgentConfig.mockResolvedValue({
       id: 'cfg',
       type: 'claude-code',
       command: 'echo',
-      args: [],
-      endMarker: '[DONE]',
-      useEndOfMessageMarker: false
+      args: ['--output-format=stream-json', '--verbose']
     });
     mockProcessManager.registerProcess.mockReturnValue('proc-2');
     mockProcessManager.sendAndReceive.mockResolvedValue('result');
@@ -102,7 +100,7 @@ describe('AgentManager', () => {
     expect(mockProcessManager.sendAndReceive).toHaveBeenCalledWith(
       'proc-2',
       'hello',
-      expect.objectContaining({ endMarker: '[DONE]', maxTimeout: 1000 })
+      expect.objectContaining({ maxTimeout: 1000 })
     );
   });
 

@@ -1,5 +1,7 @@
 # Agent Registry 设计文档
 
+> 更新（2025-11-21）：系统已切换为 JSONL 完成事件（Claude/Codex/Gemini），不再依赖 `endMarker`。文档中出现的 endMarker 字段为历史描述，后续将逐步清理；当前实现以 JSONL 参数与完成事件为准。
+
 ## 1. 背景和问题
 
 ### 1.1 当前架构的问题

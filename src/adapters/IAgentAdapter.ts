@@ -127,14 +127,6 @@ export interface IAgentAdapter {
   prepareMessage(message: string, systemInstruction?: string): string;
 
   /**
-   * Get default end marker for this adapter
-   * Can be overridden by SendOptions.endMarker
-   *
-   * @returns End marker string (e.g., "[DONE]")
-   */
-  getDefaultEndMarker(): string;
-
-  /**
    * Execute a one-shot command (stateless mode only)
    * Spawns a new process for each message, passes message as CLI argument
    *

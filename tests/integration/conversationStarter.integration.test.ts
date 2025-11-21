@@ -112,11 +112,10 @@ describe('ConversationStarter integration', () => {
     const config: CLIConfig = {
       schemaVersion: '1.1',
       agents: [
-        // Schema 1.1: Reference registered agent, override args/endMarker
+        // Schema 1.1: Reference registered agent, override args/usePty
         {
           name: 'claude',
-          args: [],
-          endMarker: '[DONE]',
+          args: ['--output-format=stream-json', '--verbose'],
           usePty: false
         }
       ],
@@ -190,7 +189,7 @@ describe('ConversationStarter integration', () => {
     const config: CLIConfig = {
       schemaVersion: '1.1',
       agents: [
-        { name: 'claude', args: [], endMarker: '[DONE]', usePty: false }
+        { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false }
       ],
       team: {
         name: 'missing-instruction',

@@ -18,11 +18,7 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         name: 'claude',
         displayName: 'Claude Code',
         command: command || 'claude',
-        args: [
-          '--append-system-prompt',
-          'Always end your response with [DONE] on a new line. Keep responses concise.'
-        ],
-        endMarker: '[DONE]',
+        args: ['--output-format=stream-json', '--verbose'],
         usePty: false
       };
 
@@ -32,7 +28,6 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         displayName: 'OpenAI Codex',
         command: command || 'codex',
         args: ['exec', '--json', '--full-auto', '--skip-git-repo-check'],
-        endMarker: '[DONE]',
         usePty: false
       };
 
@@ -41,8 +36,7 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         name: 'gemini',
         displayName: 'Google Gemini CLI',
         command: command || 'gemini',
-        args: ['-p'],
-        endMarker: '[DONE]',
+        args: ['--output-format', 'stream-json'],
         usePty: false
       };
 

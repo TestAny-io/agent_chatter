@@ -47,7 +47,7 @@ Migration guide: design/team-configuration.md
 Key changes in Schema 1.1:
   - Agents must be registered in global registry (~/.agent-chatter/agents/config.json)
   - Team config only references agent names, not full definitions
-  - Team config can override args/endMarker/usePty, but NOT command path
+  - Team config can override args/usePty, but NOT command path
 
 Quick migration steps:
   1. Run: agent-chatter agents register <agent-name>

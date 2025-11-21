@@ -43,7 +43,6 @@ describe('RegistryStorage', () => {
             displayName: 'Claude Code',
             command: 'claude',
             args: ['--test'],
-            endMarker: '[DONE]',
             usePty: false,
             installedAt: '2024-11-18T10:00:00Z'
           }
@@ -110,7 +109,6 @@ describe('RegistryStorage', () => {
         displayName: 'Claude Code',
         command: 'claude',
         args: ['--test'],
-        endMarker: '[DONE]',
         usePty: false,
         installedAt: '2024-11-18T10:00:00Z'
       };
@@ -158,7 +156,6 @@ describe('RegistryStorage', () => {
             displayName: 'Claude Code',
             command: 'claude',
             args: [],
-            endMarker: '[DONE]',
             usePty: false,
             installedAt: '2024-11-18T10:00:00Z'
           }
@@ -175,7 +172,6 @@ describe('RegistryStorage', () => {
             displayName: 'OpenAI Codex',
             command: 'codex',
             args: ['exec'],
-            endMarker: '[DONE]',
             usePty: false,
             installedAt: '2024-11-18T11:00:00Z'
           }

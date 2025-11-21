@@ -155,7 +155,6 @@ describe('AgentScanner', () => {
       expect(definition.version).toBe('0.8.0');
       expect(definition.installedAt).toBeDefined();
       expect(definition.args).toBeDefined();
-      expect(definition.endMarker).toBe('[DONE]');
     });
 
     it('includes timestamp in definition', () => {

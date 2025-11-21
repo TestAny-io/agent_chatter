@@ -191,7 +191,6 @@ export async function handleList(options: { verbose?: boolean }, registryPath?: 
 
     if (options.verbose) {
       console.log(`  ${colorize('Args:', 'dim')} ${agent.args?.join(' ') || 'none'}`);
-      console.log(`  ${colorize('End Marker:', 'dim')} ${agent.endMarker}`);
       console.log(`  ${colorize('Use PTY:', 'dim')} ${agent.usePty}`);
       console.log(`  ${colorize('Installed At:', 'dim')} ${agent.installedAt}`);
     }
@@ -286,7 +285,6 @@ export async function handleInfo(agentName: string, registryPath?: string): Prom
   console.log(`${colorize('Display Name:', 'cyan')} ${agent.displayName}`);
   console.log(`${colorize('Command:', 'cyan')} ${agent.command}`);
   console.log(`${colorize('Arguments:', 'cyan')} ${agent.args?.join(' ') || 'none'}`);
-  console.log(`${colorize('End Marker:', 'cyan')} ${agent.endMarker}`);
   console.log(`${colorize('Use PTY:', 'cyan')} ${agent.usePty}`);
 
   if (agent.version) {
@@ -381,7 +379,6 @@ export async function handleEdit(agentName: string, registryPath?: string): Prom
   console.log('当前配置:');
   console.log(`  Command: ${colorize(agent.command, 'cyan')}`);
   console.log(`  Args: ${colorize(agent.args?.join(' ') || 'none', 'cyan')}`);
-  console.log(`  End Marker: ${colorize(agent.endMarker, 'cyan')}`);
   console.log(`  Use PTY: ${colorize(String(agent.usePty), 'cyan')}`);
   console.log();
 
@@ -400,12 +397,6 @@ export async function handleEdit(agentName: string, registryPath?: string): Prom
     const newArgs = await question(rl, `Args (当前: ${agent.args?.join(' ') || 'none'}): `);
     if (newArgs) {
       agent.args = newArgs.split(' ').filter(s => s.trim());
-    }
-
-    // 编辑 endMarker
-    const newEndMarker = await question(rl, `End Marker (当前: ${agent.endMarker}): `);
-    if (newEndMarker) {
-      agent.endMarker = newEndMarker;
     }
 
     // 编辑 usePty

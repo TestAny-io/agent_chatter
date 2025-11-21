@@ -29,7 +29,6 @@ describe('AgentRegistry', () => {
     displayName: `${name} Agent`,
     command: name,
     args: ['--test'],
-    endMarker: '[DONE]',
     usePty: false,
     installedAt: '2024-11-18T10:00:00Z'
   });
