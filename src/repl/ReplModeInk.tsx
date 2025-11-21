@@ -1665,7 +1665,22 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             {(mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
                 <Box marginTop={1}>
                     {mode === 'conversation' ? (
-                        <Text color="green" bold>you&gt; </Text>
+                        <Text color="green" bold>
+                            {(() => {
+                                // Get waiting member's display name for the prompt
+                                if (activeCoordinator && activeTeam) {
+                                    const waitingRoleId = activeCoordinator.getWaitingForRoleId();
+                                    if (waitingRoleId) {
+                                        const waitingMember = activeTeam.members.find(m => m.id === waitingRoleId);
+                                        if (waitingMember) {
+                                            return `${waitingMember.displayName}> `;
+                                        }
+                                    }
+                                }
+                                // Fallback to generic prompt if no waiting member
+                                return 'you> ';
+                            })()}
+                        </Text>
                     ) : mode === 'wizard' ? (
                         <Text color="cyan" bold>wizard&gt; </Text>
                     ) : mode === 'form' ? (

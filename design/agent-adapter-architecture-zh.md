@@ -1333,6 +1333,77 @@ parseResponse(rawOutput: string): string {
 
 ---
 
+## [DONE] 标记的语义变更（2025-11-21）
+
+### 背景
+
+原设计中，AI 和人类消息的 `[DONE]` 标记都会触发会话终止。这导致 AI 之间无法持续对话，限制了多 Agent 协作的灵活性。
+
+### 新行为定义
+
+**[DONE] 标记的两层语义：**
+
+1. **ProcessManager 层（不变）**：
+   - `[DONE]` 仍然作为消息完成标记
+   - 用于检测 Agent 响应结束（通过 `endMarker` 或 `idleTimeout`）
+   - Adapter 层负责注入 `[DONE]`（如果原始输出不包含）
+
+2. **ConversationCoordinator 层（已变更）**：
+   - **AI 消息**：`[DONE]` 只表示"当前 Agent 回复完成"，**不终止会话**
+     - 会话继续通过 `routeToNext()` 路由到下一个成员（round-robin 或 [NEXT] 指定）
+     - 允许 AI 之间持续对话
+
+   - **人类消息**：`[DONE]` 表示"会话终止"
+     - 调用 `handleConversationComplete()` 结束会话
+     - 人类也可通过 `/end` 命令终止会话
+
+### 实现位置
+
+**ConversationCoordinator.ts**:
+```typescript
+// src/services/ConversationCoordinator.ts:136-140
+async onAgentResponse(memberId: string, rawResponse: string): Promise<void> {
+  // ... 消息处理 ...
+
+  // AI 消息中的 [DONE] 只表示当前 Agent 回复完成，不表示会话终止
+  // 会话终止由人类用户通过 /end 命令或带 [DONE] 的消息来控制
+
+  // 路由到下一个接收者（而非终止）
+  await this.routeToNext(message);
+}
+
+// src/services/ConversationCoordinator.ts:190-193
+async injectMessage(memberId: string, content: string): Promise<void> {
+  // ... 消息处理 ...
+
+  // 人类消息中的 [DONE] 触发会话终止
+  if (parsed.isDone) {
+    this.handleConversationComplete();
+    return;
+  }
+
+  await this.routeToNext(message);
+}
+```
+
+### 会话终止的新控制方式
+
+1. **人类用户**：
+   - 发送包含 `[DONE]` 的消息
+   - 使用 `/end` 命令
+
+2. **编程控制**：
+   - 调用 `coordinator.stop()`
+
+### 影响和兼容性
+
+- **不影响 Adapter 层**：Adapter 仍然正常注入 `[DONE]`
+- **不影响 ProcessManager 层**：消息完成检测逻辑不变
+- **测试更新**：所有相关测试已更新以反映新行为（273 个测试全部通过）
+- **用户体验改进**：AI 团队可以持续协作，直到人类明确终止
+
+---
+
 ## 参考
 
 - 当前代码：src/services/AgentManager.ts

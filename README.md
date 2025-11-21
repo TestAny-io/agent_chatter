@@ -223,12 +223,19 @@ Each participant entry in `team.members` must define directories and the instruc
 
 ### Conversation Control
 
-Agents control the conversation flow:
+Agents and humans control the conversation flow through markers:
 
+**Message Routing:**
 - **No marker**: Automatic round-robin to next role
 - **`[NEXT: role-name]`**: Route to specific participant
 - **`[NEXT: alice, bob]`**: Route to multiple participants
-- **`[DONE]`**: End the conversation
+
+**Conversation Completion:**
+- **AI agents**: When an AI outputs `[DONE]`, it only indicates that agent's reply is complete. The conversation continues to the next member.
+- **Human members**: When a human sends a message with `[DONE]`, the conversation terminates.
+- **Commands**: Use the `/end` command to manually terminate a conversation at any time.
+
+> **Note**: This design allows AI agents to collaborate continuously while giving humans full control over when to end the session.
 
 ## Examples
 

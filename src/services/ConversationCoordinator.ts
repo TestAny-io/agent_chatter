@@ -133,11 +133,8 @@ export class ConversationCoordinator {
     this.session = SessionUtils.addMessageToSession(this.session, message);
     this.notifyMessage(message);
 
-    // 检查是否完成
-    if (parsed.isDone) {
-      this.handleConversationComplete();
-      return;
-    }
+    // AI 消息中的 [DONE] 只表示当前 Agent 回复完成，不表示会话终止
+    // 会话终止由人类用户通过 /end 命令或带 [DONE] 的消息来控制
 
     // 路由到下一个接收者
     await this.routeToNext(message);

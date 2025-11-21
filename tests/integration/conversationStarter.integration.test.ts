@@ -155,7 +155,12 @@ describe('ConversationStarter integration', () => {
     // System instruction is now handled by adapters (--append-system-prompt for Claude,
     // env vars for wrappers), so it's no longer in the message body
     expect(processMock.stopCalls).toEqual(['proc-1']);
-    expect(coordinator.getStatus()).toBe('completed');
+
+    // NEW BEHAVIOR: AI's [DONE] no longer terminates the conversation.
+    // Instead, it continues to the next member (human) via round-robin.
+    // The conversation is now paused, waiting for the human member's input.
+    expect(coordinator.getStatus()).toBe('paused');
+    expect(coordinator.getWaitingForRoleId()).toBe(team.members[1].id); // Waiting for human
   }, 30000); // Increased timeout for real-time verification
 
   it('initializes members even when instruction file is missing', async () => {

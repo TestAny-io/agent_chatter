@@ -83,7 +83,7 @@ describe('ConversationCoordinator', () => {
   it('routes AI -> human -> AI with round robin fallback', async () => {
     const responses = {
       'ai-alpha': ['Alpha response [NEXT: human-1]'],
-      'ai-bravo': ['Bravo final [DONE]']
+      'ai-bravo': ['Bravo final']
     };
     const stub = new StubAgentManager(responses);
     const agentManager = stub as unknown as AgentManager;
@@ -104,10 +104,11 @@ describe('ConversationCoordinator', () => {
 
     expect(coordinator.getWaitingForRoleId()).toBe('human-1');
 
-    await coordinator.injectMessage('human-1', 'Handing off to next reviewer');
+    // Human terminates conversation with [DONE]
+    await coordinator.injectMessage('human-1', 'Handing off to next reviewer [DONE]');
 
     expect(stub.startCalls.length).toBeGreaterThan(0);
-    expect(stub.sendCalls).toHaveLength(2);
+    expect(stub.sendCalls).toHaveLength(1); // Only ai-alpha sent (ai-bravo never called due to [DONE])
     expect(coordinator.getWaitingForRoleId()).toBeNull();
     expect(receivedMessages.some(msg => msg.content.includes('Handing off'))).toBe(true);
     expect(coordinator.getStatus()).toBe('completed');
@@ -166,11 +167,12 @@ describe('ConversationCoordinator', () => {
     expect(helper).toBe('alpha');
   });
 
-  it('terminates conversation immediately when [DONE] present, ignoring [NEXT]', async () => {
-    // Regression test: when AI returns "[NEXT: bob] [DONE]",
-    // MessageRouter parses both, but ConversationCoordinator should terminate immediately
+  it('AI message with [DONE] continues to next agent, not terminating conversation', async () => {
+    // NEW BEHAVIOR: When AI returns "[DONE]", it only indicates the agent's reply is complete.
+    // The conversation should continue to the next agent (via round-robin), not terminate.
+    // Conversation termination is controlled by human actions (human [DONE] or /end command).
     const responses = {
-      'ai-alpha': ['Alpha response [NEXT: ai-bravo] [DONE]']
+      'ai-alpha': ['Alpha response [DONE]']
     };
     const stub = new StubAgentManager(responses);
     const agentManager = stub as unknown as AgentManager;
@@ -183,26 +185,63 @@ describe('ConversationCoordinator', () => {
 
     const team = buildTeam([
       createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
-      createMember({ id: 'ai-bravo', name: 'bravo', order: 1, type: 'ai', agentConfigId: 'config-bravo' })
+      createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', type: 'human', order: 1 })
     ]);
 
     await coordinator.startConversation(team, 'Start task', 'ai-alpha');
 
-    // Verify conversation terminated
-    expect(coordinator.getStatus()).toBe('completed');
+    // Verify conversation did NOT terminate - it continues to next member (human-bob)
+    expect(coordinator.getStatus()).toBe('paused');
 
-    // Verify no waiting for next agent
-    expect(coordinator.getWaitingForRoleId()).toBeNull();
+    // Verify conversation is waiting for human input
+    expect(coordinator.getWaitingForRoleId()).toBe('human-bob');
 
-    // Verify ai-bravo was never started (only ai-alpha should have been called)
+    // Verify ai-alpha was called
     expect(stub.startCalls.length).toBe(1);
     expect(stub.startCalls[0].roleId).toBe('ai-alpha');
 
-    // Verify only one agent sent message (ai-alpha)
-    expect(stub.sendCalls.length).toBe(1);
-    expect(stub.sendCalls[0].roleId).toBe('ai-alpha');
+    // Verify [DONE] was parsed but conversation continued to next member
+    const alphaMessage = receivedMessages.find(msg => msg.speaker.roleId === 'ai-alpha');
+    expect(alphaMessage).toBeDefined();
+    expect(alphaMessage!.routing?.isDone).toBe(true);
+  });
 
-    // Verify the [NEXT] addressee was parsed but ignored
+  it('AI message with [DONE] and [NEXT] routes to specified member, not terminating', async () => {
+    // NEW BEHAVIOR: When AI returns "[NEXT: bravo] [DONE]", the [DONE] only indicates
+    // the agent's reply is complete. The conversation should route to the specified
+    // next member (bravo), not terminate. After bravo responds, round-robin continues.
+    const responses = {
+      'ai-alpha': ['Alpha response [NEXT: ai-bravo] [DONE]'],
+      'ai-bravo': ['Bravo response [DONE]']
+    };
+    const stub = new StubAgentManager(responses);
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const receivedMessages: ConversationMessage[] = [];
+
+    const coordinator = new ConversationCoordinator(agentManager, router, {
+      onMessage: (msg) => receivedMessages.push(msg)
+    });
+
+    const team = buildTeam([
+      createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+      createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', type: 'human', order: 1 }),
+      createMember({ id: 'ai-bravo', name: 'bravo', order: 2, type: 'ai', agentConfigId: 'config-bravo' })
+    ]);
+
+    await coordinator.startConversation(team, 'Start task', 'ai-alpha');
+
+    // Verify conversation did NOT terminate - after ai-bravo's [DONE], round-robin continues to human-bob
+    expect(coordinator.getStatus()).toBe('paused');
+    expect(coordinator.getWaitingForRoleId()).toBe('human-bob');
+
+    // Verify ai-alpha and ai-bravo were called
+    // Note: ai-alpha may be called multiple times due to round-robin cycling back
+    expect(stub.startCalls.length).toBeGreaterThanOrEqual(2);
+    expect(stub.startCalls[0].roleId).toBe('ai-alpha');
+    expect(stub.startCalls[1].roleId).toBe('ai-bravo');
+
+    // Verify [NEXT] was honored and [DONE] did not terminate
     const alphaMessage = receivedMessages.find(msg => msg.speaker.roleId === 'ai-alpha');
     expect(alphaMessage).toBeDefined();
     expect(alphaMessage!.routing?.isDone).toBe(true);
