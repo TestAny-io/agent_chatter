@@ -26,7 +26,8 @@ export class OpenAICodexAdapter implements IAgentAdapter {
    * Get default arguments for Codex CLI
    */
   getDefaultArgs(): string[] {
-    return ['exec', '--json', '--full-auto', '--skip-git-repo-check'];
+    // Keep defaults empty; use registry/config args to avoid duplication (e.g., multiple --json flags)
+    return [];
   }
 
   /**
