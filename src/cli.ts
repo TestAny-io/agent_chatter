@@ -104,7 +104,23 @@ function loadConfig(configPath: string): CLIConfig {
     const readConfig = (file: string): CLIConfig => {
         try {
             const content = fs.readFileSync(file, 'utf-8');
-            return JSON.parse(content);
+            const config = JSON.parse(content);
+
+            // Apply conversation config defaults
+            if (!config.conversation) {
+                config.conversation = {};
+            }
+            if (config.conversation.maxAgentResponseTime === undefined) {
+                config.conversation.maxAgentResponseTime = 1800000;  // 30 minutes
+            }
+            if (config.conversation.showThinkingTimer === undefined) {
+                config.conversation.showThinkingTimer = true;
+            }
+            if (config.conversation.allowEscCancel === undefined) {
+                config.conversation.allowEscCancel = true;
+            }
+
+            return config;
         } catch (error) {
             console.error(colorize(`Error: Failed to parse config file: ${error}`, 'red'));
             process.exit(1);

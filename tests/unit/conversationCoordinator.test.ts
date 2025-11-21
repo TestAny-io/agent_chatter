@@ -33,10 +33,17 @@ function buildTeam(members: Role[]): Team {
 class StubAgentManager {
   public startCalls: Array<{ roleId: string; configId: string }> = [];
   public sendCalls: Array<{ roleId: string; message: string }> = [];
+  public cancelCalls: string[] = [];
   private responses: Record<string, string[]> = {};
+  private shouldRejectWithCancellation: Record<string, boolean> = {};
 
   constructor(responseMap: Record<string, string[]>) {
     this.responses = responseMap;
+  }
+
+  // Allow tests to configure rejection behavior
+  setShouldRejectWithCancellation(roleId: string, shouldReject: boolean) {
+    this.shouldRejectWithCancellation[roleId] = shouldReject;
   }
 
   async ensureAgentStarted(roleId: string, configId: string): Promise<string> {
@@ -46,6 +53,12 @@ class StubAgentManager {
 
   async sendAndReceive(roleId: string, message: string): Promise<string> {
     this.sendCalls.push({ roleId, message });
+
+    // Check if this should reject with cancellation
+    if (this.shouldRejectWithCancellation[roleId]) {
+      throw new Error('[CANCELLED_BY_USER]');
+    }
+
     const queue = this.responses[roleId] ?? [];
     if (queue.length === 0) {
       return '[DONE]';
@@ -55,6 +68,10 @@ class StubAgentManager {
 
   async stopAgent(): Promise<void> {
     // no-op
+  }
+
+  cancelAgent(roleId: string): void {
+    this.cancelCalls.push(roleId);
   }
 
   cleanup(): void {
@@ -236,5 +253,152 @@ describe('ConversationCoordinator', () => {
     expect(humanMessage!.routing?.isDone).toBe(true);
     expect(humanMessage!.routing?.rawNextMarkers).toEqual(['alice']);
     expect(humanMessage!.content).toBe('Here is my input');
+  });
+
+  describe('User cancellation (ESC key)', () => {
+    it('handleUserCancellation sets waitingForRoleId to first human member', () => {
+      const stub = new StubAgentManager({});
+      const agentManager = stub as unknown as AgentManager;
+      const router = new MessageRouter();
+      const coordinator = new ConversationCoordinator(agentManager, router);
+
+      const team = buildTeam([
+        createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+        createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', order: 1, type: 'human' }),
+        createMember({ id: 'ai-charlie', name: 'charlie', order: 2, type: 'ai', agentConfigId: 'config-charlie' })
+      ]);
+
+      // Set up coordinator with team
+      (coordinator as any).team = team;
+      (coordinator as any).currentExecutingMember = team.members[0]; // ai-alpha is executing
+
+      // Call handleUserCancellation
+      coordinator.handleUserCancellation();
+
+      // Verify waitingForRoleId is set to first human
+      expect(coordinator.getWaitingForRoleId()).toBe('human-bob');
+    });
+
+    it('handleUserCancellation pauses conversation', () => {
+      const stub = new StubAgentManager({});
+      const agentManager = stub as unknown as AgentManager;
+      const router = new MessageRouter();
+      const coordinator = new ConversationCoordinator(agentManager, router);
+
+      const team = buildTeam([
+        createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+        createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', order: 1, type: 'human' })
+      ]);
+
+      (coordinator as any).team = team;
+      (coordinator as any).status = 'active';
+      (coordinator as any).currentExecutingMember = team.members[0];
+
+      coordinator.handleUserCancellation();
+
+      expect(coordinator.getStatus()).toBe('paused');
+    });
+
+    it('handleUserCancellation calls onAgentCompleted callback', () => {
+      const stub = new StubAgentManager({});
+      const agentManager = stub as unknown as AgentManager;
+      const router = new MessageRouter();
+      const completedMembers: Role[] = [];
+
+      const coordinator = new ConversationCoordinator(agentManager, router, {
+        onAgentCompleted: (member) => completedMembers.push(member)
+      });
+
+      const team = buildTeam([
+        createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+        createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', order: 1, type: 'human' })
+      ]);
+
+      (coordinator as any).team = team;
+      (coordinator as any).currentExecutingMember = team.members[0]; // ai-alpha
+
+      coordinator.handleUserCancellation();
+
+      // Verify onAgentCompleted was called with the executing member
+      expect(completedMembers).toHaveLength(1);
+      expect(completedMembers[0].id).toBe('ai-alpha');
+    });
+
+    it('handleUserCancellation calls AgentManager.cancelAgent', () => {
+      const stub = new StubAgentManager({});
+      const agentManager = stub as unknown as AgentManager;
+      const router = new MessageRouter();
+      const coordinator = new ConversationCoordinator(agentManager, router);
+
+      const team = buildTeam([
+        createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+        createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', order: 1, type: 'human' })
+      ]);
+
+      (coordinator as any).team = team;
+      (coordinator as any).currentExecutingMember = team.members[0];
+
+      coordinator.handleUserCancellation();
+
+      // Verify cancelAgent was called
+      expect(stub.cancelCalls).toHaveLength(1);
+      expect(stub.cancelCalls[0]).toBe('ai-alpha');
+    });
+
+    it('sendToAgent swallows [CANCELLED_BY_USER] error gracefully', async () => {
+      const stub = new StubAgentManager({});
+      stub.setShouldRejectWithCancellation('ai-alpha', true);
+
+      const agentManager = stub as unknown as AgentManager;
+      const router = new MessageRouter();
+      const completedMembers: Role[] = [];
+      const receivedMessages: ConversationMessage[] = [];
+      const statusChanges: string[] = [];
+
+      const coordinator = new ConversationCoordinator(agentManager, router, {
+        onAgentCompleted: (member) => completedMembers.push(member),
+        onMessage: (msg) => receivedMessages.push(msg),
+        onStatusChange: (status) => statusChanges.push(status)
+      });
+
+      const team = buildTeam([
+        createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' }),
+        createMember({ id: 'human-bob', name: 'bob', displayName: 'Bob', order: 1, type: 'human' })
+      ]);
+
+      // Start conversation - this will trigger sendToAgent which will reject with [CANCELLED_BY_USER]
+      await coordinator.startConversation(team, 'Initial task', 'ai-alpha');
+
+      // Verify the error was swallowed (conversation did not crash)
+      // The coordinator should have called onAgentCompleted
+      expect(completedMembers).toHaveLength(1);
+      expect(completedMembers[0].id).toBe('ai-alpha');
+
+      // Verify no error was thrown (test completes successfully)
+      // Verify conversation is still in valid state
+      expect(coordinator.getStatus()).toBe('active');
+    });
+
+    it('sendToAgent rethrows non-cancellation errors', async () => {
+      const stub = new StubAgentManager({});
+      const agentManager = stub as unknown as AgentManager;
+      const router = new MessageRouter();
+
+      // Override sendAndReceive to throw a different error
+      stub.sendAndReceive = async () => {
+        throw new Error('Network timeout');
+      };
+
+      const coordinator = new ConversationCoordinator(agentManager, router);
+
+      const team = buildTeam([
+        createMember({ id: 'ai-alpha', name: 'alpha', order: 0, type: 'ai', agentConfigId: 'config-alpha' })
+      ]);
+
+      // Verify non-cancellation errors are rethrown
+      await expect(
+        coordinator.startConversation(team, 'Initial task', 'ai-alpha')
+      ).rejects.toThrow('Network timeout');
+    });
   });
 });

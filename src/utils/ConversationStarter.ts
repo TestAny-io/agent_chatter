@@ -70,11 +70,18 @@ export interface TeamConfig {
   members: TeamMemberConfig[];
 }
 
+export interface ConversationConfig {
+  maxAgentResponseTime?: number;  // Maximum timeout for agent response in ms (default: 1800000 = 30 minutes)
+  showThinkingTimer?: boolean;     // Show timer when agent is thinking in REPL (default: true)
+  allowEscCancel?: boolean;         // Allow ESC key to cancel agent execution in REPL (default: true)
+}
+
 export interface CLIConfig {
   schemaVersion?: string;
   agents?: AgentDefinition[]; // Optional in schema 1.1+, agents loaded from global registry
   team: TeamConfig;
   maxRounds?: number;
+  conversation?: ConversationConfig;  // Conversation-level configuration
 }
 
 interface NormalizedAgent {
@@ -98,6 +105,8 @@ export interface InitializeServicesOptions {
   onStatusChange?: (status: ConversationStatus) => void;
   onUnresolvedAddressees?: (addressees: string[], message: ConversationMessage) => void;
   registryPath?: string;  // Optional registry path for testing
+  onAgentStarted?: (member: Member) => void;  // Callback when agent starts thinking (REPL UI)
+  onAgentCompleted?: (member: Member) => void;  // Callback when agent completes (REPL UI)
 }
 
 /**
@@ -468,7 +477,10 @@ export async function initializeServices(
       onStatusChange: options?.onStatusChange ?? ((status: ConversationStatus) => {
         console.log(colorize(`[Status] ${status}`, 'dim'));
       }),
-      onUnresolvedAddressees: options?.onUnresolvedAddressees
+      onUnresolvedAddressees: options?.onUnresolvedAddressees,
+      conversationConfig: config.conversation,  // Pass conversation config
+      onAgentStarted: options?.onAgentStarted,  // Pass agent started callback
+      onAgentCompleted: options?.onAgentCompleted  // Pass agent completed callback
     }
   );
 

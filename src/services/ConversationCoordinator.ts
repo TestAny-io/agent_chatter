@@ -15,6 +15,7 @@ import type { ConversationSession } from '../models/ConversationSession.js';
 import { SessionUtils } from '../models/ConversationSession.js';
 import { AgentManager } from './AgentManager.js';
 import { MessageRouter } from './MessageRouter.js';
+import type { ConversationConfig } from '../utils/ConversationStarter.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -23,6 +24,9 @@ export interface ConversationCoordinatorOptions {
   onMessage?: (message: ConversationMessage) => void;  // 消息回调
   onStatusChange?: (status: ConversationStatus) => void;  // 状态变化回调
   onUnresolvedAddressees?: (addressees: string[], message: ConversationMessage) => void;  // 无法解析地址时的回调
+  conversationConfig?: ConversationConfig;  // Conversation configuration (timeout, UI behavior)
+  onAgentStarted?: (member: Member) => void;  // Called when an agent starts executing
+  onAgentCompleted?: (member: Member) => void;  // Called when an agent completes execution
 }
 
 /**
@@ -34,6 +38,7 @@ export class ConversationCoordinator {
   private status: ConversationStatus = 'active';
   private contextMessageCount: number;
   private waitingForRoleId: string | null = null;  // 等待哪个角色的输入
+  private currentExecutingMember: Member | null = null;  // Currently executing agent (for cancellation)
 
   constructor(
     private agentManager: AgentManager,
@@ -282,28 +287,65 @@ export class ConversationCoordinator {
       throw new Error(`Member ${member.id} has no agent config`);
     }
 
-    // 准备 member-specific spawn configuration
-    const memberConfig = {
-      workDir: member.workDir,
-      env: member.env,
-      additionalArgs: member.additionalArgs,
-      systemInstruction: member.systemInstruction
-    };
+    // Track currently executing member for cancellation
+    this.currentExecutingMember = member;
 
-    // 确保 Agent 已启动
-    await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId, memberConfig);
+    // Notify that agent has started
+    if (this.options.onAgentStarted) {
+      this.options.onAgentStarted(member);
+    }
 
-    // 准备完整消息（包含 system instruction 和上下文）
-    const fullMessage = this.buildAgentMessage(member, message);
+    try {
+      // 准备 member-specific spawn configuration
+      const memberConfig = {
+        workDir: member.workDir,
+        env: member.env,
+        additionalArgs: member.additionalArgs,
+        systemInstruction: member.systemInstruction
+      };
 
-    // 发送并等待响应
-    const response = await this.agentManager.sendAndReceive(member.id, fullMessage);
+      // 确保 Agent 已启动
+      await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId, memberConfig);
 
-    // 停止 Agent（因为我们关闭了 stdin，进程会退出，下次需要重新启动）
-    await this.agentManager.stopAgent(member.id);
+      // 准备完整消息（包含 system instruction 和上下文）
+      const fullMessage = this.buildAgentMessage(member, message);
 
-    // 处理响应
-    await this.onAgentResponse(member.id, response);
+      // Get timeout from conversation config (default: 30 minutes)
+      const maxTimeout = this.options.conversationConfig?.maxAgentResponseTime ?? 1800000;
+
+      // 发送并等待响应
+      const response = await this.agentManager.sendAndReceive(member.id, fullMessage, { maxTimeout });
+
+      // 停止 Agent（因为我们关闭了 stdin，进程会退出，下次需要重新启动）
+      await this.agentManager.stopAgent(member.id);
+
+      // Notify that agent has completed
+      if (this.options.onAgentCompleted) {
+        this.options.onAgentCompleted(member);
+      }
+
+      // 处理响应
+      await this.onAgentResponse(member.id, response);
+    } catch (error) {
+      // Notify that agent has completed (even on error)
+      if (this.options.onAgentCompleted) {
+        this.options.onAgentCompleted(member);
+      }
+
+      // Check if this is a user cancellation
+      if (error instanceof Error && error.message === '[CANCELLED_BY_USER]') {
+        // User cancelled via ESC - don't rethrow
+        // The cancellation flow is already handled by handleUserCancellation()
+        // which set status to paused and waitingForRoleId
+        return;
+      }
+
+      // For other errors, rethrow
+      throw error;
+    } finally {
+      // Clear currently executing member
+      this.currentExecutingMember = null;
+    }
   }
 
   /**
@@ -472,5 +514,34 @@ export class ConversationCoordinator {
    */
   stop(): void {
     this.handleConversationComplete();
+  }
+
+  /**
+   * Handle user cancellation (ESC key)
+   * Cancels the currently executing agent and pauses the conversation
+   */
+  handleUserCancellation(): void {
+    if (this.currentExecutingMember) {
+      // Notify that agent has completed (even though it was cancelled)
+      if (this.options.onAgentCompleted) {
+        this.options.onAgentCompleted(this.currentExecutingMember);
+      }
+
+      // Cancel the agent execution
+      this.agentManager.cancelAgent(this.currentExecutingMember.id);
+      this.currentExecutingMember = null;
+    }
+
+    // Find the first human member to resume conversation
+    if (this.team) {
+      const humanMember = this.team.members.find(m => m.type === 'human');
+      if (humanMember) {
+        this.waitingForRoleId = humanMember.id;
+      }
+    }
+
+    // Pause the conversation
+    this.status = 'paused';
+    this.notifyStatusChange();
   }
 }

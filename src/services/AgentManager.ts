@@ -8,6 +8,7 @@
  * 简化版：适配简化的 ProcessManager
  */
 
+import { spawn } from 'child_process';
 import { ProcessManager } from '../infrastructure/ProcessManager.js';
 import type { SendOptions } from '../infrastructure/ProcessManager.js';
 import { AgentConfigManager } from './AgentConfigManager.js';
@@ -24,6 +25,7 @@ interface AgentInstance {
   cleanup?: () => Promise<void>;  // Adapter cleanup function
   adapter: IAgentAdapter;  // Store adapter for prepareMessage()
   systemInstruction?: string;  // Store for use in sendAndReceive()
+  currentStatelessProcess?: import('child_process').ChildProcess;  // For stateless mode cancellation
 }
 
 /**
@@ -43,6 +45,8 @@ export interface MemberSpawnConfig {
 export class AgentManager {
   // Role ID -> Agent Instance 的映射
   private agents: Map<string, AgentInstance> = new Map();
+  // Track cancellation flags for stateless agents
+  private statelessCancellations: Map<string, boolean> = new Map();
 
   constructor(
     private processManager: ProcessManager,
@@ -163,11 +167,25 @@ export class AgentManager {
     // Check execution mode and route accordingly
     if (agent.adapter.executionMode === 'stateless') {
       // Stateless mode: Execute one-shot command with message as CLI argument
-      if (!agent.adapter.executeOneShot) {
-        throw new Error(`Adapter ${agent.adapter.agentType} is stateless but does not implement executeOneShot()`);
+      // We manually implement the execution logic here (instead of calling executeOneShot)
+      // so we can track the childProcess for cancellation support
+
+      const args = [...agent.adapter.getDefaultArgs()];
+
+      // Add additional arguments from config
+      if (config?.args && config.args.length > 0) {
+        args.push(...config.args);
       }
 
-      // Prepare spawn config (reconstruct from agent instance)
+      // Add the prepared message as the final argument
+      args.push(preparedMessage);
+
+      // Merge environment variables
+      const env = {
+        ...process.env,
+        ...config?.env
+      };
+
       const spawnConfig: AgentSpawnConfig = {
         workDir: config?.cwd || process.cwd(),
         env: config?.env,
@@ -175,15 +193,70 @@ export class AgentManager {
         systemInstruction: agent.systemInstruction
       };
 
-      // Execute one-shot and return response
-      return agent.adapter.executeOneShot(preparedMessage, spawnConfig);
+      // Clear any previous cancellation flag
+      this.statelessCancellations.delete(roleId);
+
+      return new Promise<string>((resolve, reject) => {
+        const childProcess = spawn(agent.adapter.command, args, {
+          cwd: spawnConfig.workDir,
+          env,
+          stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        // Store childProcess for cancellation
+        agent.currentStatelessProcess = childProcess;
+
+        let stdout = '';
+        let stderr = '';
+
+        childProcess.stdout!.on('data', (chunk: Buffer) => {
+          stdout += chunk.toString();
+        });
+
+        childProcess.stderr!.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString();
+        });
+
+        childProcess.on('error', (error) => {
+          agent.currentStatelessProcess = undefined;
+          this.statelessCancellations.delete(roleId);
+          reject(new Error(`Failed to spawn ${agent.adapter.agentType} process: ${error.message}`));
+        });
+
+        childProcess.on('exit', (code, signal) => {
+          agent.currentStatelessProcess = undefined;
+
+          // Check if this process was cancelled by user
+          const wasCancelled = this.statelessCancellations.get(roleId);
+          this.statelessCancellations.delete(roleId);
+
+          if (wasCancelled) {
+            // User cancelled via ESC - reject with cancellation error
+            reject(new Error('[CANCELLED_BY_USER]'));
+            return;
+          }
+
+          if (code !== 0 && code !== null) {
+            reject(new Error(`${agent.adapter.agentType} process exited with code ${code}. stderr: ${stderr}`));
+            return;
+          }
+
+          // Append [DONE] marker if not present
+          const endMarker = agent.adapter.getDefaultEndMarker();
+          if (!stdout.trim().endsWith(endMarker)) {
+            stdout += `\n${endMarker}\n`;
+          }
+
+          resolve(stdout);
+        });
+      });
     } else {
       // Stateful mode: Use ProcessManager to send via stdin/stdout
       // Get default end marker from adapter
       const defaultEndMarker = agent.adapter.getDefaultEndMarker();
 
       const sendOptions: SendOptions = {
-        timeout: options?.timeout,
+        maxTimeout: options?.maxTimeout,
         endMarker: options?.endMarker || config?.endMarker || defaultEndMarker,
         useEndOfMessageMarker: config?.useEndOfMessageMarker || false
       };
@@ -212,6 +285,37 @@ export class AgentManager {
 
     await this.processManager.stopProcess(agent.processId);
     this.agents.delete(roleId);
+  }
+
+  /**
+   * Cancel currently executing agent (user cancellation via ESC)
+   * This will cancel the pending sendAndReceive operation
+   */
+  cancelAgent(roleId: string): void {
+    const agent = this.agents.get(roleId);
+    if (!agent) {
+      return;
+    }
+
+    // For stateful mode, cancel via ProcessManager
+    if (agent.adapter.executionMode === 'stateful') {
+      this.processManager.cancelSend(agent.processId);
+    } else if (agent.adapter.executionMode === 'stateless') {
+      // For stateless mode, set cancellation flag before killing process
+      // This ensures the exit handler will reject with [CANCELLED_BY_USER]
+      this.statelessCancellations.set(roleId, true);
+
+      // Kill the currently executing process
+      if (agent.currentStatelessProcess) {
+        agent.currentStatelessProcess.kill('SIGTERM');
+        // Force kill after 5 seconds if still running
+        setTimeout(() => {
+          if (agent.currentStatelessProcess && !agent.currentStatelessProcess.killed) {
+            agent.currentStatelessProcess.kill('SIGKILL');
+          }
+        }, 5000);
+      }
+    }
   }
 
   /**

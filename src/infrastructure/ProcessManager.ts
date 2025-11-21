@@ -17,7 +17,7 @@ export interface ProcessConfig {
 }
 
 export interface SendOptions {
-  timeout?: number;  // 总超时时间（毫秒），默认 30000ms (30秒)
+  maxTimeout?: number;  // 最大响应超时时间（毫秒），默认 1800000ms (30分钟)
   endMarker?: string;  // 响应结束标记，例如 "[END]"
   idleTimeout?: number;  // 空闲超时（毫秒），默认 3000ms (3秒)。仅在没有 endMarker 时使用
   useEndOfMessageMarker?: boolean;  // 是否添加 [END_OF_MESSAGE] 标记（仅用于自定义测试 agents）
@@ -37,6 +37,10 @@ interface ManagedProcess {
 export class ProcessManager {
   private processes: Map<string, ManagedProcess> = new Map();
   private outputCallbacks: Map<string, (data: string) => void> = new Map();
+  private activeSends: Map<string, {
+    reject: (error: Error) => void;
+    timeoutHandle: NodeJS.Timeout;
+  }> = new Map();
 
   /**
    * 启动一个新进程
@@ -186,7 +190,7 @@ export class ProcessManager {
       throw new Error(`Process not running: ${processId}`);
     }
 
-    const timeout = options?.timeout ?? 30000;
+    const maxTimeout = options?.maxTimeout ?? 1800000;  // Default: 30 minutes (was 30 seconds)
     const idleTimeout = options?.idleTimeout ?? 3000;
     const endMarker = options?.endMarker;
     const useEndOfMessageMarker = options?.useEndOfMessageMarker ?? false;
@@ -196,19 +200,26 @@ export class ProcessManager {
       let output = managed.outputBuffer;
       managed.outputBuffer = '';  // 清空缓冲区
 
-      let timeoutTimer: NodeJS.Timeout | null = null;
+      let maxTimeoutTimer: NodeJS.Timeout | null = null;
       let idleTimer: NodeJS.Timeout | null = null;
 
       // 清理函数
       const cleanup = () => {
-        if (timeoutTimer) {
-          clearTimeout(timeoutTimer);
+        if (maxTimeoutTimer) {
+          clearTimeout(maxTimeoutTimer);
         }
         if (idleTimer) {
           clearTimeout(idleTimer);
         }
         this.outputCallbacks.delete(processId);
+        this.activeSends.delete(processId);  // Clean up active send tracking
       };
+
+      // Store for cancellation support
+      this.activeSends.set(processId, {
+        reject,
+        timeoutHandle: null as any  // Will be set below
+      });
 
       // 检查缓冲区中是否已经包含结束标记
       if (endMarker && output.includes(endMarker)) {
@@ -218,11 +229,21 @@ export class ProcessManager {
         return;
       }
 
-      // 设置总超时
-      timeoutTimer = setTimeout(() => {
+      // 设置最大响应超时（安全网，防止进程挂起或崩溃）
+      maxTimeoutTimer = setTimeout(() => {
         cleanup();
-        reject(new Error(`Timeout waiting for response from process ${processId}`));
-      }, timeout);
+        this.stopProcess(processId);  // Kill the hung process
+        reject(new Error(
+          `Agent response timeout after ${maxTimeout}ms (${Math.floor(maxTimeout/60000)}min). ` +
+          `This likely indicates the agent process has hung or crashed.`
+        ));
+      }, maxTimeout);
+
+      // Update the timeoutHandle for cancellation
+      const activeSend = this.activeSends.get(processId);
+      if (activeSend) {
+        activeSend.timeoutHandle = maxTimeoutTimer;
+      }
 
       // 重置空闲计时器的函数
       const resetIdleTimer = () => {
@@ -292,6 +313,22 @@ export class ProcessManager {
         }
       });
     });
+  }
+
+  /**
+   * Cancel an active send operation
+   * Clears the timeout and rejects the promise with [CANCELLED_BY_USER] error
+   */
+  cancelSend(processId: string): void {
+    const activeSend = this.activeSends.get(processId);
+    if (activeSend) {
+      clearTimeout(activeSend.timeoutHandle);
+      this.activeSends.delete(processId);
+      activeSend.reject(new Error('[CANCELLED_BY_USER]'));
+
+      // Stop the process
+      this.stopProcess(processId);
+    }
   }
 
   /**

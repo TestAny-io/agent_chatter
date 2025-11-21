@@ -1,12 +1,30 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentManager } from '../../src/services/AgentManager.js';
+import { EventEmitter } from 'events';
+
+// Create a mockable spawn function that can be controlled by tests
+const { mockSpawn } = vi.hoisted(() => {
+  return {
+    mockSpawn: vi.fn()
+  };
+});
+
+// Mock child_process module
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    spawn: mockSpawn
+  };
+});
 
 const mockProcessManager = {
   startProcess: vi.fn(),
   registerProcess: vi.fn(),
   sendAndReceive: vi.fn(),
   stopProcess: vi.fn(),
-  cleanup: vi.fn()
+  cleanup: vi.fn(),
+  cancelSend: vi.fn()
 };
 
 const mockAgentConfigManager = {
@@ -17,6 +35,25 @@ const mockAgentConfigManager = {
 describe('AgentManager', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Create a default fake child process for spawn mock
+    const defaultFakeProcess = new EventEmitter() as any;
+    defaultFakeProcess.stdout = new EventEmitter();
+    defaultFakeProcess.stderr = new EventEmitter();
+    defaultFakeProcess.stdin = {
+      write: vi.fn(),
+      end: vi.fn()
+    };
+    defaultFakeProcess.kill = vi.fn(() => {
+      // Simulate process exit when killed
+      setImmediate(() => defaultFakeProcess.emit('exit', 0));
+      return true;
+    });
+    defaultFakeProcess.killed = false;
+    defaultFakeProcess.pid = 12345;
+
+    // Set default behavior for mockSpawn
+    mockSpawn.mockReturnValue(defaultFakeProcess);
   });
 
   it('starts agents lazily and reuses running process', async () => {
@@ -59,13 +96,13 @@ describe('AgentManager', () => {
     );
 
     await manager.ensureAgentStarted('role-2', 'cfg');
-    const response = await manager.sendAndReceive('role-2', 'hello', { timeout: 1000 });
+    const response = await manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000 });
 
     expect(response).toBe('result');
     expect(mockProcessManager.sendAndReceive).toHaveBeenCalledWith(
       'proc-2',
       'hello',
-      expect.objectContaining({ endMarker: '[DONE]', timeout: 1000 })
+      expect.objectContaining({ endMarker: '[DONE]', maxTimeout: 1000 })
     );
   });
 
@@ -109,5 +146,176 @@ describe('AgentManager', () => {
     );
 
     await expect(manager.sendAndReceive('no-agent', 'hello')).rejects.toThrow(/no running agent/);
+  });
+
+  describe('Stateless agent cancellation', () => {
+    it('rejects with [CANCELLED_BY_USER] when stateless agent is cancelled', async () => {
+      // Create a mock stateless adapter
+      const mockAdapter = {
+        agentType: 'test-stateless',
+        command: 'test-command',
+        executionMode: 'stateless' as const,
+        getDefaultArgs: () => ['--arg'],
+        prepareMessage: (msg: string) => msg,
+        getDefaultEndMarker: () => '[DONE]',
+        validate: async () => true,
+        spawn: vi.fn()
+      };
+
+      // Mock config for stateless agent
+      mockAgentConfigManager.getAgentConfig.mockResolvedValue({
+        id: 'stateless-cfg',
+        type: 'test-stateless',
+        command: 'test-command',
+        args: [],
+        cwd: '/test'
+      });
+
+      // Create fake child process
+      const fakeChildProcess = new EventEmitter() as any;
+      fakeChildProcess.stdout = new EventEmitter();
+      fakeChildProcess.stderr = new EventEmitter();
+      fakeChildProcess.kill = vi.fn();
+      fakeChildProcess.killed = false;
+
+      // Configure mockSpawn to return our fake process
+      mockSpawn.mockReturnValue(fakeChildProcess);
+
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+
+      // Register the agent with stateless adapter
+      const agentInfo = manager.getAgentInfo('stateless-role');
+      if (!agentInfo) {
+        // Manually set up agent instance for testing
+        (manager as any).agents.set('stateless-role', {
+          roleId: 'stateless-role',
+          configId: 'stateless-cfg',
+          processId: 'stateless-proc',
+          adapter: mockAdapter,
+          systemInstruction: undefined
+        });
+      }
+
+      // Start sending (this will be async)
+      const sendPromise = manager.sendAndReceive('stateless-role', 'test message');
+
+      // Wait a bit for the spawn to happen
+      await new Promise(resolve => setTimeout(resolve, 10));
+
+      // Now cancel the agent
+      manager.cancelAgent('stateless-role');
+
+      // Verify kill was called
+      expect(fakeChildProcess.kill).toHaveBeenCalledWith('SIGTERM');
+
+      // Simulate process exit after being killed
+      fakeChildProcess.emit('exit', null, 'SIGTERM');
+
+      // Verify the promise rejects with cancellation error
+      await expect(sendPromise).rejects.toThrow('[CANCELLED_BY_USER]');
+    });
+
+    it('sends SIGKILL after 5 seconds if SIGTERM fails', async () => {
+      vi.useFakeTimers();
+
+      const mockAdapter = {
+        agentType: 'test-stateless',
+        command: 'test-command',
+        executionMode: 'stateless' as const,
+        getDefaultArgs: () => [],
+        prepareMessage: (msg: string) => msg,
+        getDefaultEndMarker: () => '[DONE]',
+        validate: async () => true,
+        spawn: vi.fn()
+      };
+
+      mockAgentConfigManager.getAgentConfig.mockResolvedValue({
+        id: 'stateless-cfg',
+        type: 'test-stateless',
+        command: 'test-command',
+        args: []
+      });
+
+      const fakeChildProcess = new EventEmitter() as any;
+      fakeChildProcess.stdout = new EventEmitter();
+      fakeChildProcess.stderr = new EventEmitter();
+      fakeChildProcess.kill = vi.fn();
+      fakeChildProcess.killed = false;
+
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+
+      (manager as any).agents.set('stateless-role', {
+        roleId: 'stateless-role',
+        configId: 'stateless-cfg',
+        processId: 'stateless-proc',
+        adapter: mockAdapter,
+        currentStatelessProcess: fakeChildProcess
+      });
+
+      // Cancel the agent
+      manager.cancelAgent('stateless-role');
+
+      // Verify SIGTERM was sent
+      expect(fakeChildProcess.kill).toHaveBeenCalledWith('SIGTERM');
+      expect(fakeChildProcess.kill).toHaveBeenCalledTimes(1);
+
+      // Advance time by 5 seconds
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // Verify SIGKILL was sent
+      expect(fakeChildProcess.kill).toHaveBeenCalledWith('SIGKILL');
+      expect(fakeChildProcess.kill).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+    });
+  });
+
+  describe('Stateful agent cancellation', () => {
+    it('calls ProcessManager.cancelSend for stateful agents', async () => {
+      const mockAdapter = {
+        agentType: 'test-stateful',
+        command: 'test-command',
+        executionMode: 'stateful' as const,
+        getDefaultArgs: () => [],
+        prepareMessage: (msg: string) => msg,
+        getDefaultEndMarker: () => '[DONE]',
+        validate: async () => true,
+        spawn: vi.fn()
+      };
+
+      mockAgentConfigManager.getAgentConfig.mockResolvedValue({
+        id: 'stateful-cfg',
+        type: 'test-stateful',
+        command: 'test-command',
+        args: []
+      });
+
+      mockProcessManager.registerProcess.mockReturnValue('stateful-proc');
+
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+
+      // Set up stateful agent instance
+      (manager as any).agents.set('stateful-role', {
+        roleId: 'stateful-role',
+        configId: 'stateful-cfg',
+        processId: 'stateful-proc',
+        adapter: mockAdapter
+      });
+
+      // Cancel the agent
+      manager.cancelAgent('stateful-role');
+
+      // Verify cancelSend was called
+      expect(mockProcessManager.cancelSend).toHaveBeenCalledWith('stateful-proc');
+    });
   });
 });

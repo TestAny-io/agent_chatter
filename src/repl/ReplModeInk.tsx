@@ -13,10 +13,11 @@ import { detectAllTools } from '../utils/ToolDetector.js';
 import { ConversationCoordinator } from '../services/ConversationCoordinator.js';
 import { initializeServices, type CLIConfig } from '../utils/ConversationStarter.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
-import type { Team, RoleDefinition } from '../models/Team.js';
+import type { Team, RoleDefinition, Member } from '../models/Team.js';
 import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
 import { AgentsMenu } from './components/AgentsMenu.js';
 import { RegistryStorage } from '../registry/RegistryStorage.js';
+import { ThinkingIndicator } from './components/ThinkingIndicator.js';
 import {
     getTeamConfigDir,
     ensureTeamConfigDir,
@@ -624,6 +625,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [mode, setMode] = useState<AppMode>('normal');
     const [activeCoordinator, setActiveCoordinator] = useState<ConversationCoordinator | null>(null);
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
+    const [executingAgent, setExecutingAgent] = useState<Member | null>(null);
 
     // Registry path management
     const [registry] = useState(() => {
@@ -703,6 +705,19 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         // AgentsMenu component handles all input in that mode
         if (mode === 'agentsMenu') {
             return;
+        }
+
+        // ESC key - Cancel agent execution in conversation mode
+        if (key.escape) {
+            if (mode === 'conversation' && activeCoordinator && executingAgent && currentConfig) {
+                // Check if ESC cancellation is allowed
+                const allowEscCancel = currentConfig.conversation?.allowEscCancel ?? true;
+                if (allowEscCancel) {
+                    activeCoordinator.handleUserCancellation();
+                    setOutput(prev => [...prev, <Text key={`agent-cancelled-${getNextKey()}`} color="yellow">Agent execution cancelled by user (ESC)</Text>]);
+                    return;
+                }
+            }
         }
 
         // Ctrl+C 退出或取消
@@ -1454,6 +1469,21 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             const content = fs.readFileSync(resolution.path, 'utf-8');
             const config = JSON.parse(content);
+
+            // Apply conversation config defaults
+            if (!config.conversation) {
+                config.conversation = {};
+            }
+            if (config.conversation.maxAgentResponseTime === undefined) {
+                config.conversation.maxAgentResponseTime = 1800000;  // 30 minutes
+            }
+            if (config.conversation.showThinkingTimer === undefined) {
+                config.conversation.showThinkingTimer = true;
+            }
+            if (config.conversation.allowEscCancel === undefined) {
+                config.conversation.allowEscCancel = true;
+            }
+
             setCurrentConfig(config);
             setCurrentConfigPath(filePath);
 
@@ -1489,6 +1519,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 },
                 onStatusChange: (status) => {
                     setOutput(prev => [...prev, <Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>]);
+                },
+                onAgentStarted: (member: Member) => {
+                    setExecutingAgent(member);
+                },
+                onAgentCompleted: (member: Member) => {
+                    setExecutingAgent(null);
                 }
             });
 
@@ -1526,6 +1562,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             {output.map((item, idx) => (
                 <Box key={idx}>{item}</Box>
             ))}
+
+            {/* ThinkingIndicator - Show when agent is executing */}
+            {mode === 'conversation' && executingAgent && currentConfig &&
+             currentConfig.conversation?.showThinkingTimer !== false && (
+                <ThinkingIndicator
+                    member={executingAgent}
+                    maxTimeoutMs={currentConfig.conversation?.maxAgentResponseTime ?? 1800000}
+                    allowEscCancel={currentConfig.conversation?.allowEscCancel ?? true}
+                />
+            )}
 
             {/* Wizard UI */}
             {mode === 'wizard' && wizardState && (

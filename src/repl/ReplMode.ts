@@ -253,7 +253,23 @@ export class ReplMode {
             }
 
             const content = fs.readFileSync(fullPath, 'utf-8');
-            this.currentConfig = JSON.parse(content);
+            const config = JSON.parse(content);
+
+            // Apply conversation config defaults
+            if (!config.conversation) {
+                config.conversation = {};
+            }
+            if (config.conversation.maxAgentResponseTime === undefined) {
+                config.conversation.maxAgentResponseTime = 1800000;  // 30 minutes
+            }
+            if (config.conversation.showThinkingTimer === undefined) {
+                config.conversation.showThinkingTimer = true;
+            }
+            if (config.conversation.allowEscCancel === undefined) {
+                config.conversation.allowEscCancel = true;
+            }
+
+            this.currentConfig = config;
             this.currentConfigPath = filePath;
 
             console.log();
