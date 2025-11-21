@@ -61,6 +61,13 @@ export interface AgentSpawnResult {
 }
 
 /**
+ * Agent execution mode
+ * - stateful: Long-running process, communicates via stdin/stdout
+ * - stateless: One-shot execution per request, message passed as CLI argument
+ */
+export type AgentExecutionMode = 'stateful' | 'stateless';
+
+/**
  * Agent Adapter Interface
  *
  * Each adapter implements this interface to provide a consistent
@@ -77,6 +84,13 @@ export interface IAgentAdapter {
    * Command to execute (e.g., 'claude', 'codex', '/path/to/wrapper.sh')
    */
   readonly command: string;
+
+  /**
+   * Execution mode for this adapter
+   * - stateful: Spawns long-running process, sends messages via stdin (e.g., Claude Code)
+   * - stateless: Executes command once per message with CLI arguments (e.g., Codex)
+   */
+  readonly executionMode: AgentExecutionMode;
 
   /**
    * Spawn an agent process with the given configuration
@@ -119,4 +133,15 @@ export interface IAgentAdapter {
    * @returns End marker string (e.g., "[DONE]")
    */
   getDefaultEndMarker(): string;
+
+  /**
+   * Execute a one-shot command (stateless mode only)
+   * Spawns a new process for each message, passes message as CLI argument
+   *
+   * @param message - The prepared message to send
+   * @param config - Spawn configuration
+   * @returns Agent response with [DONE] marker appended
+   * @throws Error if execution fails or if called on stateful adapter
+   */
+  executeOneShot?(message: string, config: AgentSpawnConfig): Promise<string>;
 }

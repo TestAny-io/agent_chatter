@@ -1,20 +1,22 @@
 /**
  * OpenAICodexAdapter - Adapter for OpenAI Codex CLI
  *
- * Self-contained adapter that:
- * - Prepends [SYSTEM] section to messages
- * - Intercepts stdout to append [DONE] marker
+ * Stateless adapter that executes Codex CLI once per message:
+ * - Codex CLI requires TTY for interactive mode
+ * - We execute it with the prompt as a command-line argument
+ * - Each message spawns a new process (one-shot execution)
  * - No dependency on external wrapper scripts
  */
 
 import { spawn } from 'child_process';
+import { PassThrough } from 'stream';
 import { access } from 'fs/promises';
 import { constants } from 'fs';
-import { PassThrough } from 'stream';
 import type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult } from './IAgentAdapter.js';
 
 export class OpenAICodexAdapter implements IAgentAdapter {
   readonly agentType = 'openai-codex';
+  readonly executionMode = 'stateless' as const;
 
   constructor(
     public readonly command: string
@@ -130,5 +132,64 @@ export class OpenAICodexAdapter implements IAgentAdapter {
    */
   getDefaultEndMarker(): string {
     return '[DONE]';
+  }
+
+  /**
+   * Execute a one-shot command (stateless mode)
+   * Spawns a new Codex process for each message, passes message as CLI argument
+   */
+  async executeOneShot(message: string, config: AgentSpawnConfig): Promise<string> {
+    const args = [...this.getDefaultArgs()];
+
+    // Add additional arguments from member config
+    if (config.additionalArgs && config.additionalArgs.length > 0) {
+      args.push(...config.additionalArgs);
+    }
+
+    // Add the message as the final argument
+    args.push(message);
+
+    // Merge environment variables
+    const env = {
+      ...process.env,
+      ...config.env
+    };
+
+    return new Promise<string>((resolve, reject) => {
+      const childProcess = spawn(this.command, args, {
+        cwd: config.workDir,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      childProcess.stdout!.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+
+      childProcess.stderr!.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      childProcess.on('error', (error) => {
+        reject(new Error(`Failed to spawn Codex process: ${error.message}`));
+      });
+
+      childProcess.on('exit', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Codex process exited with code ${code}. stderr: ${stderr}`));
+          return;
+        }
+
+        // Append [DONE] marker if not present
+        if (!stdout.trim().endsWith('[DONE]')) {
+          stdout += '\n[DONE]\n';
+        }
+
+        resolve(stdout);
+      });
+    });
   }
 }

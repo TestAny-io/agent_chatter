@@ -79,6 +79,23 @@ export class AgentManager {
     // 创建适配器
     const adapter = AdapterFactory.createAdapter(config);
 
+    // Check execution mode
+    if (adapter.executionMode === 'stateless') {
+      // Stateless mode: Don't spawn persistent process
+      // Just store adapter and configuration for later use
+      const agentInstance: AgentInstance = {
+        roleId,
+        configId,
+        processId: `stateless-${roleId}`,  // Dummy process ID
+        adapter: adapter,
+        systemInstruction: memberConfig?.systemInstruction
+      };
+
+      this.agents.set(roleId, agentInstance);
+      return agentInstance.processId;
+    }
+
+    // Stateful mode: Spawn persistent process
     // 准备 spawn 配置
     const spawnConfig: AgentSpawnConfig = {
       workDir: memberConfig?.workDir || config.cwd || process.cwd(),
@@ -143,20 +160,40 @@ export class AgentManager {
     // Prepare message using adapter (handles system instruction prepending)
     const preparedMessage = agent.adapter.prepareMessage(message, agent.systemInstruction);
 
-    // Get default end marker from adapter
-    const defaultEndMarker = agent.adapter.getDefaultEndMarker();
+    // Check execution mode and route accordingly
+    if (agent.adapter.executionMode === 'stateless') {
+      // Stateless mode: Execute one-shot command with message as CLI argument
+      if (!agent.adapter.executeOneShot) {
+        throw new Error(`Adapter ${agent.adapter.agentType} is stateless but does not implement executeOneShot()`);
+      }
 
-    const sendOptions: SendOptions = {
-      timeout: options?.timeout,
-      endMarker: options?.endMarker || config?.endMarker || defaultEndMarker,
-      useEndOfMessageMarker: config?.useEndOfMessageMarker || false
-    };
+      // Prepare spawn config (reconstruct from agent instance)
+      const spawnConfig: AgentSpawnConfig = {
+        workDir: config?.cwd || process.cwd(),
+        env: config?.env,
+        additionalArgs: config?.args,
+        systemInstruction: agent.systemInstruction
+      };
 
-    return this.processManager.sendAndReceive(
-      agent.processId,
-      preparedMessage,  // Send prepared message with [SYSTEM] if needed
-      sendOptions
-    );
+      // Execute one-shot and return response
+      return agent.adapter.executeOneShot(preparedMessage, spawnConfig);
+    } else {
+      // Stateful mode: Use ProcessManager to send via stdin/stdout
+      // Get default end marker from adapter
+      const defaultEndMarker = agent.adapter.getDefaultEndMarker();
+
+      const sendOptions: SendOptions = {
+        timeout: options?.timeout,
+        endMarker: options?.endMarker || config?.endMarker || defaultEndMarker,
+        useEndOfMessageMarker: config?.useEndOfMessageMarker || false
+      };
+
+      return this.processManager.sendAndReceive(
+        agent.processId,
+        preparedMessage,  // Send prepared message with [SYSTEM] if needed
+        sendOptions
+      );
+    }
   }
 
   /**

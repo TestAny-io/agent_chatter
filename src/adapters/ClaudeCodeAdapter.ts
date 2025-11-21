@@ -12,6 +12,7 @@ const execAsync = promisify(exec);
 
 export class ClaudeCodeAdapter implements IAgentAdapter {
   readonly agentType = 'claude-code';
+  readonly executionMode = 'stateful' as const;
 
   constructor(
     public readonly command: string = 'claude'

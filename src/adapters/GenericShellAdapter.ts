@@ -1,9 +1,11 @@
 /**
  * GenericShellAdapter - Generic adapter for shell scripts and custom commands
  *
- * Self-contained adapter that:
+ * Stateless adapter that executes commands once per message:
+ * - Executes command with prompt as CLI argument
+ * - Each message spawns a new process (one-shot execution)
  * - Prepends [SYSTEM] section to messages
- * - Intercepts stdout to append [DONE] marker
+ * - Appends [DONE] marker to responses
  * - Suitable for custom agents, Gemini CLI, or any other CLI tool
  */
 
@@ -36,6 +38,7 @@ export interface GenericShellAdapterConfig {
 export class GenericShellAdapter implements IAgentAdapter {
   readonly agentType: string;
   readonly command: string;
+  readonly executionMode = 'stateless' as const;
   private readonly defaultArgs: string[];
 
   constructor(config: GenericShellAdapterConfig) {
@@ -172,5 +175,64 @@ export class GenericShellAdapter implements IAgentAdapter {
    */
   getDefaultEndMarker(): string {
     return '[DONE]';
+  }
+
+  /**
+   * Execute a one-shot command (stateless mode)
+   * Spawns a new process for each message, passes message as CLI argument
+   */
+  async executeOneShot(message: string, config: AgentSpawnConfig): Promise<string> {
+    const args = [...this.getDefaultArgs()];
+
+    // Add additional arguments from member config
+    if (config.additionalArgs && config.additionalArgs.length > 0) {
+      args.push(...config.additionalArgs);
+    }
+
+    // Add the message as the final argument
+    args.push(message);
+
+    // Merge environment variables
+    const env = {
+      ...process.env,
+      ...config.env
+    };
+
+    return new Promise<string>((resolve, reject) => {
+      const childProcess = spawn(this.command, args, {
+        cwd: config.workDir,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      childProcess.stdout!.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString();
+      });
+
+      childProcess.stderr!.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+      });
+
+      childProcess.on('error', (error) => {
+        reject(new Error(`Failed to spawn process: ${error.message}`));
+      });
+
+      childProcess.on('exit', (code) => {
+        if (code !== 0) {
+          reject(new Error(`Process exited with code ${code}. stderr: ${stderr}`));
+          return;
+        }
+
+        // Append [DONE] marker if not present
+        if (!stdout.trim().endsWith('[DONE]')) {
+          stdout += '\n[DONE]\n';
+        }
+
+        resolve(stdout);
+      });
+    });
   }
 }

@@ -407,9 +407,15 @@ export async function initializeServices(
         '默认值 (roleDir/work)';
       console.log(colorize(`  工作目录: ${normalizedPaths.workDir} (来源: ${workDirSourceLabel})`, 'dim'));
 
+      // Map agent type name to adapter type
+      const adapterType = member.agentType === 'claude' ? 'claude-code' :
+                          member.agentType === 'codex' ? 'openai-codex' :
+                          member.agentType === 'gemini' ? 'google-gemini' :
+                          member.agentType; // fallback to member.agentType for custom agents
+
       const agentConfig = await agentConfigManager.createAgentConfig({
         name: `${member.name}-${member.agentType}-config`,
-        type: 'cli',
+        type: adapterType,
         command: agentDef.command,
         args: agentDef.args,
         env,
