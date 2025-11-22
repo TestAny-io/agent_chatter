@@ -166,6 +166,11 @@ export class AgentManager {
     // Prepare message using adapter (handles system instruction prepending)
     const preparedMessage = agent.adapter.prepareMessage(message, agent.systemInstruction);
 
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(`[Debug][AgentManager] Final message to ${roleId} after adapter preparation:\n${preparedMessage}`);
+    }
+
     // Check execution mode and route accordingly
     if (agent.adapter.executionMode === 'stateless') {
       // Stateless mode: Execute one-shot command with message as CLI argument
