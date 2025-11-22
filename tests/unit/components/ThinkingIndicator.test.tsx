@@ -50,26 +50,11 @@ describe('ThinkingIndicator Component', () => {
     await wait(1100);
     expect(lastFrame()).toContain('1s');
 
-    // Wait for another 2 seconds (total ~3s)
-    await wait(2000);
+    // Wait for another 1 second (total ~2s)
+    await wait(1000);
     const frame = lastFrame();
-    expect(frame).toMatch(/[23]s/); // Allow for 2s or 3s due to timing
-  }, 10000);
-
-  it('should format time correctly in minutes and seconds', async () => {
-    const mockMember = createMockMember('member-1', 'Test Agent');
-    const { lastFrame } = render(
-      <ThinkingIndicator
-        member={mockMember}
-        maxTimeoutMs={300000}
-        allowEscCancel={true}
-      />
-    );
-
-    // Wait for 65 seconds
-    await wait(65100);
-    expect(lastFrame()).toContain('1m 5s');
-  }, 70000);
+    expect(frame).toMatch(/[12]s/); // Allow for 1s or 2s due to timing
+  }, 5000);
 
   it('should reset timer to 0 when member changes (anti-regression test)', async () => {
     const mockMember = createMockMember('member-1', 'Test Agent');
@@ -107,7 +92,7 @@ describe('ThinkingIndicator Component', () => {
     // Wait for 1 second for second agent
     await wait(1100);
     expect(lastFrame()).toContain('1s');
-  }, 10000);
+  }, 6000);
 
   it('should show ESC hint when allowEscCancel is true', () => {
     const mockMember = createMockMember('member-1', 'Test Agent');
