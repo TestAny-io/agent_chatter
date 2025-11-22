@@ -78,7 +78,7 @@ describe('AgentManager', () => {
     expect(mockProcessManager.registerProcess).not.toHaveBeenCalled();
   });
 
-  it('sendAndReceive applies options (maxTimeout) and disables endMarker for JSON agents', async () => {
+  it('sendAndReceive applies options (maxTimeout) and passes claude system flag', async () => {
     mockAgentConfigManager.getAgentConfig.mockResolvedValue({
       id: 'cfg',
       type: 'claude-code',
@@ -100,7 +100,7 @@ describe('AgentManager', () => {
     fake.kill = vi.fn(() => true);
     mockSpawn.mockReturnValueOnce(fake);
 
-    const promise = manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000 });
+    const promise = manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000, systemFlag: 'SYS' });
 
     // Simulate stdout + exit
     setImmediate(() => {
@@ -110,9 +110,12 @@ describe('AgentManager', () => {
 
     const response = await promise;
     expect(response).toBe('result');
-    // Spawn should be called with -p before prompt
+    // Spawn should be called with -p and append system prompt
     const spawnArgs = mockSpawn.mock.calls[0][1];
     expect(spawnArgs).toContain('-p');
+    expect(spawnArgs).toContain('--append-system-prompt');
+    expect(spawnArgs).toContain('SYS');
+    expect(spawnArgs[spawnArgs.length - 1]).toBe('hello');
   });
 
   it('stopAgent stops running process and removes cache', async () => {
@@ -162,8 +165,6 @@ describe('AgentManager', () => {
         command: 'test-command',
         executionMode: 'stateless' as const,
         getDefaultArgs: () => ['--arg'],
-        prepareMessage: (msg: string) => msg,
-        getDefaultEndMarker: () => '[DONE]',
         validate: async () => true,
         spawn: vi.fn()
       };
@@ -232,8 +233,6 @@ describe('AgentManager', () => {
         command: 'test-command',
         executionMode: 'stateless' as const,
         getDefaultArgs: () => [],
-        prepareMessage: (msg: string) => msg,
-        getDefaultEndMarker: () => '[DONE]',
         validate: async () => true,
         spawn: vi.fn()
       };
@@ -289,8 +288,6 @@ describe('AgentManager', () => {
         command: 'test-command',
         executionMode: 'stateful' as const,
         getDefaultArgs: () => [],
-        prepareMessage: (msg: string) => msg,
-        getDefaultEndMarker: () => '[DONE]',
         validate: async () => true,
         spawn: vi.fn()
       };
@@ -332,8 +329,6 @@ describe('AgentManager', () => {
         command: 'test-command',
         executionMode: 'stateful' as const,
         getDefaultArgs: () => [],
-        prepareMessage: (msg: string) => msg,
-        getDefaultEndMarker: () => '[DONE]',
         validate: async () => true,
         spawn: vi.fn()
       };
@@ -368,8 +363,6 @@ describe('AgentManager', () => {
         command: 'test-command',
         executionMode: 'stateless' as const,
         getDefaultArgs: () => [],
-        prepareMessage: (msg: string) => msg,
-        getDefaultEndMarker: () => '[DONE]',
         validate: async () => true,
         spawn: vi.fn()
       };

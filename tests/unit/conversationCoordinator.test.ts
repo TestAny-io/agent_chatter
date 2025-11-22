@@ -114,38 +114,6 @@ describe('ConversationCoordinator', () => {
     expect(coordinator.getStatus()).toBe('completed');
   });
 
-  it('builds agent message with system prompt and context', () => {
-    const stub = new StubAgentManager({});
-    const agentManager = stub as unknown as AgentManager;
-    const router = new MessageRouter();
-    const coordinator = new ConversationCoordinator(agentManager, router);
-
-    const role = createMember({
-      id: 'ai-alpha',
-      name: 'alpha',
-      systemInstruction: 'You are Alpha.'
-    });
-
-    const previousMessage = {
-      speaker: { roleId: 'alpha', roleName: 'alpha', roleTitle: 'Alpha', type: 'ai' },
-      content: 'Context message',
-      timestamp: Date.now(),
-      routing: {}
-    } as unknown as ConversationMessage;
-
-    (coordinator as any).session = { messages: [previousMessage, previousMessage] };
-
-    const payload = (coordinator as any).buildAgentMessage(role, 'Review the patch');
-
-    // System instruction is now handled by adapters (--append-system-prompt for Claude,
-    // env vars for wrappers), so [SYSTEM] and systemInstruction content are no longer
-    // in the message body
-    expect(payload).toContain('[CONTEXT]');
-    expect(payload).toContain('Context message');
-    expect(payload).toContain('[MESSAGE]');
-    expect(payload).toContain('Review the patch');
-  });
-
   it('resolves addressees with fuzzy matching and normalization', () => {
     const stub = new StubAgentManager({});
     const agentManager = stub as unknown as AgentManager;

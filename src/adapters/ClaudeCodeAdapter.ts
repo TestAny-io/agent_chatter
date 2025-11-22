@@ -90,17 +90,4 @@ export class ClaudeCodeAdapter implements IAgentAdapter {
       return false;
     }
   }
-
-  /**
-   * Prepare message for sending to Claude Code
-   * System instruction is already handled via --append-system-prompt in spawn()
-   * so we just return the message as-is
-   */
-  prepareMessage(message: string, _systemInstruction?: string): string {
-    if (_systemInstruction) {
-      // Inline system instruction for stateless execution
-      return `[SYSTEM]\n${_systemInstruction}\n\n${message}`;
-    }
-    return message;
-  }
 }

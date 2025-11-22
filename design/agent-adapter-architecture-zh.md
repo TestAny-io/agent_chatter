@@ -20,7 +20,7 @@
 ## 关键设计
 
 ### Adapter 责任
-- **ClaudeCodeAdapter**（stateless）：默认参数 `--output-format=stream-json --verbose`，AgentManager 在执行时自动插入 `-p <prompt>` 以避免启动交互 TUI；完成事件 `type=result`。因为改为一次性执行，系统指令在消息里内联 `[SYSTEM]...` 并随 prompt 一起传入。
+- **ClaudeCodeAdapter**（stateless）：默认参数 `--output-format=stream-json --verbose`，AgentManager 在执行时自动插入 `-p <prompt>` 以避免启动交互 TUI；完成事件 `type=result`。系统指令由 PromptBuilder 构建，优先通过 `--append-system-prompt` 传入；prompt 仅携带 context+message。
 - **OpenAICodexAdapter**（stateless）：默认 args 为空，统一在 Registry/团队里提供 `exec --json --full-auto --skip-git-repo-check`；完成事件 `turn.completed`；消息前置 `[SYSTEM]` 片段。
 - **GenericShellAdapter / Gemini**（stateless）：Gemini 默认 `--output-format stream-json`，完成事件 `type=result`；系统指令通过消息前置 `[SYSTEM]` 注入。
 
@@ -62,8 +62,8 @@
 ```
 
 ### 运行时流程（单轮）
-1. ConversationCoordinator -> AgentManager.ensureAgentStarted(adapter 准备 CLI、system prompt 注入)。
-2. AgentManager.sendAndReceive -> ProcessManager 发送消息，监听 JSONL。
+1. ConversationCoordinator 使用 PromptBuilder 构建 prompt（[SYSTEM]+[CONTEXT]+[MESSAGE]）并传递 systemFlag（Claude）。
+2. AgentManager.ensureAgentStarted(adapter 准备 CLI)，sendAndReceive 调用 ProcessManager；Claude stateless 在 args 中追加 `--append-system-prompt`。
 3. ProcessManager 读流：缓存输出、检测完成事件、在 DEBUG 下记录解析异常；仅在见到可展示输出后启动空闲兜底。
 4. 回传原始 JSONL -> JsonlMessageFormatter 提取文本/完成态 -> MessageRouter 解析 `[NEXT]` 继续路由。
 
@@ -76,4 +76,4 @@
 ## 附：调试要点
 - 设置 `DEBUG=1` 可查看 JSONL 解析错误与进程收尾行为。
 - Claude 初始会输出 `type:system init`，属于噪声；等待 `assistant/result` 后才会启动空闲超时。
-- 如果新 agent 需要接入：实现 IAgentAdapter，提供默认 args、完成事件和 prepareMessage 即可，无需改动 ProcessManager。
+- 如果新 agent 需要接入：实现 IAgentAdapter（spawn/validate/getDefaultArgs），提供完成事件定义；prompt 构建交由 PromptBuilder。

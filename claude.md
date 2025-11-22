@@ -15,6 +15,9 @@
 - 关注多 Agent 流程、进程管理、工具检测相关逻辑的正确性与一致性。
 - 中文沟通，回答简洁直接；必要时提醒补充测试与设计文档。
 
+## 发布流程
+- 本地只 commit + push + tag，让 CI 自动执行 npm version 和 npm publish
+
 ## 附件
 - 详细架构与产品记录：`notes/arch/architecture-decisions.md`
 - 开发者个人笔记归档：`notes/developer/`

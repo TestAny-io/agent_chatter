@@ -730,7 +730,7 @@
       const config = await this.agentConfigManager.getAgentConfig(agent.configId);
 
       // Prepare message using adapter (prepends system instruction if needed)
-      const preparedMessage = agent.adapter.prepareMessage(message, agent.systemInstruction);
+      // Prompt 已由上游构建，不再在此处拼装 system/context
 
       if (agent.adapter.executionMode === 'stateless') {
         // Stateless mode - execute one-shot with proper cancellation

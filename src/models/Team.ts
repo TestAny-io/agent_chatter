@@ -39,6 +39,7 @@ export interface Member {
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string;
+  instructionFileText?: string; // Resolved content of instructionFile for prompt assembly
   additionalArgs?: string[];  // 成员特定的额外 CLI 参数（用于 Adapter）
   order: number;
 }

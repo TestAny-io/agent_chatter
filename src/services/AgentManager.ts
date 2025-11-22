@@ -24,7 +24,7 @@ interface AgentInstance {
   configId: string;
   processId: string;
   cleanup?: () => Promise<void>;  // Adapter cleanup function
-  adapter: IAgentAdapter;  // Store adapter for prepareMessage()
+  adapter: IAgentAdapter;
   systemInstruction?: string;  // Store for use in sendAndReceive()
   currentStatelessProcess?: import('child_process').ChildProcess;  // For stateless mode cancellation
 }
@@ -139,7 +139,7 @@ export class AgentManager {
       configId,
       processId,
       cleanup: spawnResult.cleanup,
-      adapter: adapter,  // Store adapter for prepareMessage()
+      adapter: adapter,
       systemInstruction: memberConfig?.systemInstruction  // Store for use in sendAndReceive()
     });
 
@@ -148,11 +148,11 @@ export class AgentManager {
 
   /**
    * 发送消息并等待响应
-   */
+  */
   async sendAndReceive(
     roleId: string,
     message: string,
-    options?: Partial<SendOptions>
+    options?: Partial<SendOptions> & { systemFlag?: string }
   ): Promise<string> {
     const agent = this.agents.get(roleId);
     if (!agent) {
@@ -162,14 +162,6 @@ export class AgentManager {
     // 获取配置用于追加参数、环境等
     const config = await this.agentConfigManager.getAgentConfig(agent.configId);
     const producesJsonOutput = this.producesJsonOutput(config);
-
-    // Prepare message using adapter (handles system instruction prepending)
-    const preparedMessage = agent.adapter.prepareMessage(message, agent.systemInstruction);
-
-    if (process.env.DEBUG) {
-      // eslint-disable-next-line no-console
-      console.error(`[Debug][AgentManager] Final message to ${roleId} after adapter preparation:\n${preparedMessage}`);
-    }
 
     // Check execution mode and route accordingly
     if (agent.adapter.executionMode === 'stateless') {
@@ -189,8 +181,13 @@ export class AgentManager {
         args.push('-p');
       }
 
-      // Add the prepared message as the final argument
-      args.push(preparedMessage);
+      // Add system prompt flag when provided (Claude)
+      if (options?.systemFlag && agent.adapter.agentType === 'claude-code') {
+        args.push('--append-system-prompt', options.systemFlag);
+      }
+
+      // Add the message as the final argument
+      args.push(message);
 
       // Merge environment variables
       const env = {
@@ -267,7 +264,7 @@ export class AgentManager {
 
       return this.processManager.sendAndReceive(
         agent.processId,
-        preparedMessage,  // Send prepared message with [SYSTEM] if needed
+        message,  // Prompt already constructed
         sendOptions
       );
     }

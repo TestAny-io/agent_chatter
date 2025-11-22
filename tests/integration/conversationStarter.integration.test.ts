@@ -158,7 +158,7 @@ describe('ConversationStarter integration', () => {
     const { coordinator, team } = await initializeServices(config, { registryPath: tempRegistryPath });
 
     expect(team.members).toHaveLength(2);
-    expect(team.members[0].systemInstruction).toContain('integration test agent');
+    expect(team.members[0].instructionFileText).toContain('integration test agent');
     expect(team.members[0].env?.CUSTOM).toBe('1');
     expect(fs.existsSync(aiWork)).toBe(true);
     expect(fs.existsSync(humanWork)).toBe(true);

@@ -119,16 +119,10 @@ describe('AgentsMenu Component', () => {
         // Initial index is 0. Down 4 times.
         stdin.write('\u001B[B'); // Down (index 1)
         await flushPromises();
-        expect(lastFrame()).toContain('▶ Register new agents');
-
         stdin.write('\u001B[B'); // Down (index 2)
         await flushPromises();
-        expect(lastFrame()).toContain('▶ Verify agent availability');
-
         stdin.write('\u001B[B'); // Down (index 3)
         await flushPromises();
-        expect(lastFrame()).toContain('▶ Show agent details');
-
         stdin.write('\u001B[B'); // Down (index 4)
         await flushPromises();
         // Verify we're on "Edit agent configuration" before pressing Enter

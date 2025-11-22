@@ -47,8 +47,7 @@ export class OpenAICodexAdapter implements IAgentAdapter {
       ...config.env
     };
 
-    // NOTE: systemInstruction is NOT set in env here
-    // It will be handled by prepareMessage() in AgentManager.sendAndReceive()
+    // NOTE: systemInstruction is not injected here; prompt is pre-built upstream
 
     // Spawn the process
     const childProcess = spawn(this.command, args, {
@@ -113,19 +112,6 @@ export class OpenAICodexAdapter implements IAgentAdapter {
     } catch {
       return false;
     }
-  }
-
-  /**
-   * Prepare message for sending to Codex
-   * Prepends [SYSTEM] section if systemInstruction is provided
-   */
-  prepareMessage(message: string, systemInstruction?: string): string {
-    if (!systemInstruction) {
-      return message;
-    }
-
-    // Prepend [SYSTEM] section
-    return `[SYSTEM]\n${systemInstruction}\n\n${message}`;
   }
 
   /**

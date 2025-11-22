@@ -57,6 +57,7 @@ export interface TeamMemberConfig {
   workDir?: string;
   instructionFile?: string;
   env?: Record<string, string>;
+  systemInstruction?: string; // Schema 1.2+
 }
 
 export interface TeamConfig {
@@ -444,8 +445,9 @@ export async function initializeServices(
       roleDir: normalizedPaths.roleDir,
       workDir: normalizedPaths.workDir,
       instructionFile: normalizedPaths.instructionFile,
+      instructionFileText: loadInstructionContent(normalizedPaths.instructionFile),
       env,
-      systemInstruction: loadInstructionContent(normalizedPaths.instructionFile),
+      systemInstruction: member.systemInstruction,
       order: index
     });
   }

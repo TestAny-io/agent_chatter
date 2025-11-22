@@ -17,6 +17,7 @@ import { AgentManager } from './AgentManager.js';
 import { MessageRouter } from './MessageRouter.js';
 import type { ConversationConfig } from '../utils/ConversationStarter.js';
 import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
+import { buildPrompt, type PromptContextMessage } from '../utils/PromptBuilder.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -28,6 +29,16 @@ export interface ConversationCoordinatorOptions {
   conversationConfig?: ConversationConfig;  // Conversation configuration (timeout, UI behavior)
   onAgentStarted?: (member: Member) => void;  // Called when an agent starts executing
   onAgentCompleted?: (member: Member) => void;  // Called when an agent completes execution
+}
+
+function normalizeAgentType(type?: string): string {
+  if (!type) return '';
+  const mapping: Record<string, string> = {
+    claude: 'claude-code',
+    codex: 'openai-codex',
+    gemini: 'google-gemini'
+  };
+  return mapping[type] ?? type;
 }
 
 /**
@@ -334,8 +345,21 @@ export class ConversationCoordinator {
       // 确保 Agent 已启动
       await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId, memberConfig);
 
-      // 准备完整消息（包含 system instruction 和上下文）
-      const fullMessage = this.buildAgentMessage(member, message);
+      // 准备上下文消息
+      const contextMessages: PromptContextMessage[] = this.getRecentMessages(this.contextMessageCount).map(msg => ({
+        from: msg.speaker.roleName,
+        to: msg.routing?.resolvedAddressees?.map(r => r.roleName).join(', '),
+        content: msg.content,
+        timestamp: new Date(msg.timestamp)
+      }));
+
+      const prompt = buildPrompt({
+        agentType: normalizeAgentType(member.agentType),
+        systemInstructionText: member.systemInstruction,
+        instructionFileText: member.instructionFileText,
+        contextMessages,
+        message
+      });
 
       // Get timeout from conversation config (default: 30 minutes)
       const maxTimeout = this.options.conversationConfig?.maxAgentResponseTime ?? 1800000;
@@ -343,10 +367,17 @@ export class ConversationCoordinator {
       // 发送并等待响应
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error(`[Debug][Send] to ${member.name} (${member.id}):\n${fullMessage}`);
+        console.error(`[Debug][Send] to ${member.name} (${member.id}):\n${prompt.prompt}`);
+        if (prompt.systemFlag) {
+          console.error(`[Debug][Send] systemFlag (for ${member.name}):\n${prompt.systemFlag}`);
+        }
       }
 
-      const response = await this.agentManager.sendAndReceive(member.id, fullMessage, { maxTimeout });
+      const response = await this.agentManager.sendAndReceive(
+        member.id,
+        prompt.prompt,
+        { maxTimeout, systemFlag: prompt.systemFlag }
+      );
 
       // 停止 Agent（因为我们关闭了 stdin，进程会退出，下次需要重新启动）
       await this.agentManager.stopAgent(member.id);
@@ -378,37 +409,6 @@ export class ConversationCoordinator {
       // Clear currently executing member
       this.currentExecutingMember = null;
     }
-  }
-
-  /**
-   * 构建发送给 Agent 的完整消息
-   *
-   * Note: System instruction is NOT included here as it's now handled by
-   * the adapter layer (via --append-system-prompt for Claude, or env vars
-   * for wrapper scripts). Including it here would result in duplicate
-   * system prompts.
-   */
-  private buildAgentMessage(member: Member, message: string): string {
-    const parts: string[] = [];
-
-    // 添加最近的对话上下文（排除当前消息，避免重复）
-    // 获取最近 N 条消息，但不包括最后一条（即当前消息）
-    const allMessages = this.session?.messages || [];
-    const contextMessages = allMessages.slice(-this.contextMessageCount - 1, -1);
-
-    if (contextMessages.length > 0) {
-      parts.push('[CONTEXT]');
-      for (const msg of contextMessages) {
-        parts.push(`${msg.speaker.roleName}: ${msg.content}`);
-      }
-      parts.push('');
-    }
-
-    // 添加当前消息
-    parts.push('[MESSAGE]');
-    parts.push(message);
-
-    return parts.join('\n');
   }
 
   /**

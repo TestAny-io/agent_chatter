@@ -117,16 +117,6 @@ export interface IAgentAdapter {
   getDefaultArgs(): string[];
 
   /**
-   * Prepare message for sending to agent process
-   * Handles system instruction prepending if needed
-   *
-   * @param message - The message to send (may include [CONTEXT] and [MESSAGE] sections)
-   * @param systemInstruction - Optional system instruction to prepend
-   * @returns Prepared message ready for stdin
-   */
-  prepareMessage(message: string, systemInstruction?: string): string;
-
-  /**
    * Execute a one-shot command (stateless mode only)
    * Spawns a new process for each message, passes message as CLI argument
    *
