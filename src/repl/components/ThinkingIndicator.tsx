@@ -27,13 +27,15 @@ export const ThinkingIndicator: React.FC<ThinkingIndicatorProps> = ({
 
   useEffect(() => {
     const startTime = Date.now();
+    setElapsedSeconds(0);  // Reset timer when agent changes
+
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - startTime) / 1000);
       setElapsedSeconds(elapsed);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [member.id]);  // Reset timer whenever agent changes
 
   const maxMinutes = Math.floor(maxTimeoutMs / 60000);
   const formatTime = (seconds: number): string => {
