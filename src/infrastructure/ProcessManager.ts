@@ -195,6 +195,7 @@ export class ProcessManager {
     const endMarker = options?.endMarker;
     const useEndOfMessageMarker = options?.useEndOfMessageMarker ?? false;
     const completionTypes = new Set(['result', 'turn.completed', 'turn.finished']);
+    let hasDisplayableOutput = false;
     let jsonLineBuffer = '';
 
     return new Promise((resolve, reject) => {
@@ -218,10 +219,10 @@ export class ProcessManager {
       };
 
       // Store for cancellation support
-      this.activeSends.set(processId, {
-        reject,
-        timeoutHandle: null as any  // Will be set below
-      });
+        this.activeSends.set(processId, {
+          reject,
+          timeoutHandle: null as any  // Will be set below
+        });
 
       // 设置最大响应超时（安全网，防止进程挂起或崩溃）
       maxTimeoutTimer = setTimeout(() => {
@@ -241,6 +242,10 @@ export class ProcessManager {
 
       // 重置空闲计时器的函数
       const resetIdleTimer = () => {
+        // 对 JSONL 流：只有在看到可展示内容后才启动空闲兜底，避免仅有 system/init 就提前返回
+        if (completionTypes.size > 0 && !hasDisplayableOutput) {
+          return;
+        }
         if (idleTimer) {
           clearTimeout(idleTimer);
         }
@@ -263,10 +268,16 @@ export class ProcessManager {
         for (const line of parts) {
           const trimmed = line.trim();
           if (!trimmed || trimmed[0] !== '{') {
+            if (trimmed) {
+              hasDisplayableOutput = true;
+            }
             continue;
           }
           try {
             const obj = JSON.parse(trimmed);
+            if (obj?.type && obj.type !== 'system') {
+              hasDisplayableOutput = true;
+            }
             if (obj?.type && completionTypes.has(obj.type)) {
               cleanup();
               resolve(output);
@@ -292,8 +303,10 @@ export class ProcessManager {
         resetIdleTimer();
       });
 
-      // 启动空闲计时器
-      resetIdleTimer();
+      // 启动空闲计时器（若未使用完成事件）
+      if (completionTypes.size === 0) {
+        resetIdleTimer();
+      }
 
       // 监听 stdout 结束（兜底：若未匹配到完成事件，则使用当前输出）
       managed.process.stdout?.once('end', () => {

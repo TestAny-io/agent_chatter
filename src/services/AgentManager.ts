@@ -179,6 +179,11 @@ export class AgentManager {
         args.push(...config.args);
       }
 
+      // For Claude Code CLI, ensure prompt is passed via -p to avoid launching the interactive TUI
+      if (agent.adapter.agentType === 'claude-code') {
+        args.push('-p');
+      }
+
       // Add the prepared message as the final argument
       args.push(preparedMessage);
 
@@ -251,6 +256,7 @@ export class AgentManager {
       const sendOptions: SendOptions = {
         maxTimeout: options?.maxTimeout,
         endMarker: producesJsonOutput ? undefined : options?.endMarker,
+        idleTimeout: producesJsonOutput ? 10000 : options?.idleTimeout,
         useEndOfMessageMarker: false
       };
 
@@ -276,7 +282,11 @@ export class AgentManager {
       await agent.cleanup();
     }
 
-    await this.processManager.stopProcess(agent.processId);
+    // Only stop managed process for stateful agents
+    if (agent.adapter.executionMode === 'stateful') {
+      await this.processManager.stopProcess(agent.processId);
+    }
+
     this.agents.delete(roleId);
   }
 

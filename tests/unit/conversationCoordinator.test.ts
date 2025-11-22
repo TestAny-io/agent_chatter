@@ -209,8 +209,8 @@ describe('ConversationCoordinator', () => {
   it('AI message with [NEXT] routes to specified member, not terminating', async () => {
     // NEW BEHAVIOR: When AI returns completion + NEXT, the conversation routes and continues.
     const responses = {
-      'ai-alpha': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Alpha response [NEXT: ai-bravo]"}]}}\\n{"type":"result"}'],
-      'ai-bravo': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Bravo response"}]}}\\n{"type":"result"}']
+      'ai-alpha': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Alpha response [NEXT: ai-bravo]"}]}}\n{"type":"result"}'],
+      'ai-bravo': ['{"type":"assistant","message":{"content":[{"type":"text","text":"Bravo response"}]}}\n{"type":"result"}']
     };
     const stub = new StubAgentManager(responses);
     const agentManager = stub as unknown as AgentManager;

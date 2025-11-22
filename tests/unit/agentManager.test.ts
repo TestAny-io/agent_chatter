@@ -63,7 +63,6 @@ describe('AgentManager', () => {
       command: 'echo',
       args: []
     });
-    mockProcessManager.registerProcess.mockReturnValue('proc-1');
 
     const manager = new AgentManager(
       mockProcessManager as any,
@@ -73,9 +72,10 @@ describe('AgentManager', () => {
     const processId1 = await manager.ensureAgentStarted('role-1', 'cfg');
     const processId2 = await manager.ensureAgentStarted('role-1', 'cfg');
 
-    expect(processId1).toBe('proc-1');
-    expect(processId2).toBe('proc-1');
-    expect(mockProcessManager.registerProcess).toHaveBeenCalledTimes(1);
+    // Stateless agents return a dummy process id and do not register with ProcessManager
+    expect(processId1).toBe('stateless-role-1');
+    expect(processId2).toBe('stateless-role-1');
+    expect(mockProcessManager.registerProcess).not.toHaveBeenCalled();
   });
 
   it('sendAndReceive applies options (maxTimeout) and disables endMarker for JSON agents', async () => {
@@ -85,23 +85,34 @@ describe('AgentManager', () => {
       command: 'echo',
       args: ['--output-format=stream-json', '--verbose']
     });
-    mockProcessManager.registerProcess.mockReturnValue('proc-2');
-    mockProcessManager.sendAndReceive.mockResolvedValue('result');
-
     const manager = new AgentManager(
       mockProcessManager as any,
       mockAgentConfigManager as any
     );
 
     await manager.ensureAgentStarted('role-2', 'cfg');
-    const response = await manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000 });
 
+    // Create a fresh fake process that exits immediately
+    const fake = new EventEmitter() as any;
+    fake.stdout = new EventEmitter();
+    fake.stderr = new EventEmitter();
+    fake.killed = false;
+    fake.kill = vi.fn(() => true);
+    mockSpawn.mockReturnValueOnce(fake);
+
+    const promise = manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000 });
+
+    // Simulate stdout + exit
+    setImmediate(() => {
+      fake.stdout.emit('data', Buffer.from('result'));
+      fake.emit('exit', 0);
+    });
+
+    const response = await promise;
     expect(response).toBe('result');
-    expect(mockProcessManager.sendAndReceive).toHaveBeenCalledWith(
-      'proc-2',
-      'hello',
-      expect.objectContaining({ maxTimeout: 1000 })
-    );
+    // Spawn should be called with -p before prompt
+    const spawnArgs = mockSpawn.mock.calls[0][1];
+    expect(spawnArgs).toContain('-p');
   });
 
   it('stopAgent stops running process and removes cache', async () => {
@@ -111,7 +122,6 @@ describe('AgentManager', () => {
       command: 'echo',
       args: []
     });
-    mockProcessManager.registerProcess.mockReturnValue('proc-3');
 
     const manager = new AgentManager(
       mockProcessManager as any,
@@ -121,10 +131,8 @@ describe('AgentManager', () => {
     await manager.ensureAgentStarted('role-3', 'cfg');
     await manager.stopAgent('role-3');
 
-    expect(mockProcessManager.stopProcess).toHaveBeenCalledWith('proc-3');
-    await expect(
-      manager.sendAndReceive('role-3', 'after-stop')
-    ).rejects.toThrow(/no running agent/i);
+    expect(mockProcessManager.stopProcess).not.toHaveBeenCalled();
+    await expect(manager.sendAndReceive('role-3', 'after-stop')).rejects.toThrow(/no running agent/i);
   });
 
   it('throws when agent config missing', async () => {

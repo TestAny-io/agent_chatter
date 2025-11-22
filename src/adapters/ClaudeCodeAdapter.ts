@@ -12,7 +12,8 @@ const execAsync = promisify(exec);
 
 export class ClaudeCodeAdapter implements IAgentAdapter {
   readonly agentType = 'claude-code';
-  readonly executionMode = 'stateful' as const;
+  // Use stateless mode so we can pass prompt via -p and avoid the interactive TUI
+  readonly executionMode = 'stateless' as const;
 
   constructor(
     public readonly command: string = 'claude'
@@ -96,8 +97,10 @@ export class ClaudeCodeAdapter implements IAgentAdapter {
    * so we just return the message as-is
    */
   prepareMessage(message: string, _systemInstruction?: string): string {
-    // System instruction already passed via --append-system-prompt in spawn()
-    // No need to prepend it here
+    if (_systemInstruction) {
+      // Inline system instruction for stateless execution
+      return `[SYSTEM]\n${_systemInstruction}\n\n${message}`;
+    }
     return message;
   }
 }

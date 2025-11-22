@@ -21,15 +21,27 @@ export function formatJsonl(agentType: SupportedJsonlAgent | undefined, raw: str
 
   for (const line of lines) {
     const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Plain text line: keep as-is (supports non-JSON agents)
     if (!trimmed.startsWith('{')) {
+      parts.push(stripAnsi(trimmed));
       continue;
     }
     try {
       const obj = JSON.parse(trimmed);
 
       // Completion detection
-      if (obj.type === 'result' || obj.type === 'turn.completed' || obj.type === 'turn.finished') {
+      if (obj.type === 'result') {
         completed = true;
+        if (typeof obj.result === 'string' && parts.length === 0) {
+          parts.push(stripAnsi(obj.result));
+        }
+        continue;
+      }
+      if (obj.type === 'turn.completed' || obj.type === 'turn.finished') {
+        completed = true;
+        continue;
       }
 
       // Ignore system/init lines in output
@@ -74,9 +86,12 @@ export function formatJsonl(agentType: SupportedJsonlAgent | undefined, raw: str
   }
 
   let text = parts.join('\n').trim();
-  if (!text) {
-    text = stripAnsi(raw.trim()); // fallback to raw text (for malformed lines)
+
+  // If we received no displayable text but saw a completion event, fall back to raw
+  if (completed && !text) {
+    text = stripAnsi(raw.trim());
   }
+
   return { text, completed };
 }
 

@@ -166,12 +166,10 @@ describe('ConversationStarter integration', () => {
     const firstSpeaker = team.members[0].id;
     await coordinator.startConversation(team, 'Review the new feature', firstSpeaker);
 
-    // Now using adapters, so we check registerCalls instead of startCalls
-    expect(processMock.registerCalls).toHaveLength(1);
-    expect(processMock.sendCalls[0].input).toContain('Review the new feature');
-    // System instruction is now handled by adapters (--append-system-prompt for Claude,
-    // env vars for wrappers), so it's no longer in the message body
-    expect(processMock.stopCalls).toEqual(['proc-1']);
+    // In stateless mode (Claude), ProcessManager is not used. We still expect the
+    // conversation to pause after the AI message is delivered.
+    expect(processMock.registerCalls).toHaveLength(0);
+    expect(processMock.stopCalls).toEqual([]);
 
     // NEW BEHAVIOR: AI's [DONE] no longer terminates the conversation.
     // Instead, it continues to the next member (human) via round-robin.
