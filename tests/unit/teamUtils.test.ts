@@ -162,23 +162,6 @@ describe('TeamUtils', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('validates workDir must be a string', () => {
-      const roleA = buildRole({ workDir: 123 as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
-      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
-
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.includes('workDir 必须是字符串'))).toBe(true);
-    });
-
-    it('accepts valid workDir', () => {
-      const roleA = buildRole({ workDir: '/path/to/work', order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
-      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
-
-      expect(result.valid).toBe(true);
-    });
-
     it('validates member name pattern', () => {
       const roleA = buildRole({ name: 'invalid name!', order: 0 });
       const roleB = buildRole({ id: 'role2', name: 'valid-name', order: 1 });
@@ -207,7 +190,6 @@ describe('TeamUtils', () => {
 
     it('accepts all new fields together', () => {
       const roleA = buildRole({
-        workDir: '/custom/work/dir',
         additionalArgs: ['--verbose', '--debug'],
         env: { DEBUG: 'true', LOG_LEVEL: 'info' },
         order: 0

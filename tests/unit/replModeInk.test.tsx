@@ -297,7 +297,6 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         displayName: string;
         themeColor: string;
         roleDir: string;
-        workDir: string;
         instructionFile?: string;
         env?: Record<string, string>;
         agentType?: string;
@@ -310,7 +309,6 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         displayName: 'Claude Reviewer',
         themeColor: 'cyan',
         roleDir: '/teams/test/reviewer',
-        workDir: '/teams/test/reviewer/work',
         instructionFile: 'AGENTS.md',
         agentType: 'claude',
         env: { CUSTOM_VAR: 'value' }
@@ -329,7 +327,6 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         displayName: string;
         themeColor: string;
         roleDir: string;
-        workDir: string;
         instructionFile?: string;
         env?: Record<string, string>;
         agentType?: string;
@@ -341,8 +338,7 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         assignedRole: 'observer',
         displayName: 'Human Observer',
         themeColor: 'green',
-        roleDir: '/teams/test/observer',
-        workDir: '/teams/test/observer/work'
+        roleDir: '/teams/test/observer'
       };
 
       expect(humanMember.type).toBe('human');
@@ -477,4 +473,3 @@ describe('ReplModeInk - Phase 1 Tests', () => {
     });
   });
 });
-

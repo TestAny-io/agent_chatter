@@ -336,7 +336,6 @@ export class ConversationCoordinator {
     try {
       // 准备 member-specific spawn configuration
       const memberConfig = {
-        workDir: member.workDir,
         env: member.env,
         additionalArgs: member.additionalArgs,
         systemInstruction: member.systemInstruction

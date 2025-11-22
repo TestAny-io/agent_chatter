@@ -16,8 +16,7 @@ describe('ThinkingIndicator Component', () => {
     type: 'ai',
     role: 'developer',
     agentType: 'claude',
-    roleDir: '/tmp/test',
-    workDir: '/tmp/test/work'
+    roleDir: '/tmp/test'
   });
 
   it('should start timer at 0 seconds when component mounts', () => {

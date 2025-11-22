@@ -545,7 +545,6 @@ interface MemberConfig {
     displayName: string;
     themeColor: string;
     roleDir: string;
-    workDir: string;
     instructionFile?: string;
     env?: Record<string, string>;
     agentType?: string;
@@ -1388,11 +1387,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                                     {member.roleDir && (
                                         <Box marginLeft={2}>
                                             <Text dimColor>Role Dir: {member.roleDir}</Text>
-                                        </Box>
-                                    )}
-                                    {member.workDir && (
-                                        <Box marginLeft={2}>
-                                            <Text dimColor>Work Dir: {member.workDir}</Text>
                                         </Box>
                                     )}
                                 </Box>

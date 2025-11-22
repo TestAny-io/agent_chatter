@@ -16,15 +16,14 @@ function createMember(partial: Partial<TeamMemberConfig> = {}): TeamMemberConfig
   return {
     displayName: 'Member',
     name: 'member-1',
-    role: 'role',
-    type: 'ai',
-    agentType: partial.agentType ?? 'codex',
-    roleDir: partial.roleDir ?? tempDir,
-    instructionFile: partial.instructionFile,
-    workDir: partial.workDir,
-    env: partial.env,
-    themeColor: partial.themeColor,
-    displayRole: partial.displayRole
+  role: 'role',
+  type: 'ai',
+  agentType: partial.agentType ?? 'codex',
+  roleDir: partial.roleDir ?? tempDir,
+  instructionFile: partial.instructionFile,
+  env: partial.env,
+  themeColor: partial.themeColor,
+  displayRole: partial.displayRole
   };
 }
 
@@ -65,14 +64,13 @@ describe('ConversationStarter helpers', () => {
     expect(resolved).toBe(absolute);
   });
 
-  it('normalizeMemberPaths creates missing directories and resolves absolute paths', () => {
+  it('normalizeMemberPaths creates missing roleDir and resolves instruction file', () => {
     const roleDir = path.join(tempDir, 'roles', 'alpha');
-    const member = createMember({ roleDir, workDir: undefined, instructionFile: 'AGENTS.md' });
+    const member = createMember({ roleDir, instructionFile: 'AGENTS.md' });
     const normalized = normalizeMemberPaths(member);
 
     expect(normalized.roleDir).toBe(path.resolve(roleDir));
     expect(fs.existsSync(normalized.roleDir)).toBe(true);
-    expect(fs.existsSync(normalized.workDir)).toBe(true);
     expect(normalized.instructionFile).toBe(path.join(normalized.roleDir, 'AGENTS.md'));
   });
 

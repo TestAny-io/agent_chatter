@@ -54,7 +54,6 @@ export interface TeamMemberConfig {
   agentType?: string;
   themeColor?: string;
   roleDir: string;
-  workDir?: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string; // Schema 1.2+
@@ -65,7 +64,6 @@ export interface TeamConfig {
   displayName?: string;
   description: string;
   instructionFile?: string;
-  workDir?: string; // Schema 1.1+: Team-level work directory, members inherit unless overridden
   roleDefinitions?: RoleDefinitionConfig[];
   members: TeamMemberConfig[];
 }
@@ -93,8 +91,6 @@ interface NormalizedAgent {
 
 interface NormalizedPaths {
   roleDir: string;
-  workDir: string;
-  workDirSource: 'member' | 'team' | 'default';  // Tracks where workDir came from
   instructionFile?: string;
 }
 
@@ -184,32 +180,14 @@ function ensureDir(targetPath: string, label: string): void {
 }
 
 export function normalizeMemberPaths(
-  member: TeamMemberConfig,
-  teamWorkDir?: string
+  member: TeamMemberConfig
 ): NormalizedPaths {
   const roleDir = path.resolve(member.roleDir);
-
-  // Priority: member.workDir > team.workDir > roleDir/work (fallback)
-  let workDir: string;
-  let workDirSource: 'member' | 'team' | 'default';
-
-  if (member.workDir) {
-    workDir = path.resolve(member.workDir);
-    workDirSource = 'member';
-  } else if (teamWorkDir) {
-    workDir = path.resolve(teamWorkDir);
-    workDirSource = 'team';
-  } else {
-    workDir = path.join(roleDir, 'work');
-    workDirSource = 'default';
-  }
-
   const instructionFile = resolveInstructionFile(member, roleDir);
 
   ensureDir(roleDir, 'roleDir');
-  ensureDir(workDir, 'workDir');
 
-  return { roleDir, workDir, workDirSource, instructionFile };
+  return { roleDir, instructionFile };
 }
 
 export function buildEnv(agentType: string | undefined, member: TeamMemberConfig): Record<string, string> {
@@ -356,15 +334,14 @@ export async function initializeServices(
   const agentDefinitionMap = await loadAndMergeAgents(config.agents, registryPath);
   const teamMembers: Array<Omit<Member, 'id'>> = [];
 
-  // Schema 1.1+: Team-level workDir for all members (unless member overrides)
-  const teamWorkDir = config.team.workDir;
-
   // Shared registry instance and verification cache to avoid redundant verifications
   const registry = new AgentRegistry(registryPath);
   const verificationCache = new Map<string, VerificationResult>();
 
+  const projectRoot = process.cwd();
+
   for (const [index, member] of config.team.members.entries()) {
-    const normalizedPaths = normalizeMemberPaths(member, teamWorkDir);
+    const normalizedPaths = normalizeMemberPaths(member);
     let agentConfigId: string | undefined;
     let env: Record<string, string> | undefined;
 
@@ -405,12 +382,7 @@ export async function initializeServices(
 
       env = buildEnv(member.agentType, member);
 
-      // Log workDir source for debugging and troubleshooting
-      const workDirSourceLabel =
-        normalizedPaths.workDirSource === 'member' ? '成员配置' :
-        normalizedPaths.workDirSource === 'team' ? '团队配置' :
-        '默认值 (roleDir/work)';
-      console.log(colorize(`  工作目录: ${normalizedPaths.workDir} (来源: ${workDirSourceLabel})`, 'dim'));
+      console.log(colorize(`  工作目录: ${projectRoot} (来源: 启动目录)`, 'dim'));
 
       // Map agent type name to adapter type
       const adapterType = member.agentType === 'claude' ? 'claude-code' :
@@ -424,7 +396,7 @@ export async function initializeServices(
         command: agentDef.command,
         args: agentDef.args,
         env,
-        cwd: normalizedPaths.workDir,
+        cwd: projectRoot,
         description: `CLI agent: ${member.agentType} (${member.displayName})`,
         usePty: agentDef.usePty ?? false
       });
@@ -443,7 +415,6 @@ export async function initializeServices(
       agentConfigId,
       themeColor: member.themeColor,
       roleDir: normalizedPaths.roleDir,
-      workDir: normalizedPaths.workDir,
       instructionFile: normalizedPaths.instructionFile,
       instructionFileText: loadInstructionContent(normalizedPaths.instructionFile),
       env,

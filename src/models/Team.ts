@@ -35,7 +35,6 @@ export interface Member {
   agentConfigId?: string;
   themeColor?: string;
   roleDir?: string;
-  workDir?: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string;
@@ -108,11 +107,6 @@ export class TeamUtils {
             }
           }
         }
-      }
-
-      // Validate workDir if present
-      if (member.workDir !== undefined && typeof member.workDir !== 'string') {
-        errors.push(`成员 "${member.name}" 的 workDir 必须是字符串`);
       }
 
       // Validate order

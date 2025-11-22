@@ -1,6 +1,7 @@
 # Agent Registry 设计文档
 
 > 更新（2025-11-21）：系统已切换为 JSONL 完成事件（Claude/Codex/Gemini），不再依赖 `endMarker`。文档中出现的 endMarker 字段为历史描述，后续将逐步清理；当前实现以 JSONL 参数与完成事件为准。
+> 更新（2025-02）：成员级/团队级 `workDir` 配置已删除，运行时工作目录取自启动时的 `cwd`（未来可结合沙箱）。
 
 ## 1. 背景和问题
 
@@ -67,11 +68,7 @@ Team 配置文件使用**对象数组**引用全局 agents，并支持可选字�
   ],
   "team": {
     "name": "my-team",
-    "workDir": {                  // 新增：统一工作目录（取代 member.workDir）
-      "name": "my-project",
-      "displayName": "My Project",
-      "directory": "/path/to/project"
-    },
+    // workDir 字段已删除，cwd 由启动目录决定
     "roleDefinitions": [...],
     "members": [
       {
@@ -123,27 +120,19 @@ Team 配置文件使用**对象数组**引用全局 agents，并支持可选字�
 | 非Git环境 | ❌ 无法工作 | ✅ 完全支持 |
 | Team复用 | ❌ 每个项目重复配置 | ✅ 配置一次，多项目复用 |
 | 安全隔离 | ❌ Team指令暴露在repo中 | ✅ Team配置在用户HOME下 |
-| 跨项目切换 | ❌ 需要重新配置Team | ✅ 修改workDir即可 |
+| 跨项目切换 | ❌ 需要重新配置Team | ✅ 修改工作目录即可 | → 现行做法：直接在目标目录运行 `agent-chatter` |
 
 #### 2.4.2 WorkDir 机制
 
 **问题**：Team 配置存储在全局路径，如何支持多项目使用？
 
 **解决方案**：
-- 每个 team 配置包含一个 `workDir` 对象，指向当前服务的项目
-- 一个 team 配置同一时间只服务一个项目
-- 切换项目时，用户修改 `workDir` 配置
-- 一个项目可以被不同 team 在不同时间服务
-- **默认所有 member 共享 team.workDir（推荐99%场景）**
-- **特殊场景可为 member 设置专属 workDir（可选字段）**
+- 工作目录由启动 cwd 决定（team/member 配置不再支持 workDir）
+- 若要切换项目，直接在目标项目目录下运行 `agent-chatter`
 
 **使用场景：**
 
 ```
-场景1：同一个 team 做不同项目
-- 本周：workDir.directory = "/work/project-a"
-- 下周：workDir.directory = "/work/project-b"
-
 场景2：同一个项目用不同 team
 - 今天：agent-chatter start --team code-review-team
 - 明天：agent-chatter start --team qa-team
@@ -151,7 +140,7 @@ Team 配置文件使用**对象数组**引用全局 agents，并支持可选字�
 场景3：非软件开发场景
 - Team: content-writing-team
 - Project: marketing-campaign-q4
-- workDir: ~/Documents/marketing-q4 (无 Git)
+- 启动目录: ~/Documents/marketing-q4 (无 Git)
 ```
 
 #### 2.4.3 运行时行为
@@ -163,17 +152,7 @@ Team 配置文件使用**对象数组**引用全局 agents，并支持可选字�
    - 从全局 registry 获取基础配置
    - 应用 team 级别的覆盖（如果有）
    - 生成最终的 agent 配置
-4. **为每个 member 设置 cwd**：
-   ```typescript
-   function getMemberWorkDir(member: TeamMember, team: TeamConfig): string {
-     // 优先使用 member 的 workDir（如果有）
-     if (member.workDir) {
-       return resolvePath(member.workDir);
-     }
-     // 否则使用 team.workDir
-     return team.workDir.directory;
-   }
-   ```
+4. **为每个 member 设置 cwd**：使用启动时的 `process.cwd()`。
 5. 加载各 member 的 `instructionFile`（从 roleDir 下）
 
 ## 3. 数据结构
@@ -273,7 +252,6 @@ interface TeamMember {
   themeColor?: string;       // UI 主题色
   roleDir: string;           // 角色目录（存放该成员的配置和指令）
   instructionFile: string;   // 指令文件路径
-  workDir?: string;          // 可选：成员专属工作目录（99%情况不需要）
 }
 ```
 
@@ -290,11 +268,6 @@ interface TeamMember {
     "displayName": "Code Review Team",
     "description": "A team for code review with AI and human members",
     "instructionFile": "~/.agent-chatter/teams/code-review-team/team_instruction.md",
-    "workDir": {
-      "name": "agent-chatter",
-      "displayName": "Agent Chatter Project",
-      "directory": "/Users/kailaichen/work/agent-chatter"
-    },
     "roleDefinitions": [
       {
         "name": "reviewer",
@@ -353,9 +326,7 @@ interface TeamMember {
 ```
 
 **说明：**
-- `member.workDir` 字段为**可选**（推荐99%情况不填）
-- 不填时，所有 member 共享 `team.workDir.directory`
-- 只有极特殊场景（如需要完全隔离的运行环境）才需要填写
+- 不再支持配置 workDir，统一使用启动 cwd（成员/团队层面均已移除该字段）
 
 ### 3.3 Agent 配置覆盖规则 ⭐
 
@@ -1264,7 +1235,7 @@ interface ScannedAgent {
 **Phase 5: Team 配置支持（1-2 天）**
 1. 修改 `ConversationStarter` 支持：
    - 从全局 registry 加载和合并 agent 配置
-   - 使用 team.workDir 作为所有 member 的 cwd
+   - 使用启动 cwd 作为所有 member 的 cwd
    - 从 member.instructionFile 加载指令
 2. 更新 `/team create` 支持全局目录：
    - Team 配置生成到 `~/.agent-chatter/teams/{name}/config.json`
@@ -1339,7 +1310,7 @@ agent-chatter agents register
         "type": "ai",
         "agentType": "claude",
         "roleDir": "./teams/my-team/reviewer/claude-reviewer",
-        "workDir": "./teams/my-team/reviewer/claude-reviewer/work",  // 旧字段
+        // workDir 字段已移除，cwd 取决于启动目录
         "instructionFile": "./teams/my-team/reviewer/claude-reviewer/AGENTS.md"
       }
     ]
@@ -1358,11 +1329,7 @@ agent-chatter agents register
   ],
   "team": {
     "name": "my-team",
-    "workDir": {  // 新增：统一工作目录
-      "name": "my-project",
-      "displayName": "My Project",
-      "directory": "/path/to/project"
-    },
+    // workDir 字段已删除，cwd 由启动目录决定
     "roleDefinitions": [...],
     "members": [
       {
@@ -1882,42 +1849,10 @@ describe('First-time user flow', () => {
 **决策过程**：
 1. **产品经理初始决策**：完全删除 member.workDir
 2. **架构委员会反对**：提出4个需要独立 workDir 的场景
-3. **产品经理反驳**：用实际案例证明共享 workDir 够用（当前团队所有成员都在同一目录工作）
-4. **最终折中**：设为可选字段，默认不填
-
-**理由**：
-- ✅ 简化配置：99%的情况不需要填 member.workDir
-- ✅ 保留灵活性：支持架构委员会提出的特殊场景
-- ✅ 实际使用验证：当前团队案例证明共享目录完全可行
-- ✅ 避免过度设计：可选字段不增加学习成本
-
-**实际使用场景分析**：
-```
-当前实际案例（产品经理的论据）：
-- Human (产品经理) + AI Agents (Claude, Codex) + Architecture Committee
-- 所有参与者共享: /Users/kailaichen/Downloads/source code/agent_chatter/
-- 运行良好，无人抱怨需要独立 workDir
-
-结论：架构委员会的4个场景虽然理论存在，但实际极少发生
-```
-
-#### 决策 3: Team 和 Project 解耦 - 核心业务需求
-- ✅ **Team 配置存储在 `~/.agent-chatter/teams/{name}/config.json`**
-- ✅ **Team 配置不跟随项目做版本控制**
-- ✅ **这是业务需求，不是设计缺陷**
-
-**核心理念**：
-1. **Team ≠ 软件开发团队**
-   - Team 可以是任何协作场景（业务分析、内容创作、客服等）
-   - 不能假设所有 team 都在软件开发环境中工作
-
-2. **Team 环境不保证有 Git**
-   - 许多使用场景没有版本控制系统
-   - Team 配置不应依赖 Git
-
-3. **Team 是稳定的组织单元，Project 是临时工作对象**
-   - Team 配置复用（同一个 team 可以做不同项目）
-   - 通过修改 team.workDir 切换项目
+3. **最终决策**：移除 member.workDir / team.workDir
+   - 运行时 cwd = 启动目录（或未来沙箱入口）
+   - 切换项目 = 在目标目录执行 `agent-chatter`
+   - 配置文件不再包含 workDir 字段
 
 #### 决策 4: member.instructionFile 字段保留
 - ✅ **member.instructionFile 必须保留**

@@ -2,6 +2,8 @@
 
 ## 1. 背景与目标
 
+> 更新：成员级 `workDir` 已移除，运行时工作目录取决于启动时的 `cwd`（或未来的沙箱入口），配置不再支持 per-member workDir。
+
 ### 1.1 当前问题
 
 - **开发环境依赖**: 用户需要在源码目录运行 `node out/cli.js`，依赖编译后的输出目录
@@ -16,7 +18,7 @@
 3. **目录分离**:
    - 源码目录: `/Users/dev/source code/agent_chatter`
    - 全局安装目录: `~/.nvm/versions/node/v22.14.0/lib/node_modules/@testany/agent-chatter`
-   - 运行时数据: `~/.agent-chatter/*` 和 team 配置的工作目录
+   - 运行时数据: `~/.agent-chatter/*`（工作目录由启动 cwd 决定，不再支持 team/member workDir 配置）
 4. **开发友好**: 支持 `npm link` 进行开发调试
 5. **CI/CD 就绪**: 支持自动化构建、测试、发布流程
 
@@ -90,7 +92,7 @@ Quick migration steps:
 │                                                             │
 │  运行时数据 (Runtime)                                        │
 │  ├─ ~/.agent-chatter/agents/config.json (全局 registry)     │
-│  ├─ /path/to/project/teams/my-team/work/ (team workDir)    │
+│  ├─ /path/to/project/.agent-chatter/ (运行时数据)          │
 │  └─ /tmp/agent-chatter-session-xxx/ (临时文件)               │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -264,8 +266,7 @@ program
 #### 3.3.2 Team 工作目录
 
 - **默认**: `{roleDir}/work` (已实现)
-- **team.workDir**: Schema 1.1 团队级共享目录 (已实现)
-- **member.workDir**: 成员级覆盖 (已实现)
+- **workDir**: 由启动时的工作目录决定，不再支持 team/member 配置字段
 
 **无需修改**: 完全由用户配置控制，不依赖包安装位置。
 
@@ -596,8 +597,7 @@ git push origin main --tags
 │       ├── team_instruction.md
 │       ├── member1/
 │       │   ├── AGENTS.md
-│       │   └── work/           # member-specific workDir
-│       └── shared-work/        # team.workDir
+│       └── shared-work/        # （历史）team workDir —— 已弃用，运行时使用启动目录
 └── agent-chatter-config.json
 ```
 

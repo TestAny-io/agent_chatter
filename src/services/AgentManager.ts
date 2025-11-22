@@ -34,7 +34,6 @@ interface AgentInstance {
  * Extracted from Member model to avoid circular dependencies
  */
 export interface MemberSpawnConfig {
-  workDir?: string;
   env?: Record<string, string>;
   additionalArgs?: string[];
   systemInstruction?: string;
@@ -62,7 +61,7 @@ export class AgentManager {
    *
    * @param roleId - Role/Member ID
    * @param configId - Agent config ID
-   * @param memberConfig - Optional member-specific configuration (workDir, env, additionalArgs, systemInstruction)
+   * @param memberConfig - Optional member-specific configuration (env, additionalArgs, systemInstruction)
    */
   async ensureAgentStarted(
     roleId: string,
@@ -103,7 +102,7 @@ export class AgentManager {
     // Stateful mode: Spawn persistent process
     // 准备 spawn 配置
     const spawnConfig: AgentSpawnConfig = {
-      workDir: memberConfig?.workDir || config.cwd || process.cwd(),
+      workDir: config.cwd || process.cwd(),
       env: {
         ...config.env,
         ...memberConfig?.env

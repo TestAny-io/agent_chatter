@@ -229,7 +229,6 @@ program
                         agentType: 'claude',
                         themeColor: 'cyan',
                         roleDir: './teams/claude-code-test/reviewer/claude-reviewer',
-                        workDir: './teams/claude-code-test/reviewer/claude-reviewer/work',
                         instructionFile: './teams/claude-code-test/reviewer/claude-reviewer/AGENTS.md'
                     },
                     {
@@ -240,7 +239,6 @@ program
                         role: 'observer',
                         themeColor: 'green',
                         roleDir: './teams/claude-code-test/observer/human-observer',
-                        workDir: './teams/claude-code-test/observer/human-observer/work',
                         instructionFile: './teams/claude-code-test/observer/human-observer/README.md'
                     }
                 ]

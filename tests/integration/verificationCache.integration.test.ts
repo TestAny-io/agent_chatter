@@ -103,7 +103,6 @@ describe('Verification Cache Integration', () => {
       team: {
         name: 'cache-test',
         description: 'Team with 3 members using same agent',
-        workDir: path.join(tempDir, 'team-work'),  // Use team-level workDir
         members: [
           {
             displayName: 'Member 1',
@@ -143,15 +142,6 @@ describe('Verification Cache Integration', () => {
     // All 3 members should be initialized
     expect(team.members).toHaveLength(3);
 
-    // All should use the team workDir since none specified member.workDir
-    const teamWorkDir = path.join(tempDir, 'team-work');
-    expect(team.members[0].workDir).toBe(teamWorkDir);
-    expect(team.members[1].workDir).toBe(teamWorkDir);
-    expect(team.members[2].workDir).toBe(teamWorkDir);
-
-    // Verify team-work directory was created
-    expect(fs.existsSync(teamWorkDir)).toBe(true);
-
     // Test should complete reasonably fast due to caching
     // (Without caching, 3 verifications would take ~15 seconds; with caching, ~5 seconds)
     const duration = endTime - startTime;
@@ -161,65 +151,4 @@ describe('Verification Cache Integration', () => {
     // Exact timing depends on system, but should be significantly faster than 3x verification time
     expect(duration).toBeLessThan(10000); // Should complete in under 10 seconds
   }, 30000); // 30 second timeout
-
-  it('uses member-specified workDir when provided', async () => {
-    const member1Dir = path.join(tempDir, 'member1');
-    const member2Dir = path.join(tempDir, 'member2');
-    const customWorkDir1 = path.join(tempDir, 'custom-work-1');
-    const customWorkDir2 = path.join(tempDir, 'custom-work-2');
-
-    fs.mkdirSync(member1Dir, { recursive: true });
-    fs.mkdirSync(member2Dir, { recursive: true });
-
-    fs.writeFileSync(path.join(member1Dir, 'AGENTS.md'), 'Member 1');
-    fs.writeFileSync(path.join(member2Dir, 'AGENTS.md'), 'Member 2');
-
-    const config: CLIConfig = {
-      schemaVersion: '1.1',
-      agents: [
-        // Schema 1.1: Reference agent from registry
-        { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false }
-      ],
-      team: {
-        name: 'member-workdir-test',
-        description: 'Team where members override workDir',
-        workDir: path.join(tempDir, 'team-work'),  // Provide team workDir
-        members: [
-          {
-            displayName: 'Member 1',
-            name: 'member-1',
-            type: 'ai',
-            role: 'developer',
-            agentType: 'claude',
-            roleDir: member1Dir,
-            workDir: customWorkDir1,  // Override with member-specific workDir
-            instructionFile: path.join(member1Dir, 'AGENTS.md')
-          },
-          {
-            displayName: 'Member 2',
-            name: 'member-2',
-            type: 'ai',
-            role: 'reviewer',
-            agentType: 'claude',
-            roleDir: member2Dir,
-            workDir: customWorkDir2,  // Override with member-specific workDir
-            instructionFile: path.join(member2Dir, 'AGENTS.md')
-          }
-        ]
-      }
-    };
-
-    const { team } = await initializeServices(config, { registryPath: tempRegistryPath });
-
-    // Both members should be initialized
-    expect(team.members).toHaveLength(2);
-
-    // Each should use their member-specified workDir, NOT the team workDir
-    expect(team.members[0].workDir).toBe(customWorkDir1);
-    expect(team.members[1].workDir).toBe(customWorkDir2);
-
-    // Verify custom work directories were created
-    expect(fs.existsSync(customWorkDir1)).toBe(true);
-    expect(fs.existsSync(customWorkDir2)).toBe(true);
-  }, 30000);
 });

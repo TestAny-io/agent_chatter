@@ -101,8 +101,6 @@ describe('ConversationStarter integration', () => {
   it('loads configuration, prepares directories, and completes a simple conversation', async () => {
     const aiRoleDir = path.join(tempDir, 'dev', 'alice');
     const humanRoleDir = path.join(tempDir, 'pm', 'bob');
-    const aiWork = path.join(aiRoleDir, 'work');
-    const humanWork = path.join(humanRoleDir, 'work');
 
     fs.mkdirSync(aiRoleDir, { recursive: true });
     fs.mkdirSync(humanRoleDir, { recursive: true });
@@ -136,7 +134,6 @@ describe('ConversationStarter integration', () => {
             role: 'developer',
             agentType: 'claude',
             roleDir: aiRoleDir,
-            workDir: aiWork,
             instructionFile: path.join(aiRoleDir, 'AGENTS.md'),
             env: { CUSTOM: '1' }
           },
@@ -147,7 +144,6 @@ describe('ConversationStarter integration', () => {
             type: 'human',
             role: 'reviewer',
             roleDir: humanRoleDir,
-            workDir: humanWork,
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]
@@ -160,8 +156,6 @@ describe('ConversationStarter integration', () => {
     expect(team.members).toHaveLength(2);
     expect(team.members[0].instructionFileText).toContain('integration test agent');
     expect(team.members[0].env?.CUSTOM).toBe('1');
-    expect(fs.existsSync(aiWork)).toBe(true);
-    expect(fs.existsSync(humanWork)).toBe(true);
 
     const firstSpeaker = team.members[0].id;
     await coordinator.startConversation(team, 'Review the new feature', firstSpeaker);
@@ -200,7 +194,6 @@ describe('ConversationStarter integration', () => {
             role: 'developer',
             agentType: 'claude',
             roleDir: aiRoleDir,
-            workDir: path.join(aiRoleDir, 'work'),
             instructionFile: path.join(aiRoleDir, 'AGENTS.md')
           },
           {
@@ -209,7 +202,6 @@ describe('ConversationStarter integration', () => {
             type: 'human',
             role: 'observer',
             roleDir: humanRoleDir,
-            workDir: path.join(humanRoleDir, 'work'),
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]

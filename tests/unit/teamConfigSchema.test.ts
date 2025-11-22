@@ -154,7 +154,7 @@ describe('TeamConfigSchema', () => {
     });
   });
 
-  describe('New fields validation (additionalArgs, env, workDir)', () => {
+  describe('New fields validation (additionalArgs, env)', () => {
     it('validates additionalArgs must be an array', () => {
       const result = validateTeamConfig({
         team: {
@@ -279,33 +279,6 @@ describe('TeamConfigSchema', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('validates workDir must be a string', () => {
-      const result = validateTeamConfig({
-        team: {
-          name: 'test',
-          members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0, workDir: 123 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
-          ]
-        }
-      });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.path.includes('[0].workDir'))).toBe(true);
-    });
-
-    it('accepts valid workDir', () => {
-      const result = validateTeamConfig({
-        team: {
-          name: 'test',
-          members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0, workDir: '/custom/work/dir' },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
-          ]
-        }
-      });
-      expect(result.valid).toBe(true);
-    });
-
     it('accepts all new fields together', () => {
       const result = validateTeamConfig({
         team: {
@@ -317,7 +290,6 @@ describe('TeamConfigSchema', () => {
               type: 'ai',
               agentConfigId: 'claude',
               order: 0,
-              workDir: '/custom/work/dir',
               additionalArgs: ['--verbose', '--debug'],
               env: { DEBUG: 'true', LOG_LEVEL: 'info' },
               systemInstruction: 'You are Alice, a helpful developer.'
@@ -431,7 +403,6 @@ describe('TeamConfigSchema', () => {
               agentConfigId: 'claude',
               themeColor: 'blue',
               roleDir: '/teams/max',
-              workDir: '/teams/max/work',
               instructionFile: '/teams/max/AGENT.md',
               env: { DEBUG: 'true' },
               systemInstruction: 'You are Max, an innovative tech lead.',
@@ -447,7 +418,6 @@ describe('TeamConfigSchema', () => {
               agentConfigId: 'codex',
               themeColor: 'green',
               roleDir: '/teams/sarah',
-              workDir: '/teams/sarah/work',
               instructionFile: '/teams/sarah/AGENT.md',
               env: { LOG_LEVEL: 'info' },
               systemInstruction: 'You are Sarah, a conservative business analyst.',

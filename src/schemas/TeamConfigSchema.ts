@@ -127,10 +127,6 @@ export const TeamConfigSchema = {
                 type: "string",
                 description: "Role-specific directory path"
               },
-              workDir: {
-                type: "string",
-                description: "Member-specific working directory for agent process"
-              },
               instructionFile: {
                 type: "string",
                 description: "Path to member instruction file"
@@ -346,13 +342,6 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
           }
         });
       }
-    }
-
-    if (member.workDir !== undefined && typeof member.workDir !== 'string') {
-      errors.push({
-        path: `${basePath}.workDir`,
-        message: 'Member workDir must be a string'
-      });
     }
 
     if (member.systemInstruction !== undefined && typeof member.systemInstruction !== 'string') {
