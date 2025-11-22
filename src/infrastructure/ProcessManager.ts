@@ -146,7 +146,7 @@ export class ProcessManager {
     // Use custom streams if provided, otherwise use process streams
     const stdoutStream = customStreams?.stdout || childProcess.stdout;
     const stderrStream = customStreams?.stderr || childProcess.stderr;
-    const debugPrefix = process.env.DEBUG ? `[ProcessManager:${command || 'proc'}:${processId}]` : null;
+    const debugPrefix = process.env.DEBUG ? `[ProcessManager:${config.command || 'proc'}:${processId}]` : null;
 
     // Handle stdout
     stdoutStream?.on('data', (data: Buffer) => {
