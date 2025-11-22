@@ -27,7 +27,8 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         name: 'codex',
         displayName: 'OpenAI Codex',
         command: command || 'codex',
-        args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '--full-auto', '--skip-git-repo-check'],
+        // Avoid --full-auto because it conflicts with bypass flags; prompt is passed as CLI arg
+        args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '--skip-git-repo-check'],
         usePty: false
       };
 

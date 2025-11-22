@@ -209,11 +209,12 @@ export function withBypassArgs(agentType: string, baseArgs: string[]): string[] 
   }
 
   if (agentType === 'codex') {
-    // Codex: enforce bypass; no output-format flag available
-    if (!hasFlag(args, '--dangerously-bypass-approvals-and-sandbox') && !hasFlag(args, '--yolo')) {
-      args.push('--dangerously-bypass-approvals-and-sandbox');
+    // Codex: enforce bypass; no output-format flag available; strip conflicting --full-auto
+    const filtered = args.filter(arg => arg !== '--full-auto');
+    if (!hasFlag(filtered, '--dangerously-bypass-approvals-and-sandbox') && !hasFlag(filtered, '--yolo')) {
+      filtered.push('--dangerously-bypass-approvals-and-sandbox');
     }
-    return args;
+    return filtered;
   }
 
   return args;

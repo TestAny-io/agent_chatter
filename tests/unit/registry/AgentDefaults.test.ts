@@ -28,7 +28,7 @@ describe('AgentDefaults', () => {
         name: 'codex',
         displayName: 'OpenAI Codex',
         command: 'codex',
-        args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '--full-auto', '--skip-git-repo-check'],
+        args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '--skip-git-repo-check'],
         usePty: false
       });
     });

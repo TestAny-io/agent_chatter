@@ -221,6 +221,11 @@ describe('Bypass Args Injection', () => {
       expect(result).not.toContain('--output-format');
     });
 
+    it('removes --full-auto because it conflicts with bypass', () => {
+      const result = withBypassArgs('codex', ['exec', '--full-auto']);
+      expect(result).not.toContain('--full-auto');
+    });
+
     it('preserves exec command at start', () => {
       const result = withBypassArgs('codex', ['exec', '--json']);
       expect(result[0]).toBe('exec');
