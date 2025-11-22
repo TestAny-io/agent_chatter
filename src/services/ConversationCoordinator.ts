@@ -113,6 +113,11 @@ export class ConversationCoordinator {
       throw new Error(`Member ${memberId} not found`);
     }
 
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(`[Debug][Conversation] Raw agent output from ${member.name} (${member.id}):\n${rawResponse}`);
+    }
+
     // JSONL -> text formatting
     const formatted = formatJsonl(member.agentType as any, rawResponse);
 
@@ -206,6 +211,12 @@ export class ConversationCoordinator {
     }
 
     const addressees = message.routing?.rawNextMarkers || [];
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Debug][Routing] From ${message.speaker.roleName} addressees=${JSON.stringify(addressees)}`
+      );
+    }
     let resolvedMembers: Member[] = [];
 
     if (addressees.length === 0) {
@@ -221,6 +232,10 @@ export class ConversationCoordinator {
         // 找不到当前成员，暂停对话
         this.status = 'paused';
         this.notifyStatusChange();
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('[Debug][Routing] No current member found; pausing conversation');
+        }
         return;
       }
     } else {
@@ -229,15 +244,19 @@ export class ConversationCoordinator {
     }
 
     // 检查是否有无法解析的地址
-    if (resolvedMembers.length === 0) {
-      // 所有地址都无法解析，暂停对话并通知
-      this.status = 'paused';
-      this.notifyStatusChange();
+      if (resolvedMembers.length === 0) {
+        // 所有地址都无法解析，暂停对话并通知
+        this.status = 'paused';
+        this.notifyStatusChange();
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('[Debug][Routing] Unable to resolve addressees; pausing conversation');
+        }
 
-      if (this.options.onUnresolvedAddressees) {
-        this.options.onUnresolvedAddressees(addressees, message);
-      }
-      return;
+        if (this.options.onUnresolvedAddressees) {
+          this.options.onUnresolvedAddressees(addressees, message);
+        }
+        return;
     }
 
     // 更新消息的 resolvedAddressees
@@ -247,6 +266,13 @@ export class ConversationCoordinator {
         roleId: member.id,
         roleName: member.name
       }));
+    }
+
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Debug][Routing] Resolved addressees: ${resolvedMembers.map(m => `${m.name}(${m.id})`).join(', ') || 'none'}`
+      );
     }
 
     // 发送给所有接收者
@@ -315,6 +341,11 @@ export class ConversationCoordinator {
       const maxTimeout = this.options.conversationConfig?.maxAgentResponseTime ?? 1800000;
 
       // 发送并等待响应
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][Send] to ${member.name} (${member.id}):\n${fullMessage}`);
+      }
+
       const response = await this.agentManager.sendAndReceive(member.id, fullMessage, { maxTimeout });
 
       // 停止 Agent（因为我们关闭了 stdin，进程会退出，下次需要重新启动）

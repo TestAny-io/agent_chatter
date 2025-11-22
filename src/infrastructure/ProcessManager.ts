@@ -146,10 +146,19 @@ export class ProcessManager {
     // Use custom streams if provided, otherwise use process streams
     const stdoutStream = customStreams?.stdout || childProcess.stdout;
     const stderrStream = customStreams?.stderr || childProcess.stderr;
+    const debugPrefix = process.env.DEBUG ? `[ProcessManager:${command || 'proc'}:${processId}]` : null;
 
     // Handle stdout
     stdoutStream?.on('data', (data: Buffer) => {
       const output = data.toString();
+      if (debugPrefix) {
+        for (const line of output.split(/\r?\n/)) {
+          if (line.trim()) {
+            // eslint-disable-next-line no-console
+            console.error(`${debugPrefix} stdout ${line}`);
+          }
+        }
+      }
       const callback = this.outputCallbacks.get(processId);
       if (callback) {
         callback(output);
@@ -161,6 +170,14 @@ export class ProcessManager {
     // Handle stderr
     stderrStream?.on('data', (data: Buffer) => {
       const error = data.toString();
+      if (debugPrefix) {
+        for (const line of error.split(/\r?\n/)) {
+          if (line.trim()) {
+            // eslint-disable-next-line no-console
+            console.error(`${debugPrefix} stderr ${line}`);
+          }
+        }
+      }
       const callback = this.outputCallbacks.get(processId);
       if (callback) {
         callback(error);

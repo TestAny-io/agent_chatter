@@ -15,6 +15,10 @@ export interface FormattedMessage {
 }
 
 export function formatJsonl(agentType: SupportedJsonlAgent | undefined, raw: string): FormattedMessage {
+  if (process.env.DEBUG) {
+    // eslint-disable-next-line no-console
+    console.error('[Debug][Jsonl] Raw input:', raw);
+  }
   const lines = raw.split(/\r?\n/).filter(Boolean);
   const parts: string[] = [];
   let completed = false;
