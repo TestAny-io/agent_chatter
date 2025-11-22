@@ -16,7 +16,7 @@ describe('AgentDefaults', () => {
       name: 'claude',
       displayName: 'Claude Code',
       command: 'claude',
-      args: ['--output-format=stream-json', '--verbose'],
+      args: ['--permission-mode', 'bypassPermissions', '--output-format', 'stream-json', '--verbose'],
       usePty: false
     });
   });
@@ -28,7 +28,7 @@ describe('AgentDefaults', () => {
         name: 'codex',
         displayName: 'OpenAI Codex',
         command: 'codex',
-        args: ['exec', '--json', '--full-auto', '--skip-git-repo-check'],
+        args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '--full-auto', '--skip-git-repo-check'],
         usePty: false
       });
     });
@@ -40,7 +40,7 @@ describe('AgentDefaults', () => {
       name: 'gemini',
       displayName: 'Google Gemini CLI',
       command: 'gemini',
-      args: ['--output-format', 'stream-json'],
+      args: ['--yolo', '--output-format', 'stream-json'],
       usePty: false
     });
   });

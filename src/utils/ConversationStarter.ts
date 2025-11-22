@@ -179,6 +179,46 @@ function ensureDir(targetPath: string, label: string): void {
   }
 }
 
+export function hasFlag(args: string[], flag: string): boolean {
+  return args.some(arg => arg === flag || arg.startsWith(`${flag}=`));
+}
+
+export function withBypassArgs(agentType: string, baseArgs: string[]): string[] {
+  const args = [...baseArgs];
+
+  if (agentType === 'claude') {
+    // Claude: enforce bypass + JSON stream output
+    if (!hasFlag(args, '--permission-mode')) {
+      args.push('--permission-mode', 'bypassPermissions');
+    }
+    if (!hasFlag(args, '--output-format')) {
+      args.push('--output-format', 'stream-json');
+    }
+    return args;
+  }
+
+  if (agentType === 'gemini') {
+    // Gemini: enforce bypass + JSON stream output
+    if (!hasFlag(args, '--yolo') && !hasFlag(args, '--approval-mode')) {
+      args.push('--yolo');
+    }
+    if (!hasFlag(args, '--output-format')) {
+      args.push('--output-format', 'stream-json');
+    }
+    return args;
+  }
+
+  if (agentType === 'codex') {
+    // Codex: enforce bypass; no output-format flag available
+    if (!hasFlag(args, '--dangerously-bypass-approvals-and-sandbox') && !hasFlag(args, '--yolo')) {
+      args.push('--dangerously-bypass-approvals-and-sandbox');
+    }
+    return args;
+  }
+
+  return args;
+}
+
 export function normalizeMemberPaths(
   member: TeamMemberConfig
 ): NormalizedPaths {
@@ -390,11 +430,13 @@ export async function initializeServices(
                           member.agentType === 'gemini' ? 'google-gemini' :
                           member.agentType; // fallback to member.agentType for custom agents
 
+      const agentArgs = withBypassArgs(member.agentType, agentDef.args);
+
       const agentConfig = await agentConfigManager.createAgentConfig({
         name: `${member.name}-${member.agentType}-config`,
         type: adapterType,
         command: agentDef.command,
-        args: agentDef.args,
+        args: agentArgs,
         env,
         cwd: projectRoot,
         description: `CLI agent: ${member.agentType} (${member.displayName})`,

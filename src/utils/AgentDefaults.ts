@@ -18,7 +18,7 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         name: 'claude',
         displayName: 'Claude Code',
         command: command || 'claude',
-        args: ['--output-format=stream-json', '--verbose'],
+        args: ['--permission-mode', 'bypassPermissions', '--output-format', 'stream-json', '--verbose'],
         usePty: false
       };
 
@@ -27,7 +27,7 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         name: 'codex',
         displayName: 'OpenAI Codex',
         command: command || 'codex',
-        args: ['exec', '--json', '--full-auto', '--skip-git-repo-check'],
+        args: ['exec', '--dangerously-bypass-approvals-and-sandbox', '--json', '--full-auto', '--skip-git-repo-check'],
         usePty: false
       };
 
@@ -36,7 +36,7 @@ export function getDefaultAgentConfig(agentType: AgentType, command?: string): O
         name: 'gemini',
         displayName: 'Google Gemini CLI',
         command: command || 'gemini',
-        args: ['--output-format', 'stream-json'],
+        args: ['--yolo', '--output-format', 'stream-json'],
         usePty: false
       };
 

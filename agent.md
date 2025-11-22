@@ -17,6 +17,7 @@
 - Use `rg`, `sed`, and `apply_patch` for repo navigation and edits.
 - Prefer TypeScript/Node.js idioms already established in the codebase.
 - Expect tests and `design/` docs to be updated alongside architectural changes.
+- Maintain notes in `notes/arch/` (e.g., `decision-log.md`); update them when decisions are made and remind yourself to consult them.
 
 ## Communication Style
 - Direct but collaborative feedback.

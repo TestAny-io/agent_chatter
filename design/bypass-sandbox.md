@@ -49,7 +49,7 @@
 总体流程：用户在目标项目目录执行 `agent-chatter` → 脚本自动检测平台 → 生成/选择沙箱配置 → 以 bypass 模式启动对应 AI CLI，锁定当前目录为 cwd → JSONL 输出。
 
 ### macOS 路径
-1) 入口脚本用 `pwd` 作为 `projectRoot`。若向上发现更高层 `.git`，提示并退出（避免跨仓库），或继续按当前目录作为边界（按产品策略选一）。
+1) 入口脚本用 `pwd` 作为 `projectRoot`。若向上发现更高层 `.git`，警告但继续按当前目录作为边界。
 2) 动态生成 sandbox profile（写入 `${TMPDIR}/agent-chatter.sb`），内容：
    - 允许读全部、写 `projectRoot` 及其子目录。
    - 允许网络（或可选白名单）。
@@ -74,21 +74,23 @@
 # 立即可实施的“全放行”方案（先于沙箱）
 目标：在用户仅运行 `agent-chatter` 的前提下，默认开启各 CLI 的全放行模式并锁定当前目录为 cwd，避免交互提示；后续再补沙箱/WSL。
 
-### 启动参数（按 CLI）
-- Claude：`--permission-mode bypassPermissions`
-- Codex：`--dangerously-bypass-approvals-and-sandbox`（或 `--yolo`）
-- Gemini：`--yolo`（或 `--approval-mode yolo`）
-- 通用：`--cwd <projectRoot>`（取用户当前工作目录），`--output jsonl`（或等价）。
+### 启动参数（按 CLI 映射）
+- Claude：`--permission-mode bypassPermissions`，`--output-format stream-json`
+- Codex：`--dangerously-bypass-approvals-and-sandbox`（或 `--yolo`）；❌ 无输出格式参数
+- Gemini：`--yolo`（或 `--approval-mode yolo`），`--output-format stream-json`
+- cwd：统一用 `spawn(..., { cwd: projectRoot })` 设置，不依赖 CLI 参数（Codex 仅支持 `--cd`，Gemini 暂无 cwd 参数）。
 
 ### Orchestrator 封装
-- 平台与 CLI 选择：在入口读取配置（首选 Claude，或按用户设置），映射到对应 bypass 参数。
-- cwd 锁定：入口使用 `process.cwd()` 作为 `projectRoot`；如向上发现更大 `.git`，按策略选择警告或直接拒绝。
-- ENV 收敛：传入精简 `env`（仅必要变量），可选 `HOME=<projectRoot>/.agent-home`，PATH 仅保留必要工具；可将 npm 缓存/临时目录指向 `<projectRoot>/.cache`/`tmp`。
-- 超时与日志：对子进程设置总超时、空闲超时；采集 stdout/stderr（JSONL）写入日志，异常退出码提示用户。
+- CLI 选择与 bypass 映射：入口读取配置选择 CLI，并注入各自 bypass 参数；cwd 一律取 `process.cwd()` 传给 spawn。
+- 输出格式：
+  - Claude/Gemini：使用 `--output-format stream-json`。
+  - Codex：无格式参数，需沿用/加强现有 wrapper 统一输出（推荐全部 CLI 走 wrapper 保持一致）。
+- ENV 收敛：传入精简 `env`（仅必要变量）；不建议覆写 HOME，可将 npm 缓存/临时目录指向 `<projectRoot>/.cache`/`tmp`。
+- 超时与日志：对子进程设置总超时、空闲超时；采集 stdout/stderr（JSONL 仅适用于 Claude/Gemini；Codex 通过 wrapper 统一输出），异常退出码提示用户。
+- 首次启动提示：告知 bypass 等同当前用户权限执行命令/联网，建议在项目目录运行。
 
-### 用户体验
-- 用户操作：在目标项目目录运行 `agent-chatter` 即自动带上 bypass 参数和 cwd，无需额外 flag。
-- 首次启动提示（安全告知）：说明 bypass 等同当前用户权限执行命令/联网，建议在项目目录运行。
+### 架构决策
+- 现状即方案：全部直连，无官方 wrapper。Codex 通过适配器补 `[DONE]`（无输出格式参数），Claude/Gemini 通过参数开启 bypass + `--output-format stream-json`。
 
 ### 后续（非当下实施）
 - macOS sandbox-exec / Windows WSL 无感沙箱：后续按上文方案补充，作为可选强化层，不影响当前全放行落地。
