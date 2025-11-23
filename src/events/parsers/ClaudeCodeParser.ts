@@ -22,16 +22,8 @@ export class ClaudeCodeParser implements StreamParser {
         const evs = this.jsonToEvents(json);
         if (evs.length) events.push(...evs);
       } catch (err: any) {
-        events.push({
-          type: 'error',
-          eventId: randomUUID(),
-          agentId: this.agentId,
-          agentType: this.agentType,
-          teamMetadata: this.teamContext,
-          timestamp: Date.now(),
-          error: `Failed to parse JSONL: ${err?.message ?? String(err)}`,
-          code: 'JSONL_PARSE_ERROR'
-        });
+        events.push(this.parseErrorEvent(err));
+        events.push(this.fallbackTextEvent(line));
       }
     }
     return events;
@@ -48,15 +40,7 @@ export class ClaudeCodeParser implements StreamParser {
       } catch {
         // fall through to text event
       }
-      return [{
-        type: 'text',
-        eventId: randomUUID(),
-        agentId: this.agentId,
-        agentType: this.agentType,
-        teamMetadata: this.teamContext,
-        timestamp: Date.now(),
-        text
-      }];
+      return [this.fallbackTextEvent(text)];
     }
     return [];
   }
@@ -82,7 +66,7 @@ export class ClaudeCodeParser implements StreamParser {
         return [];
       case 'content_block_delta':
         if (json.delta?.type === 'text_delta') {
-          return [{ ...base, type: 'text', text: json.delta.text, role: 'assistant' }];
+          return [{ ...base, type: 'text', text: json.delta.text, role: 'assistant', category: 'assistant-message' }];
         }
         return [];
       case 'assistant': {
@@ -90,7 +74,7 @@ export class ClaudeCodeParser implements StreamParser {
         const evs: AgentEvent[] = [];
         for (const item of content) {
           if (item.type === 'text') {
-            evs.push({ ...base, eventId: randomUUID(), type: 'text', text: item.text, role: 'assistant' });
+            evs.push({ ...base, eventId: randomUUID(), type: 'text', text: item.text, role: 'assistant', category: 'assistant-message' });
           } else if (item.type === 'tool_use') {
             evs.push({
               ...base,
@@ -138,14 +122,40 @@ export class ClaudeCodeParser implements StreamParser {
           error: json.is_error ? json.content : undefined
         }];
       case 'result':
-      case 'message_stop':
         return [{
           ...base,
           type: 'turn.completed',
-          finishReason: json.is_error ? 'error' : (json.stop_reason === 'end_turn' ? 'done' : 'error')
+          finishReason: json.is_error ? 'error' : 'done'
         }];
+      case 'message_stop':
+        return []; // ignore, rely on result
       default:
         return [];
     }
+  }
+
+  private fallbackTextEvent(text: string): AgentEvent {
+    return {
+      type: 'text',
+      eventId: randomUUID(),
+      agentId: this.agentId,
+      agentType: this.agentType,
+      teamMetadata: this.teamContext,
+      timestamp: Date.now(),
+      text
+    };
+  }
+
+  private parseErrorEvent(err: any): AgentEvent {
+    return {
+      type: 'error',
+      eventId: randomUUID(),
+      agentId: this.agentId,
+      agentType: this.agentType,
+      teamMetadata: this.teamContext,
+      timestamp: Date.now(),
+      error: `Failed to parse JSONL: ${err?.message ?? String(err)}`,
+      code: 'JSONL_PARSE_ERROR'
+    };
   }
 }

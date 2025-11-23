@@ -33,16 +33,8 @@ export class CodexParser implements StreamParser {
         const ev = this.jsonToEvent(json);
         if (ev) events.push(ev);
       } catch (err: any) {
-        events.push({
-          type: 'error',
-          eventId: randomUUID(),
-          agentId: this.agentId,
-          agentType: this.agentType,
-          teamMetadata: this.teamContext,
-          timestamp: Date.now(),
-          error: `Failed to parse JSONL: ${err?.message ?? String(err)}`,
-          code: 'JSONL_PARSE_ERROR'
-        });
+        events.push(this.parseErrorEvent(err));
+        events.push(this.fallbackTextEvent(line));
       }
     }
     return events;
@@ -59,15 +51,7 @@ export class CodexParser implements StreamParser {
       } catch {
         // fall through to text
       }
-      return [{
-        type: 'text',
-        eventId: randomUUID(),
-        agentId: this.agentId,
-        agentType: this.agentType,
-        teamMetadata: this.teamContext,
-        timestamp: Date.now(),
-        text
-      }];
+      return [this.fallbackTextEvent(text)];
     }
     return [];
   }
@@ -116,7 +100,8 @@ export class CodexParser implements StreamParser {
             ...base,
             type: 'text',
             text: json.item.text,
-            role: 'assistant'
+            role: 'assistant',
+            category: 'reasoning'
           };
         }
 
@@ -125,7 +110,8 @@ export class CodexParser implements StreamParser {
             ...base,
             type: 'text',
             text: json.item.text,
-            role: 'assistant'
+            role: 'assistant',
+            category: 'message'
           };
         }
 
@@ -164,5 +150,30 @@ export class CodexParser implements StreamParser {
       web_search: 'WebSearch'
     };
     return mapping[itemType] || itemType;
+  }
+
+  private fallbackTextEvent(text: string): AgentEvent {
+    return {
+      type: 'text',
+      eventId: randomUUID(),
+      agentId: this.agentId,
+      agentType: this.agentType,
+      teamMetadata: this.teamContext,
+      timestamp: Date.now(),
+      text
+    };
+  }
+
+  private parseErrorEvent(err: any): AgentEvent {
+    return {
+      type: 'error',
+      eventId: randomUUID(),
+      agentId: this.agentId,
+      agentType: this.agentType,
+      teamMetadata: this.teamContext,
+      timestamp: Date.now(),
+      error: `Failed to parse JSONL: ${err?.message ?? String(err)}`,
+      code: 'JSONL_PARSE_ERROR'
+    };
   }
 }

@@ -18,6 +18,7 @@ export interface TextEvent extends AgentEventBase {
   type: 'text';
   text: string;
   role?: 'assistant' | 'system';
+  category?: string;
 }
 
 export interface ToolStartedEvent extends AgentEventBase {
@@ -53,4 +54,3 @@ export type AgentEvent =
   | ToolCompletedEvent
   | TurnCompletedEvent
   | ErrorEvent;
-

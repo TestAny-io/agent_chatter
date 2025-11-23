@@ -686,6 +686,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         return commands.filter(cmd => cmd.name.startsWith(input));
     };
 
+    const truncate = (val?: string, max = 200) => {
+        if (!val) return '';
+        return val.length > max ? `${val.slice(0, max)}…` : val;
+    };
+
     const renderEvent = (ev: AgentEvent): React.ReactNode | null => {
         const key = `stream-${ev.eventId || `${ev.agentId}-${ev.timestamp}`}-${getNextKey()}`;
         switch (ev.type) {
@@ -694,19 +699,21 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             case 'text':
                 return (
                     <Box key={key} flexDirection="column" marginTop={0}>
-                        <Text>{ev.text}</Text>
+                        <Text color={ev.category === 'assistant-message' || ev.category === 'reasoning' ? 'gray' : undefined}>
+                            {ev.text}
+                        </Text>
                     </Box>
                 );
             case 'tool.started':
                 return (
                     <Text key={key} color="yellow">
-                        ⏺ {ev.toolName ?? 'tool'} ({ev.toolId ?? ''}){ev.input?.command ? ` ${ev.input.command}` : ''}
+                        ⏺ {ev.toolName ?? 'tool'} ({ev.input?.command ?? ev.toolId ?? ''})
                     </Text>
                 );
             case 'tool.completed':
                 return (
                     <Box key={key} flexDirection="column">
-                        <Text color="green">⎿  {ev.toolId ?? ''} {ev.output ?? ''}</Text>
+                        <Text color="green">⎿  {ev.toolId ?? ''} {truncate(ev.output)}</Text>
                         {ev.error && <Text color="red">    error: {ev.error}</Text>}
                     </Box>
                 );
@@ -1604,11 +1611,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     setOutput(prev => [...prev, <Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>]);
                 },
                 onAgentStarted: (member: Member) => {
-                    setOutput(prev => [...prev, <Text key={`agent-start-${getNextKey()}`} color="cyan">→ {member.displayName} 开始执行...</Text>]);
+                    const color = member.themeColor ?? 'white';
+                    setOutput(prev => [...prev, <Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>]);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
-                    setOutput(prev => [...prev, <Text key={`agent-done-${getNextKey()}`} color="cyan">✓ {member.displayName} 完成</Text>]);
+                    const color = member.themeColor ?? 'cyan';
+                    setOutput(prev => [...prev, <Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>]);
                     setExecutingAgent(null);
                 }
             });

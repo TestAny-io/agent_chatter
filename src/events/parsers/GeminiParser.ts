@@ -83,7 +83,8 @@ export class GeminiParser implements StreamParser {
           ...base,
           type: 'text',
           text: json.content,
-          role: ['assistant', 'system'].includes(json.role) ? json.role as 'assistant' | 'system' : undefined
+          role: ['assistant', 'system'].includes(json.role) ? json.role as 'assistant' | 'system' : undefined,
+          category: json.role === 'assistant' ? 'message' : undefined
         };
       case 'tool_use':
         return {

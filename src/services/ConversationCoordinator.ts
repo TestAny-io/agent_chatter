@@ -19,6 +19,7 @@ import type { ConversationConfig } from '../utils/ConversationStarter.js';
 import { buildPrompt, type PromptContextMessage } from '../utils/PromptBuilder.js';
 import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
 import type { ContextEventCollector, ContextSummary } from './ContextEventCollector.js';
+import type { AgentEvent } from '../events/AgentEvent.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -419,7 +420,29 @@ export class ConversationCoordinator {
         console.error(`[Debug][AgentResult] ${member.id} finished with ${response.finishReason}`);
       }
 
-      // 根据轮转推进：如果下一位是人类则暂停等待，否则继续轮询
+      // 将本轮 agent 输出记录到会话并路由下一位（使用完整摘要文本做路由，不截断）
+      const summary = this.contextCollector?.getRecentSummaries(1).find(s => s.agentId === member.id);
+      if (summary) {
+        const parsed = this.messageRouter.parseMessage(summary.text);
+        const messageEntry: ConversationMessage = MessageUtils.createMessage(
+          member.id,
+          member.name,
+          member.displayName,
+          member.type,
+          parsed.cleanContent,
+          {
+            rawNextMarkers: parsed.addressees,
+            resolvedAddressees: [],
+            isDone: parsed.isDone
+          }
+        );
+        this.session = SessionUtils.addMessageToSession(this.session, messageEntry);
+        this.notifyMessage(messageEntry);
+        await this.routeToNext(messageEntry);
+        return;
+      }
+
+      // fallback: round-robin
       const nextMember = this.getNextSpeaker(member.id);
       if (nextMember && nextMember.type === 'human') {
         this.status = 'paused';
@@ -427,7 +450,6 @@ export class ConversationCoordinator {
         return;
       }
       if (nextMember && nextMember.type === 'ai') {
-        // 继续下一个 AI
         await this.sendToAgent(nextMember, message);
         return;
       }

@@ -54,6 +54,7 @@ describe('ContextEventCollector', () => {
     expect(summaries[0].text).toContain('hello');
     expect(summaries[0].tools.length).toBeGreaterThan(0);
 
+    await new Promise(resolve => setTimeout(resolve, 10));
     const files = collector.getLogPaths();
     expect(files.events && fs.existsSync(files.events)).toBe(true);
     expect(files.summaries && fs.existsSync(files.summaries)).toBe(true);
