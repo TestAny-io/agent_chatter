@@ -699,7 +699,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             case 'text':
                 return (
                     <Box key={key} flexDirection="column" marginTop={0}>
-                        <Text color={ev.category === 'assistant-message' || ev.category === 'reasoning' ? 'gray' : undefined}>
+                        <Text color={ev.category === 'reasoning' ? 'gray' : undefined}>
                             {ev.text}
                         </Text>
                     </Box>
@@ -736,6 +736,18 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 );
             default:
                 return null;
+        }
+    };
+
+    const flushPendingNow = () => {
+        if (pendingEventsRef.current.length === 0) return;
+        const pending = [...pendingEventsRef.current];
+        pendingEventsRef.current = [];
+        const nodes = pending
+            .map(renderEvent)
+            .filter((n): n is React.ReactNode => Boolean(n));
+        if (nodes.length > 0) {
+            setOutput(prev => [...prev, ...nodes]);
         }
     };
 
@@ -1620,11 +1632,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     setOutput(prev => [...prev, <Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>]);
                 },
                 onAgentStarted: (member: Member) => {
+                    flushPendingNow();
                     const color = member.themeColor ?? 'white';
                     setOutput(prev => [...prev, <Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>]);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
+                    flushPendingNow();
                     const color = member.themeColor ?? 'cyan';
                     setOutput(prev => [...prev, <Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>]);
                     setExecutingAgent(null);
