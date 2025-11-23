@@ -1602,7 +1602,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                         return;
                     }
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
-                    const nameColor = message.speaker.type === 'ai' ? 'cyan' : 'green';
+                    const nameColor = message.speaker.type === 'human' ? 'green' : 'yellow';
                     setOutput(prev => [...prev,
                         <Box key={`msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
                             <Text color={nameColor}>[{timestamp}] {message.speaker.roleTitle}:</Text>
