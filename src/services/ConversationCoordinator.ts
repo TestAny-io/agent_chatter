@@ -436,7 +436,7 @@ export class ConversationCoordinator {
             isDone: parsed.isDone
           }
         );
-        this.session = SessionUtils.addMessageToSession(this.session, messageEntry);
+        this.session = SessionUtils.addMessageToSession(this.session!, messageEntry);
         this.notifyMessage(messageEntry);
         await this.routeToNext(messageEntry);
         return;
