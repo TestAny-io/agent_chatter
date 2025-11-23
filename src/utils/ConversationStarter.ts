@@ -16,6 +16,7 @@ import type { Team, Member } from '../models/Team.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
 import { AgentRegistry, type VerificationResult } from '../registry/AgentRegistry.js';
 import type { AgentDefinition as RegistryAgentDefinition } from '../registry/RegistryStorage.js';
+import { EventEmitter } from 'events';
 
 const colors = {
   reset: '\x1b[0m',
@@ -339,6 +340,9 @@ export async function initializeServices(
   team: Team;
   processManager: ProcessManager;
   messageRouter: MessageRouter;
+  agentManager: AgentManager;
+  eventEmitter: EventEmitter;
+  contextCollector: import('../services/ContextEventCollector.js').ContextEventCollector;
 }> {
   // Enforce Schema 1.1: Reject all other versions
   // Support Schema 1.1 and 1.2
@@ -368,6 +372,12 @@ export async function initializeServices(
   const agentConfigManager = new AgentConfigManager(storage);
   const teamManager = new TeamManager(storage);
   const agentManager = new AgentManager(processManager, agentConfigManager);
+  const projectRoot = process.cwd();
+  const eventEmitter = agentManager.getEventEmitter();
+  const contextCollector = new (await import('../services/ContextEventCollector.js')).ContextEventCollector(eventEmitter, {
+    projectRoot,
+    persist: true
+  });
 
   // Schema 1.1+: Load and merge agents from global registry with team config
   // Schema 1.0: Team config provides complete definitions (backward compatibility)
@@ -378,8 +388,6 @@ export async function initializeServices(
   // Shared registry instance and verification cache to avoid redundant verifications
   const registry = new AgentRegistry(registryPath);
   const verificationCache = new Map<string, VerificationResult>();
-
-  const projectRoot = process.cwd();
 
   for (const [index, member] of config.team.members.entries()) {
     const normalizedPaths = normalizeMemberPaths(member);
@@ -490,10 +498,11 @@ export async function initializeServices(
       conversationConfig: config.conversation,  // Pass conversation config
       onAgentStarted: options?.onAgentStarted,  // Pass agent started callback
       onAgentCompleted: options?.onAgentCompleted  // Pass agent completed callback
-    }
+    },
+    contextCollector
   );
 
-  return { coordinator, team, processManager, messageRouter };
+  return { coordinator, team, processManager, messageRouter, agentManager, eventEmitter, contextCollector };
 }
 
 /**

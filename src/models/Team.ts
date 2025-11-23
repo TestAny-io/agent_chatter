@@ -43,6 +43,17 @@ export interface Member {
   order: number;
 }
 
+// TeamContext - 用于流式事件元数据
+export interface TeamContext {
+  teamName: string;
+  teamDisplayName?: string;
+  memberName: string;
+  memberDisplayName: string;
+  memberRole: string;
+  memberDisplayRole?: string;
+  themeColor?: string;
+}
+
 export interface ValidationResult {
   valid: boolean;
   errors: string[];

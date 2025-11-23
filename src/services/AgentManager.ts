@@ -14,7 +14,11 @@ import type { SendOptions } from '../infrastructure/ProcessManager.js';
 import { AgentConfigManager } from './AgentConfigManager.js';
 import { AdapterFactory } from '../adapters/AdapterFactory.js';
 import type { AgentSpawnConfig, IAgentAdapter } from '../adapters/IAgentAdapter.js';
-import type { AgentConfig } from '../models/AgentConfig.js';
+import type { TeamContext } from '../models/Team.js';
+import { EventEmitter } from 'events';
+import { StreamParserFactory } from '../events/StreamParserFactory.js';
+import type { AgentEvent, AgentType } from '../events/AgentEvent.js';
+import { randomUUID } from 'crypto';
 
 /**
  * Agent 实例信息
@@ -52,6 +56,12 @@ export class AgentManager {
     private processManager: ProcessManager,
     private agentConfigManager: AgentConfigManager
   ) {}
+  // Event bus for streaming events
+  private eventEmitter: EventEmitter = new EventEmitter();
+
+  getEventEmitter(): EventEmitter {
+    return this.eventEmitter;
+  }
 
   /**
    * 确保 Agent 已启动（懒加载）
@@ -151,8 +161,8 @@ export class AgentManager {
   async sendAndReceive(
     roleId: string,
     message: string,
-    options?: Partial<SendOptions> & { systemFlag?: string }
-  ): Promise<string> {
+    options: Partial<SendOptions> & { systemFlag?: string; teamContext: TeamContext }
+  ): Promise<{ success: boolean; finishReason?: 'done' | 'error' | 'cancelled' | 'timeout' }> {
     const agent = this.agents.get(roleId);
     if (!agent) {
       throw new Error(`Role ${roleId} has no running agent`);
@@ -160,113 +170,180 @@ export class AgentManager {
 
     // 获取配置用于追加参数、环境等
     const config = await this.agentConfigManager.getAgentConfig(agent.configId);
-    const producesJsonOutput = this.producesJsonOutput(config);
 
-    // Check execution mode and route accordingly
-    if (agent.adapter.executionMode === 'stateless') {
-      // Stateless mode: Execute one-shot command with message as CLI argument
-      // We manually implement the execution logic here (instead of calling executeOneShot)
-      // so we can track the childProcess for cancellation support
-
-      const args = [...agent.adapter.getDefaultArgs()];
-
-      // Add additional arguments from config
-      if (config?.args && config.args.length > 0) {
-        args.push(...config.args);
-      }
-
-      // For Claude Code CLI, ensure prompt is passed via -p to avoid launching the interactive TUI
-      if (agent.adapter.agentType === 'claude-code') {
-        args.push('-p');
-      }
-
-      // Add system prompt flag when provided (Claude)
-      if (options?.systemFlag && agent.adapter.agentType === 'claude-code') {
-        args.push('--append-system-prompt', options.systemFlag);
-      }
-
-      // Add the message as the final argument
-      args.push(message);
-
-      // Merge environment variables
-      const env = {
-        ...process.env,
-        ...config?.env
-      };
-
-      const spawnConfig: AgentSpawnConfig = {
-        workDir: config?.cwd || process.cwd(),
-        env: config?.env,
-        additionalArgs: config?.args,
-        systemInstruction: agent.systemInstruction
-      };
-
-      // Clear any previous cancellation flag
-      this.statelessCancellations.delete(roleId);
-
-      return new Promise<string>((resolve, reject) => {
-        const childProcess = spawn(agent.adapter.command, args, {
-          cwd: spawnConfig.workDir,
-          env,
-          stdio: ['ignore', 'pipe', 'pipe']
-        });
-
-        // Store childProcess for cancellation
-        agent.currentStatelessProcess = childProcess;
-
-        let stdout = '';
-        let stderr = '';
-
-        childProcess.stdout!.on('data', (chunk: Buffer) => {
-          stdout += chunk.toString();
-        });
-
-        childProcess.stderr!.on('data', (chunk: Buffer) => {
-          stderr += chunk.toString();
-        });
-
-        childProcess.on('error', (error) => {
-          agent.currentStatelessProcess = undefined;
-          this.statelessCancellations.delete(roleId);
-          reject(new Error(`Failed to spawn ${agent.adapter.agentType} process: ${error.message}`));
-        });
-
-        childProcess.on('exit', (code, signal) => {
-          agent.currentStatelessProcess = undefined;
-
-          // Check if this process was cancelled by user
-          const wasCancelled = this.statelessCancellations.get(roleId);
-          this.statelessCancellations.delete(roleId);
-
-          if (wasCancelled) {
-            // User cancelled via ESC - reject with cancellation error
-            reject(new Error('[CANCELLED_BY_USER]'));
-            return;
-          }
-
-          if (code !== 0 && code !== null) {
-            reject(new Error(`${agent.adapter.agentType} process exited with code ${code}. stderr: ${stderr}`));
-            return;
-          }
-
-          resolve(stdout);
-        });
-      });
-    } else {
-      // Stateful mode: Use ProcessManager to send via stdin/stdout
-      const sendOptions: SendOptions = {
-        maxTimeout: options?.maxTimeout,
-        endMarker: producesJsonOutput ? undefined : options?.endMarker,
-        idleTimeout: producesJsonOutput ? 10000 : options?.idleTimeout,
-        useEndOfMessageMarker: false
-      };
-
-      return this.processManager.sendAndReceive(
-        agent.processId,
-        message,  // Prompt already constructed
-        sendOptions
-      );
+    // Stateless-only: stateful agents are not supported in streaming mode
+    if (agent.adapter.executionMode !== 'stateless') {
+      throw new Error('Stateful agents are not supported in streaming mode');
     }
+
+    const args = [...agent.adapter.getDefaultArgs()];
+
+    // Add additional arguments from config
+    if (config?.args && config.args.length > 0) {
+      args.push(...config.args);
+    }
+
+    // For Claude Code CLI, ensure prompt is passed via -p to avoid launching the interactive TUI
+    if (agent.adapter.agentType === 'claude-code') {
+      args.push('-p');
+    }
+
+    // Add system prompt flag when provided (Claude)
+    if (options?.systemFlag && agent.adapter.agentType === 'claude-code') {
+      args.push('--append-system-prompt', options.systemFlag);
+    }
+
+    // Add the message as the final argument
+    args.push(message);
+
+    // Merge environment variables
+    const env = {
+      ...process.env,
+      ...config?.env
+    };
+
+    const spawnConfig: AgentSpawnConfig = {
+      workDir: config?.cwd || process.cwd(),
+      env: config?.env,
+      additionalArgs: config?.args,
+      systemInstruction: agent.systemInstruction
+    };
+
+    // Clear any previous cancellation flag
+    this.statelessCancellations.delete(roleId);
+
+    const teamContext = options.teamContext;
+
+    return new Promise((resolve, reject) => {
+      const childProcess = spawn(agent.adapter.command, args, {
+        cwd: spawnConfig.workDir,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      const parser = StreamParserFactory.create(agent.adapter.agentType, roleId, teamContext);
+
+      // Store childProcess for cancellation
+      agent.currentStatelessProcess = childProcess;
+
+      let stderr = '';
+      let hasCompleted = false;
+      const debugPrefix = process.env.DEBUG ? `[Agent:${agent.adapter.agentType}:${roleId}]` : null;
+
+      const emitEvents = (events: AgentEvent[]) => {
+        for (const event of events) {
+          this.eventEmitter.emit('agent-event', event);
+          if (event.type === 'turn.completed' && !hasCompleted) {
+            hasCompleted = true;
+            clearTimeout(timeoutHandle);
+            resolve({ success: event.finishReason === 'done', finishReason: event.finishReason });
+          }
+        }
+      };
+
+      const emitSynthetic = (event: Omit<AgentEvent, 'eventId' | 'agentId' | 'agentType' | 'teamMetadata' | 'timestamp'>) => {
+        emitEvents([{
+          ...event,
+          eventId: randomUUID(),
+          agentId: roleId,
+          agentType: agent.adapter.agentType as AgentType,
+          teamMetadata: teamContext,
+          timestamp: Date.now()
+        } as AgentEvent]);
+      };
+
+      childProcess.stdout!.on('data', (chunk: Buffer) => {
+        const events = parser.parseChunk(chunk);
+        emitEvents(events);
+
+        if (debugPrefix) {
+          for (const line of chunk.toString().split(/\r?\n/)) {
+            if (line.trim()) {
+              // eslint-disable-next-line no-console
+              console.error(`${debugPrefix} stdout ${line}`);
+            }
+          }
+        }
+      });
+
+      childProcess.stderr!.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString();
+        if (debugPrefix) {
+          for (const line of chunk.toString().split(/\r?\n/)) {
+            if (line.trim()) {
+              // eslint-disable-next-line no-console
+              console.error(`${debugPrefix} stderr ${line}`);
+            }
+          }
+        }
+      });
+
+      const timeoutMs = options?.maxTimeout ?? 300000; // default 5min
+      const timeoutHandle = setTimeout(() => {
+        if (!hasCompleted) {
+          hasCompleted = true;
+          childProcess.kill('SIGTERM');
+          emitSynthetic({ type: 'turn.completed', finishReason: 'timeout' });
+          resolve({ success: false, finishReason: 'timeout' });
+        }
+      }, timeoutMs);
+
+      childProcess.on('error', (error) => {
+        agent.currentStatelessProcess = undefined;
+        this.statelessCancellations.delete(roleId);
+        if (!hasCompleted) {
+          hasCompleted = true;
+          clearTimeout(timeoutHandle);
+          emitSynthetic({
+            type: 'error',
+            error: `Failed to spawn ${agent.adapter.agentType} process: ${error.message}`,
+            code: 'PROCESS_SPAWN_ERROR'
+          });
+          reject(new Error(`Failed to spawn ${agent.adapter.agentType} process: ${error.message}`));
+        }
+      });
+
+      childProcess.on('exit', (code, signal) => {
+        agent.currentStatelessProcess = undefined;
+
+        // Check if this process was cancelled by user
+        const wasCancelled = this.statelessCancellations.get(roleId);
+        this.statelessCancellations.delete(roleId);
+
+        // Flush remaining buffer
+        const remaining = parser.flush();
+        emitEvents(remaining);
+
+        if (wasCancelled) {
+          if (!hasCompleted) {
+            hasCompleted = true;
+            clearTimeout(timeoutHandle);
+            emitSynthetic({ type: 'turn.completed', finishReason: 'cancelled' });
+            resolve({ success: false, finishReason: 'cancelled' });
+          }
+          return;
+        }
+
+        if (!hasCompleted) {
+          hasCompleted = true;
+          clearTimeout(timeoutHandle);
+
+          // If the agent never emitted completion and exited with error, treat as crash
+          if (code !== 0 && code !== null) {
+            emitSynthetic({
+              type: 'error',
+              error: `${agent.adapter.agentType} process exited unexpectedly with code ${code}. stderr: ${stderr}`,
+              code: 'PROCESS_EXIT'
+            });
+            reject(new Error(`${agent.adapter.agentType} process exited unexpectedly with code ${code}. stderr: ${stderr}`));
+            return;
+          }
+
+          // code is 0/null but no turn.completed observed — emit a fallback completion
+          emitSynthetic({ type: 'turn.completed', finishReason: 'done' });
+          resolve({ success: true, finishReason: 'done' });
+        }
+      });
+    });
   }
 
   /**
@@ -354,17 +431,5 @@ export class AgentManager {
    */
   getAgentInfo(roleId: string): AgentInstance | undefined {
     return this.agents.get(roleId);
-  }
-
-  /**
-   * Detect whether an agent configuration is set to emit JSONL output.
-   * Used to avoid endMarker waiting (stream-json / --json flows emit completion events instead).
-   */
-  private producesJsonOutput(config?: AgentConfig): boolean {
-    const args = config?.args || [];
-    return args.some(arg =>
-      typeof arg === 'string' &&
-      (arg.includes('stream-json') || arg === '--json' || arg === '--output-format=stream-json')
-    );
   }
 }

@@ -24,3 +24,9 @@ multi-agent-config.json
 
 # User guide (work in progress, not for version control)
 user-guide/
+
+# Runtime directories
+.agent-chatter/
+
+# Temp files
+temp.md

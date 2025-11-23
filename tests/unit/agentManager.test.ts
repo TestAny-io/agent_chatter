@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AgentManager } from '../../src/services/AgentManager.js';
+import type { TeamContext } from '../../src/models/Team.js';
 import { EventEmitter } from 'events';
 
 // Create a mockable spawn function that can be controlled by tests
@@ -78,7 +79,7 @@ describe('AgentManager', () => {
     expect(mockProcessManager.registerProcess).not.toHaveBeenCalled();
   });
 
-  it('sendAndReceive applies options (maxTimeout) and passes claude system flag', async () => {
+  it('sendAndReceive streams stdout and resolves with completion', async () => {
     mockAgentConfigManager.getAgentConfig.mockResolvedValue({
       id: 'cfg',
       type: 'claude-code',
@@ -100,7 +101,14 @@ describe('AgentManager', () => {
     fake.kill = vi.fn(() => true);
     mockSpawn.mockReturnValueOnce(fake);
 
-    const promise = manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000, systemFlag: 'SYS' });
+    const teamContext: TeamContext = {
+      teamName: 'team',
+      memberName: 'role-2',
+      memberDisplayName: 'Role 2',
+      memberRole: 'dev'
+    };
+
+    const promise = manager.sendAndReceive('role-2', 'hello', { maxTimeout: 1000, systemFlag: 'SYS', teamContext });
 
     // Simulate stdout + exit
     setImmediate(() => {
@@ -109,7 +117,7 @@ describe('AgentManager', () => {
     });
 
     const response = await promise;
-    expect(response).toBe('result');
+    expect(response).toEqual({ success: true, finishReason: 'done' });
     // Spawn should be called with -p and append system prompt
     const spawnArgs = mockSpawn.mock.calls[0][1];
     expect(spawnArgs).toContain('-p');
@@ -135,7 +143,14 @@ describe('AgentManager', () => {
     await manager.stopAgent('role-3');
 
     expect(mockProcessManager.stopProcess).not.toHaveBeenCalled();
-    await expect(manager.sendAndReceive('role-3', 'after-stop')).rejects.toThrow(/no running agent/i);
+    await expect(manager.sendAndReceive('role-3', 'after-stop', {
+      teamContext: {
+        teamName: 'team',
+        memberName: 'role-3',
+        memberDisplayName: 'Role 3',
+        memberRole: 'dev'
+      }
+    })).rejects.toThrow(/no running agent/i);
   });
 
   it('throws when agent config missing', async () => {
@@ -154,11 +169,18 @@ describe('AgentManager', () => {
       mockAgentConfigManager as any
     );
 
-    await expect(manager.sendAndReceive('no-agent', 'hello')).rejects.toThrow(/no running agent/);
+    await expect(manager.sendAndReceive('no-agent', 'hello', {
+      teamContext: {
+        teamName: 'team',
+        memberName: 'no-agent',
+        memberDisplayName: 'No Agent',
+        memberRole: 'dev'
+      }
+    })).rejects.toThrow(/no running agent/);
   });
 
   describe('Stateless agent cancellation', () => {
-    it('rejects with [CANCELLED_BY_USER] when stateless agent is cancelled', async () => {
+    it('resolves with cancelled when stateless agent is cancelled', async () => {
       // Create a mock stateless adapter
       const mockAdapter = {
         agentType: 'test-stateless',
@@ -207,7 +229,14 @@ describe('AgentManager', () => {
       }
 
       // Start sending (this will be async)
-      const sendPromise = manager.sendAndReceive('stateless-role', 'test message');
+      const sendPromise = manager.sendAndReceive('stateless-role', 'test message', {
+        teamContext: {
+          teamName: 'team',
+          memberName: 'stateless-role',
+          memberDisplayName: 'Stateless',
+          memberRole: 'dev'
+        }
+      });
 
       // Wait a bit for the spawn to happen
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -221,8 +250,8 @@ describe('AgentManager', () => {
       // Simulate process exit after being killed
       fakeChildProcess.emit('exit', null, 'SIGTERM');
 
-      // Verify the promise rejects with cancellation error
-      await expect(sendPromise).rejects.toThrow('[CANCELLED_BY_USER]');
+      // Verify the promise resolves with cancelled
+      await expect(sendPromise).resolves.toEqual({ success: false, finishReason: 'cancelled' });
     });
 
     it('sends SIGKILL after 5 seconds if SIGTERM fails', async () => {
@@ -396,6 +425,122 @@ describe('AgentManager', () => {
 
       // Verify process was killed
       expect(fakeChildProcess.kill).toHaveBeenCalledWith('SIGTERM');
+    });
+  });
+
+  describe('Event emissions and lifecycle', () => {
+    it('emits team metadata and completion via parser events', async () => {
+      mockAgentConfigManager.getAgentConfig.mockResolvedValue({
+        id: 'cfg',
+        type: 'claude-code',
+        command: 'echo',
+        args: ['--output-format=stream-json']
+      });
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+      await manager.ensureAgentStarted('role-meta', 'cfg');
+
+      const fake = new EventEmitter() as any;
+      fake.stdout = new EventEmitter();
+      fake.stderr = new EventEmitter();
+      fake.killed = false;
+      fake.kill = vi.fn(() => true);
+      mockSpawn.mockReturnValueOnce(fake);
+
+      const events: any[] = [];
+      manager.getEventEmitter().on('agent-event', (ev) => events.push(ev));
+
+      const teamContext: TeamContext = {
+        teamName: 'teamX',
+        memberName: 'role-meta',
+        memberDisplayName: 'Role Meta',
+        memberRole: 'dev'
+      };
+
+      const promise = manager.sendAndReceive('role-meta', 'msg', { maxTimeout: 500, teamContext });
+
+      setImmediate(() => {
+        fake.stdout.emit('data', Buffer.from('{"type":"system","subtype":"init"}\n{"type":"message_stop","stop_reason":"end_turn"}\n'));
+        fake.emit('exit', 0);
+      });
+
+      await promise;
+      expect(events.some(e => e.teamMetadata?.teamName === 'teamX')).toBe(true);
+      expect(events.some(e => e.type === 'turn.completed')).toBe(true);
+    });
+
+    it('resolves timeout with turn.completed timeout event', async () => {
+      vi.useFakeTimers();
+      mockAgentConfigManager.getAgentConfig.mockResolvedValue({
+        id: 'cfg',
+        type: 'claude-code',
+        command: 'echo',
+        args: ['--output-format=stream-json']
+      });
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+      await manager.ensureAgentStarted('role-timeout', 'cfg');
+
+      const fake = new EventEmitter() as any;
+      fake.stdout = new EventEmitter();
+      fake.stderr = new EventEmitter();
+      fake.killed = false;
+      fake.kill = vi.fn(() => true);
+      mockSpawn.mockReturnValueOnce(fake);
+
+      const events: any[] = [];
+      manager.getEventEmitter().on('agent-event', (ev) => events.push(ev));
+
+      const promise = manager.sendAndReceive('role-timeout', 'msg', { maxTimeout: 10, teamContext: {
+        teamName: 'team',
+        memberName: 'role-timeout',
+        memberDisplayName: 'Role Timeout',
+        memberRole: 'dev'
+      }});
+
+      await vi.advanceTimersByTimeAsync(20);
+      await promise;
+
+      expect(events.some(e => e.type === 'turn.completed' && e.finishReason === 'timeout')).toBe(true);
+      vi.useRealTimers();
+    });
+
+    it('rejects when process exits unexpectedly without completion', async () => {
+      mockAgentConfigManager.getAgentConfig.mockResolvedValue({
+        id: 'cfg',
+        type: 'claude-code',
+        command: 'echo',
+        args: ['--output-format=stream-json']
+      });
+      const manager = new AgentManager(
+        mockProcessManager as any,
+        mockAgentConfigManager as any
+      );
+      await manager.ensureAgentStarted('role-crash', 'cfg');
+
+      const fake = new EventEmitter() as any;
+      fake.stdout = new EventEmitter();
+      fake.stderr = new EventEmitter();
+      fake.killed = false;
+      fake.kill = vi.fn(() => true);
+      mockSpawn.mockReturnValueOnce(fake);
+
+      const promise = manager.sendAndReceive('role-crash', 'msg', { teamContext: {
+        teamName: 'team',
+        memberName: 'role-crash',
+        memberDisplayName: 'Role Crash',
+        memberRole: 'dev'
+      }});
+
+      setImmediate(() => {
+        fake.emit('exit', 1);
+      });
+
+      await expect(promise).rejects.toThrow(/unexpectedly/);
     });
   });
 });

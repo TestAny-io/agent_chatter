@@ -16,8 +16,9 @@ import { SessionUtils } from '../models/ConversationSession.js';
 import { AgentManager } from './AgentManager.js';
 import { MessageRouter } from './MessageRouter.js';
 import type { ConversationConfig } from '../utils/ConversationStarter.js';
-import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
 import { buildPrompt, type PromptContextMessage } from '../utils/PromptBuilder.js';
+import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
+import type { ContextEventCollector, ContextSummary } from './ContextEventCollector.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -51,11 +52,27 @@ export class ConversationCoordinator {
   private contextMessageCount: number;
   private waitingForRoleId: string | null = null;  // 等待哪个角色的输入
   private currentExecutingMember: Member | null = null;  // Currently executing agent (for cancellation)
+  /**
+   * 获取下一个轮到的成员（循环轮询）
+   */
+  private getNextSpeaker(currentId: string): Member | null {
+    if (!this.team || !this.team.members || this.team.members.length === 0) {
+      return null;
+    }
+    const members = [...this.team.members].sort((a, b) => a.order - b.order);
+    const idx = members.findIndex(m => m.id === currentId);
+    if (idx === -1) {
+      return null;
+    }
+    const nextIdx = (idx + 1) % members.length;
+    return members[nextIdx];
+  }
 
   constructor(
     private agentManager: AgentManager,
     private messageRouter: MessageRouter,
-    private options: ConversationCoordinatorOptions = {}
+    private options: ConversationCoordinatorOptions = {},
+    private contextCollector?: ContextEventCollector
   ) {
     this.contextMessageCount = options.contextMessageCount || 5;
   }
@@ -305,7 +322,7 @@ export class ConversationCoordinator {
    * 准备消息交付（添加上下文）
    */
   private prepareDelivery(recipient: Member, content: string): MessageDelivery {
-    const contextMessages = this.getRecentMessages(this.contextMessageCount);
+    const contextMessages = this.getRecentContext(this.contextMessageCount);
 
     return {
       recipient: {
@@ -372,10 +389,20 @@ export class ConversationCoordinator {
         }
       }
 
+      const teamContext = {
+        teamName: this.team.name,
+        teamDisplayName: this.team.displayName,
+        memberName: member.name,
+        memberDisplayName: member.displayName,
+        memberRole: member.role,
+        memberDisplayRole: member.displayRole,
+        themeColor: member.themeColor
+      };
+
       const response = await this.agentManager.sendAndReceive(
         member.id,
         prompt.prompt,
-        { maxTimeout, systemFlag: prompt.systemFlag }
+        { maxTimeout, systemFlag: prompt.systemFlag, teamContext }
       );
 
       // 停止 Agent（因为我们关闭了 stdin，进程会退出，下次需要重新启动）
@@ -386,8 +413,24 @@ export class ConversationCoordinator {
         this.options.onAgentCompleted(member);
       }
 
-      // 处理响应
-      await this.onAgentResponse(member.id, response);
+      // 响应内容改为流式事件，result 仅指示完成状态
+      if (!response.success && process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][AgentResult] ${member.id} finished with ${response.finishReason}`);
+      }
+
+      // 根据轮转推进：如果下一位是人类则暂停等待，否则继续轮询
+      const nextMember = this.getNextSpeaker(member.id);
+      if (nextMember && nextMember.type === 'human') {
+        this.status = 'paused';
+        this.waitingForRoleId = nextMember.id;
+        return;
+      }
+      if (nextMember && nextMember.type === 'ai') {
+        // 继续下一个 AI
+        await this.sendToAgent(nextMember, message);
+        return;
+      }
     } catch (error) {
       // Notify that agent has completed (even on error)
       if (this.options.onAgentCompleted) {
@@ -471,6 +514,32 @@ export class ConversationCoordinator {
 
     const messages = this.session.messages;
     return messages.slice(-count);
+  }
+
+  /**
+   * 获取最近的 N 条上下文，优先使用事件汇总，回退到消息历史
+   */
+  private getRecentContext(count: number): PromptContextMessage[] {
+    const summaries: ContextSummary[] = this.contextCollector
+      ? this.contextCollector.getRecentSummaries(count)
+      : [];
+
+    if (summaries.length > 0) {
+      return summaries.slice(-count).map(s => ({
+        from: s.agentName ?? s.agentId,
+        to: undefined,
+        content: s.text,
+        timestamp: new Date(s.timestamp)
+      }));
+    }
+
+    // Fallback: original message history
+    return this.getRecentMessages(count).map(msg => ({
+      from: msg.speaker.roleName,
+      to: msg.routing?.resolvedAddressees?.map(r => r.roleName).join(', '),
+      content: msg.content,
+      timestamp: new Date(msg.timestamp)
+    }));
   }
 
   /**

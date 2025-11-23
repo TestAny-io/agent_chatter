@@ -2,7 +2,7 @@
  * ReplModeInk - 基于 Ink + React 的交互式 REPL
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { render, Box, Text, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import * as fs from 'fs';
@@ -18,6 +18,9 @@ import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardS
 import { AgentsMenu } from './components/AgentsMenu.js';
 import { RegistryStorage } from '../registry/RegistryStorage.js';
 import { ThinkingIndicator } from './components/ThinkingIndicator.js';
+import { StreamingDisplay } from './components/StreamingDisplay.js';
+import type { AgentEvent } from '../events/AgentEvent.js';
+import type { EventEmitter } from 'events';
 import {
     getTeamConfigDir,
     ensureTeamConfigDir,
@@ -625,6 +628,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [activeCoordinator, setActiveCoordinator] = useState<ConversationCoordinator | null>(null);
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
     const [executingAgent, setExecutingAgent] = useState<Member | null>(null);
+    const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
+
+    // Streaming event handling
+    const pendingEventsRef = useRef<AgentEvent[]>([]);
+    const flushScheduledRef = useRef(false);
+    const eventListenerRef = useRef<((ev: AgentEvent) => void) | null>(null);
+    const eventEmitterRef = useRef<EventEmitter | null>(null);
 
     // Registry path management
     const [registry] = useState(() => {
@@ -666,10 +676,48 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         return currentKey;
     };
 
+    useEffect(() => {
+        return () => {
+            attachEventEmitter(null);
+        };
+    }, []);
+
     // 获取当前匹配的命令
     const getMatches = () => {
         if (!input.startsWith('/')) return [];
         return commands.filter(cmd => cmd.name.startsWith(input));
+    };
+
+    const scheduleStreamFlush = () => {
+        if (flushScheduledRef.current) return;
+        flushScheduledRef.current = true;
+        setTimeout(() => {
+            flushScheduledRef.current = false;
+            if (pendingEventsRef.current.length === 0) return;
+            const pending = [...pendingEventsRef.current];
+            pendingEventsRef.current = [];
+            setStreamEvents(prev => {
+                const merged = [...prev, ...pending];
+                return merged.slice(-100);
+            });
+        }, 16);
+    };
+
+    const attachEventEmitter = (emitter: EventEmitter | null) => {
+        // Cleanup previous listener
+        if (eventListenerRef.current && eventEmitterRef.current) {
+            eventEmitterRef.current.off?.('agent-event', eventListenerRef.current);
+            eventEmitterRef.current.removeListener?.('agent-event', eventListenerRef.current);
+        }
+        eventEmitterRef.current = emitter;
+        if (!emitter) return;
+
+        const listener = (ev: AgentEvent) => {
+            pendingEventsRef.current.push(ev);
+            scheduleStreamFlush();
+        };
+        eventListenerRef.current = listener;
+        emitter.on('agent-event', listener);
     };
 
     // Handle input submission (Enter key)
@@ -1499,7 +1547,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             setOutput(prev => [...prev, <Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>]);
 
-            const { coordinator, team, messageRouter } = await initializeServices(currentConfig, {
+            const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(currentConfig, {
                 onMessage: (message: ConversationMessage) => {
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
                     const nameColor = message.speaker.type === 'ai' ? 'cyan' : 'green';
@@ -1521,6 +1569,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     setExecutingAgent(null);
                 }
             });
+            attachEventEmitter(eventEmitter);
+            setStreamEvents([]);
 
             if (!team.members.length) {
                 throw new Error('Team has no members configured. Please update the configuration file.');
@@ -1594,6 +1644,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             {output.map((item, idx) => (
                 <Box key={idx}>{item}</Box>
             ))}
+
+            {/* Streaming event display */}
+            {mode === 'conversation' && streamEvents.length > 0 && (
+                <StreamingDisplay events={streamEvents} />
+            )}
 
             {/* ThinkingIndicator - Show when agent is executing */}
             {mode === 'conversation' && executingAgent && currentConfig &&

@@ -1,0 +1,551 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AI Agent JSONL Output Schema",
+  "description": "Complete schema for JSONL output from Claude Code, OpenAI Codex, and Google Gemini CLI",
+  "version": "1.0.0",
+  "lastUpdated": "2025-11-23",
+  "dataSources": [
+    "Real output from codex exec --json",
+    "Real output from claude --output-format stream-json --verbose",
+    "Real output from gemini --output-format stream-json",
+    "Codex source code: codex-rs/protocol/src/protocol.rs"
+  ],
+
+  "agents": {
+    "codex": {
+      "cli": "codex exec --json",
+      "eventTypes": [
+        {
+          "type": "thread.started",
+          "description": "Session/thread initialization",
+          "schema": {
+            "type": "object",
+            "required": ["type", "thread_id"],
+            "properties": {
+              "type": { "const": "thread.started" },
+              "thread_id": {
+                "type": "string",
+                "description": "Unique identifier for this conversation thread",
+                "example": "019aaf35-e498-7842-9ea0-21b84a4764cd"
+              }
+            }
+          },
+          "example": "{\"type\":\"thread.started\",\"thread_id\":\"019aaf35-e498-7842-9ea0-21b84a4764cd\"}"
+        },
+        {
+          "type": "turn.started",
+          "description": "A new turn (user input + agent response) begins",
+          "schema": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "const": "turn.started" }
+            }
+          },
+          "example": "{\"type\":\"turn.started\"}"
+        },
+        {
+          "type": "item.started",
+          "description": "A work item (reasoning, command, file change, etc.) begins",
+          "schema": {
+            "type": "object",
+            "required": ["type", "item"],
+            "properties": {
+              "type": { "const": "item.started" },
+              "item": {
+                "type": "object",
+                "required": ["id", "type"],
+                "properties": {
+                  "id": { "type": "string", "example": "item_1" },
+                  "type": {
+                    "enum": ["reasoning", "command_execution", "file_change", "agent_message"],
+                    "description": "Type of work item"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "Shell command to execute (for command_execution type)",
+                    "example": "/bin/zsh -lc pwd"
+                  },
+                  "aggregated_output": {
+                    "type": "string",
+                    "description": "Output accumulated so far (for command_execution)",
+                    "example": ""
+                  },
+                  "exit_code": {
+                    "type": ["integer", "null"],
+                    "description": "Exit code of command (null if still running)"
+                  },
+                  "status": {
+                    "enum": ["in_progress", "completed"],
+                    "description": "Current status of this item"
+                  }
+                }
+              }
+            }
+          },
+          "example": "{\"type\":\"item.started\",\"item\":{\"id\":\"item_1\",\"type\":\"command_execution\",\"command\":\"/bin/zsh -lc pwd\",\"aggregated_output\":\"\",\"exit_code\":null,\"status\":\"in_progress\"}}"
+        },
+        {
+          "type": "item.completed",
+          "description": "A work item has finished",
+          "schema": {
+            "type": "object",
+            "required": ["type", "item"],
+            "properties": {
+              "type": { "const": "item.completed" },
+              "item": {
+                "type": "object",
+                "required": ["id", "type"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "type": {
+                    "enum": ["reasoning", "command_execution", "file_change", "agent_message"]
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Content for reasoning or agent_message types",
+                    "example": "**Preparing to read and count TypeScript files**"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "Shell command that was executed"
+                  },
+                  "aggregated_output": {
+                    "type": "string",
+                    "description": "Complete output from command execution"
+                  },
+                  "exit_code": {
+                    "type": "integer",
+                    "description": "Exit code of completed command"
+                  },
+                  "status": {
+                    "const": "completed"
+                  },
+                  "changes": {
+                    "type": "array",
+                    "description": "File changes (for file_change type)",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": { "type": "string" },
+                        "kind": { "enum": ["add", "modify", "delete"] }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "examples": [
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"reasoning\",\"text\":\"**Preparing to read files**\"}}",
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"command_execution\",\"command\":\"/bin/zsh -lc pwd\",\"aggregated_output\":\"/Users/...\",\"exit_code\":0,\"status\":\"completed\"}}",
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_9\",\"type\":\"agent_message\",\"text\":\"Task completed successfully\"}}"
+          ]
+        },
+        {
+          "type": "turn.completed",
+          "description": "The current turn has finished",
+          "schema": {
+            "type": "object",
+            "required": ["type", "usage"],
+            "properties": {
+              "type": { "const": "turn.completed" },
+              "usage": {
+                "type": "object",
+                "properties": {
+                  "input_tokens": { "type": "integer" },
+                  "cached_input_tokens": { "type": "integer" },
+                  "output_tokens": { "type": "integer" }
+                }
+              }
+            }
+          },
+          "example": "{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":24447,\"cached_input_tokens\":19456,\"output_tokens\":716}}"
+        }
+      ],
+      "notes": [
+        "All events are JSONL (one JSON object per line)",
+        "item.type can be: reasoning, command_execution, file_change, agent_message",
+        "command_execution includes full shell command and output",
+        "File paths are absolute",
+        "No delta/streaming for text - each item.completed contains full text"
+      ]
+    },
+
+    "claude": {
+      "cli": "claude --output-format stream-json --verbose",
+      "eventTypes": [
+        {
+          "type": "system",
+          "description": "Session initialization with metadata",
+          "schema": {
+            "type": "object",
+            "required": ["type", "subtype", "session_id"],
+            "properties": {
+              "type": { "const": "system" },
+              "subtype": { "const": "init" },
+              "cwd": { "type": "string", "description": "Current working directory" },
+              "session_id": { "type": "string" },
+              "tools": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Available tools",
+                "example": ["Task", "Bash", "Read", "Write"]
+              },
+              "mcp_servers": { "type": "array" },
+              "model": { "type": "string", "example": "claude-sonnet-4-5-20250929" },
+              "permissionMode": {
+                "enum": ["default", "plan", "acceptEdits", "bypassPermissions"]
+              },
+              "slash_commands": { "type": "array", "items": { "type": "string" } },
+              "apiKeySource": { "type": "string" },
+              "claude_code_version": { "type": "string", "example": "2.0.50" },
+              "output_style": { "type": "string" },
+              "agents": { "type": "array", "items": { "type": "string" } },
+              "skills": { "type": "array" },
+              "plugins": { "type": "array" },
+              "uuid": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "assistant",
+          "description": "Assistant message (may contain text or tool calls)",
+          "schema": {
+            "type": "object",
+            "required": ["type", "message"],
+            "properties": {
+              "type": { "const": "assistant" },
+              "message": {
+                "type": "object",
+                "required": ["model", "id", "type", "role", "content"],
+                "properties": {
+                  "model": { "type": "string" },
+                  "id": { "type": "string", "example": "msg_019A9w57oY36aMeYx5zj5hL9" },
+                  "type": { "const": "message" },
+                  "role": { "const": "assistant" },
+                  "content": {
+                    "type": "array",
+                    "description": "Array of content blocks",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "description": "Text content block",
+                          "required": ["type", "text"],
+                          "properties": {
+                            "type": { "const": "text" },
+                            "text": { "type": "string" }
+                          }
+                        },
+                        {
+                          "type": "object",
+                          "description": "Tool use block",
+                          "required": ["type", "id", "name", "input"],
+                          "properties": {
+                            "type": { "const": "tool_use" },
+                            "id": { "type": "string", "example": "toolu_016wE9TN8y8RrEkFXrD3Au43" },
+                            "name": {
+                              "type": "string",
+                              "description": "Tool name",
+                              "example": "Write"
+                            },
+                            "input": {
+                              "type": "object",
+                              "description": "Tool input parameters",
+                              "example": { "file_path": "/path/to/file.txt", "content": "Hello" }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "stop_reason": { "type": ["string", "null"], "enum": [null, "end_turn", "tool_use"] },
+                  "stop_sequence": { "type": ["string", "null"] },
+                  "usage": {
+                    "type": "object",
+                    "properties": {
+                      "input_tokens": { "type": "integer" },
+                      "cache_creation_input_tokens": { "type": "integer" },
+                      "cache_read_input_tokens": { "type": "integer" },
+                      "output_tokens": { "type": "integer" },
+                      "service_tier": { "type": "string" },
+                      "cache_creation": {
+                        "type": "object",
+                        "properties": {
+                          "ephemeral_5m_input_tokens": { "type": "integer" },
+                          "ephemeral_1h_input_tokens": { "type": "integer" }
+                        }
+                      }
+                    }
+                  },
+                  "context_management": { "type": ["object", "null"] }
+                }
+              },
+              "parent_tool_use_id": { "type": ["string", "null"] },
+              "session_id": { "type": "string" },
+              "uuid": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "user",
+          "description": "User message (usually tool results)",
+          "schema": {
+            "type": "object",
+            "required": ["type", "message"],
+            "properties": {
+              "type": { "const": "user" },
+              "message": {
+                "type": "object",
+                "required": ["role", "content"],
+                "properties": {
+                  "role": { "const": "user" },
+                  "content": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": ["tool_use_id", "type", "content"],
+                      "properties": {
+                        "tool_use_id": { "type": "string" },
+                        "type": { "const": "tool_result" },
+                        "content": { "type": "string", "description": "Tool output" }
+                      }
+                    }
+                  }
+                }
+              },
+              "parent_tool_use_id": { "type": ["string", "null"] },
+              "session_id": { "type": "string" },
+              "uuid": { "type": "string" },
+              "tool_use_result": {
+                "type": "object",
+                "description": "Structured tool result metadata",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "description": "Operation type",
+                    "example": "create"
+                  },
+                  "filePath": { "type": "string" },
+                  "content": { "type": "string" },
+                  "structuredPatch": { "type": "array" },
+                  "originalFile": { "type": ["object", "null"] }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "result",
+          "description": "Final session result with cost and usage",
+          "schema": {
+            "type": "object",
+            "required": ["type", "subtype", "is_error", "session_id"],
+            "properties": {
+              "type": { "const": "result" },
+              "subtype": { "enum": ["success", "error"] },
+              "is_error": { "type": "boolean" },
+              "duration_ms": { "type": "integer", "description": "Total duration" },
+              "duration_api_ms": { "type": "integer", "description": "API call duration" },
+              "num_turns": { "type": "integer", "description": "Number of turns" },
+              "result": { "type": "string", "description": "Final text result" },
+              "session_id": { "type": "string" },
+              "total_cost_usd": { "type": "number", "description": "Total cost in USD" },
+              "usage": {
+                "type": "object",
+                "description": "Aggregated usage across all API calls"
+              },
+              "modelUsage": {
+                "type": "object",
+                "description": "Per-model usage breakdown"
+              },
+              "permission_denials": { "type": "array" },
+              "uuid": { "type": "string" }
+            }
+          }
+        }
+      ],
+      "notes": [
+        "All events are JSONL (one JSON object per line)",
+        "assistant messages can contain multiple content blocks (text + tool_use)",
+        "Multiple assistant messages can appear in sequence (thinking → tool call → final response)",
+        "user messages typically contain tool_result content",
+        "tool_use_result provides structured metadata about file operations",
+        "result event contains final output and cost information"
+      ]
+    },
+
+    "gemini": {
+      "cli": "gemini --output-format stream-json",
+      "eventTypes": [
+        {
+          "type": "init",
+          "description": "Session initialization",
+          "schema": {
+            "type": "object",
+            "required": ["type", "timestamp", "session_id", "model"],
+            "properties": {
+              "type": { "const": "init" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "session_id": { "type": "string" },
+              "model": { "type": "string", "example": "auto" }
+            }
+          },
+          "example": "{\"type\":\"init\",\"timestamp\":\"2025-11-23T05:37:03.662Z\",\"session_id\":\"ff3f1249-8bae-4fd5-9911-ef69ef7e7ce2\",\"model\":\"auto\"}"
+        },
+        {
+          "type": "message",
+          "description": "User or assistant message (may be delta/streaming)",
+          "schema": {
+            "type": "object",
+            "required": ["type", "timestamp", "role", "content"],
+            "properties": {
+              "type": { "const": "message" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "role": { "enum": ["user", "assistant"] },
+              "content": { "type": "string", "description": "Message content (may be partial)" },
+              "delta": {
+                "type": "boolean",
+                "description": "If true, this is a streaming chunk (not complete message)",
+                "example": true
+              }
+            }
+          },
+          "examples": [
+            "{\"type\":\"message\",\"timestamp\":\"2025-11-23T05:37:03.662Z\",\"role\":\"user\",\"content\":\"Please help me\"}",
+            "{\"type\":\"message\",\"timestamp\":\"2025-11-23T05:37:17.496Z\",\"role\":\"assistant\",\"content\":\"I have completed the task\",\"delta\":true}"
+          ]
+        },
+        {
+          "type": "tool_use",
+          "description": "Tool invocation by assistant",
+          "schema": {
+            "type": "object",
+            "required": ["type", "timestamp", "tool_name", "tool_id", "parameters"],
+            "properties": {
+              "type": { "const": "tool_use" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "tool_name": {
+                "type": "string",
+                "description": "Name of tool being called",
+                "example": "read_file"
+              },
+              "tool_id": {
+                "type": "string",
+                "description": "Unique identifier for this tool call",
+                "example": "read_file-1763876231962-2f3b36e079b42"
+              },
+              "parameters": {
+                "type": "object",
+                "description": "Tool input parameters",
+                "example": { "file_path": "package.json" }
+              }
+            }
+          },
+          "example": "{\"type\":\"tool_use\",\"timestamp\":\"2025-11-23T05:37:11.962Z\",\"tool_name\":\"read_file\",\"tool_id\":\"read_file-1763876231962-2f3b36e079b42\",\"parameters\":{\"file_path\":\"package.json\"}}"
+        },
+        {
+          "type": "tool_result",
+          "description": "Result of tool execution",
+          "schema": {
+            "type": "object",
+            "required": ["type", "timestamp", "tool_id", "status"],
+            "properties": {
+              "type": { "const": "tool_result" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "tool_id": {
+                "type": "string",
+                "description": "Matches tool_id from tool_use event"
+              },
+              "status": {
+                "enum": ["success", "error"],
+                "description": "Execution status"
+              },
+              "output": {
+                "type": "string",
+                "description": "Tool output (may be empty for large outputs)",
+                "example": "Listed 22 item(s). (8 ignored)"
+              }
+            }
+          },
+          "example": "{\"type\":\"tool_result\",\"timestamp\":\"2025-11-23T05:37:12.029Z\",\"tool_id\":\"read_file-1763876231962-2f3b36e079b42\",\"status\":\"success\",\"output\":\"\"}"
+        },
+        {
+          "type": "result",
+          "description": "Final result with statistics",
+          "schema": {
+            "type": "object",
+            "required": ["type", "timestamp", "status", "stats"],
+            "properties": {
+              "type": { "const": "result" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "status": { "enum": ["success", "error"] },
+              "stats": {
+                "type": "object",
+                "properties": {
+                  "total_tokens": { "type": "integer" },
+                  "input_tokens": { "type": "integer" },
+                  "output_tokens": { "type": "integer" },
+                  "duration_ms": { "type": "integer" },
+                  "tool_calls": { "type": "integer", "description": "Number of tool calls" }
+                }
+              }
+            }
+          },
+          "example": "{\"type\":\"result\",\"timestamp\":\"2025-11-23T05:37:17.499Z\",\"status\":\"success\",\"stats\":{\"total_tokens\":17760,\"input_tokens\":17240,\"output_tokens\":113,\"duration_ms\":13838,\"tool_calls\":2}}"
+        }
+      ],
+      "notes": [
+        "All events have timestamps (ISO 8601 format)",
+        "message events with delta:true are streaming chunks",
+        "tool_use and tool_result are paired via tool_id",
+        "Tool names differ from Claude (read_file vs Read, list_directory vs Bash)",
+        "Output may be empty for large file reads (full content not in JSONL)",
+        "May include retry messages in output (not JSONL events)"
+      ]
+    }
+  },
+
+  "comparison": {
+    "description": "Key differences between the three agents",
+    "table": [
+      {
+        "aspect": "Event Structure",
+        "codex": "Flat item-based events",
+        "claude": "Message-based with content arrays",
+        "gemini": "Flat event stream with timestamps"
+      },
+      {
+        "aspect": "Streaming",
+        "codex": "No delta/streaming - complete items only",
+        "claude": "Multiple assistant messages can stream",
+        "gemini": "delta:true flag for streaming chunks"
+      },
+      {
+        "aspect": "Tool Calls",
+        "codex": "item.type=command_execution",
+        "claude": "content[].type=tool_use + separate user message with tool_result",
+        "gemini": "Separate tool_use and tool_result events"
+      },
+      {
+        "aspect": "Completion Detection",
+        "codex": "turn.completed event",
+        "claude": "result event with subtype:success",
+        "gemini": "result event with status:success"
+      },
+      {
+        "aspect": "Timestamps",
+        "codex": "No timestamps in events",
+        "claude": "No timestamps in events (only in system/result)",
+        "gemini": "All events have ISO 8601 timestamps"
+      },
+      {
+        "aspect": "Cost/Usage",
+        "codex": "usage in turn.completed",
+        "claude": "Detailed cost breakdown in result event",
+        "gemini": "Token stats in result event (no cost)"
+      }
+    ]
+  }
+}
