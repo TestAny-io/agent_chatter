@@ -19,8 +19,8 @@ export class ClaudeCodeParser implements StreamParser {
       if (!line.trim()) continue;
       try {
         const json = JSON.parse(line);
-        const ev = this.jsonToEvent(json);
-        if (ev) events.push(ev);
+        const evs = this.jsonToEvents(json);
+        if (evs.length) events.push(...evs);
       } catch (err: any) {
         events.push({
           type: 'error',
@@ -43,8 +43,8 @@ export class ClaudeCodeParser implements StreamParser {
       this.buffer = '';
       try {
         const json = JSON.parse(text);
-        const ev = this.jsonToEvent(json);
-        if (ev) return [ev];
+        const evs = this.jsonToEvents(json);
+        if (evs.length) return evs;
       } catch {
         // fall through to text event
       }
@@ -65,7 +65,7 @@ export class ClaudeCodeParser implements StreamParser {
     this.buffer = '';
   }
 
-  private jsonToEvent(json: any): AgentEvent | null {
+  private jsonToEvents(json: any): AgentEvent[] {
     const base = {
       eventId: randomUUID(),
       agentId: this.agentId,
@@ -77,38 +77,75 @@ export class ClaudeCodeParser implements StreamParser {
     switch (json.type) {
       case 'system':
         if (json.subtype === 'init') {
-          return { ...base, type: 'session.started' };
+          return [{ ...base, type: 'session.started' }];
         }
-        return null;
+        return [];
       case 'content_block_delta':
         if (json.delta?.type === 'text_delta') {
-          return { ...base, type: 'text', text: json.delta.text, role: 'assistant' };
+          return [{ ...base, type: 'text', text: json.delta.text, role: 'assistant' }];
         }
-        return null;
+        return [];
+      case 'assistant': {
+        const content = json.message?.content || [];
+        const evs: AgentEvent[] = [];
+        for (const item of content) {
+          if (item.type === 'text') {
+            evs.push({ ...base, eventId: randomUUID(), type: 'text', text: item.text, role: 'assistant' });
+          } else if (item.type === 'tool_use') {
+            evs.push({
+              ...base,
+              eventId: randomUUID(),
+              type: 'tool.started',
+              toolName: item.name,
+              toolId: item.id,
+              input: item.input || {}
+            });
+          }
+        }
+        return evs;
+      }
+      case 'user': {
+        const content = json.message?.content || [];
+        const evs: AgentEvent[] = [];
+        for (const item of content) {
+          if (item.type === 'tool_result') {
+            evs.push({
+              ...base,
+              eventId: randomUUID(),
+              type: 'tool.completed',
+              toolId: item.tool_use_id,
+              output: item.content || '',
+              error: item.is_error ? item.content : undefined
+            });
+          }
+        }
+        return evs;
+      }
       case 'tool_use':
-        return {
+        return [{
           ...base,
           type: 'tool.started',
           toolName: json.name,
           toolId: json.id,
           input: json.input || {}
-        };
+        }];
       case 'tool_result':
-        return {
+        return [{
           ...base,
           type: 'tool.completed',
           toolId: json.tool_use_id,
           output: typeof json.content === 'string' ? json.content : undefined,
           error: json.is_error ? json.content : undefined
-        };
+        }];
+      case 'result':
       case 'message_stop':
-        return {
+        return [{
           ...base,
           type: 'turn.completed',
-          finishReason: json.stop_reason === 'end_turn' ? 'done' : 'error'
-        };
+          finishReason: json.is_error ? 'error' : (json.stop_reason === 'end_turn' ? 'done' : 'error')
+        }];
       default:
-        return null;
+        return [];
     }
   }
 }

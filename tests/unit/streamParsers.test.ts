@@ -17,10 +17,9 @@ describe('Stream parsers', () => {
     const events = [
       ...parser.parseChunk(Buffer.from([
         '{"type":"system","subtype":"init"}',
-        '{"type":"content_block_delta","delta":{"type":"text_delta","text":"hi"}}',
-        '{"type":"tool_use","name":"Bash","id":"tool-1","input":{"cmd":"ls"}}',
-        '{"type":"tool_result","tool_use_id":"tool-1","content":"ok"}',
-        '{"type":"message_stop","stop_reason":"end_turn"}'
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"},{"type":"tool_use","name":"Bash","id":"tool-1","input":{"command":"ls"}}]}}',
+        '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"ok"}]}}',
+        '{"type":"result","stop_reason":"end_turn"}'
       ].join('\n'))),
       ...parser.flush()
     ];

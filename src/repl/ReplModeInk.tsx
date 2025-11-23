@@ -700,7 +700,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             case 'tool.started':
                 return (
                     <Text key={key} color="yellow">
-                        ⏺ {ev.toolName ?? 'tool'} ({ev.toolId ?? ''})
+                        ⏺ {ev.toolName ?? 'tool'} ({ev.toolId ?? ''}){ev.input?.command ? ` ${ev.input.command}` : ''}
                     </Text>
                 );
             case 'tool.completed':
@@ -1604,9 +1604,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     setOutput(prev => [...prev, <Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>]);
                 },
                 onAgentStarted: (member: Member) => {
+                    setOutput(prev => [...prev, <Text key={`agent-start-${getNextKey()}`} color="cyan">→ {member.displayName} 开始执行...</Text>]);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
+                    setOutput(prev => [...prev, <Text key={`agent-done-${getNextKey()}`} color="cyan">✓ {member.displayName} 完成</Text>]);
                     setExecutingAgent(null);
                 }
             });
