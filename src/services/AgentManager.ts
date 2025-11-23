@@ -240,7 +240,7 @@ export class AgentManager {
         }
       };
 
-      const emitSynthetic = (event: Omit<AgentEvent, 'eventId' | 'agentId' | 'agentType' | 'teamMetadata' | 'timestamp'>) => {
+      const emitSynthetic = (event: any) => {
         emitEvents([{
           ...event,
           eventId: randomUUID(),

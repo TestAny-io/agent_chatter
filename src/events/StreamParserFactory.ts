@@ -6,7 +6,6 @@ import type { TeamContext } from '../models/Team.js';
 import type { AgentType } from './AgentEvent.js';
 import type { AgentEvent } from './AgentEvent.js';
 import { randomUUID } from 'crypto';
-import type { StreamParser } from './StreamParser.js';
 
 export class StreamParserFactory {
   static create(agentType: string, agentId: string, teamContext: TeamContext): StreamParser {
@@ -63,7 +62,7 @@ class LineParser implements StreamParser {
       type: 'text',
       eventId: randomUUID(),
       agentId: this.agentId,
-      agentType: this.agentType,
+      agentType: this.agentType as AgentType,
       teamMetadata: this.teamContext,
       timestamp: Date.now(),
       text

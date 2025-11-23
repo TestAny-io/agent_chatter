@@ -322,7 +322,7 @@ export class ConversationCoordinator {
    * 准备消息交付（添加上下文）
    */
   private prepareDelivery(recipient: Member, content: string): MessageDelivery {
-    const contextMessages = this.getRecentContext(this.contextMessageCount);
+    const contextMessages = this.getRecentMessages(this.contextMessageCount);
 
     return {
       recipient: {
@@ -390,8 +390,8 @@ export class ConversationCoordinator {
       }
 
       const teamContext = {
-        teamName: this.team.name,
-        teamDisplayName: this.team.displayName,
+        teamName: this.team!.name,
+        teamDisplayName: this.team!.displayName,
         memberName: member.name,
         memberDisplayName: member.displayName,
         memberRole: member.role,
