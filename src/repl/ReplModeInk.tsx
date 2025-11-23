@@ -1597,6 +1597,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(currentConfig, {
                 onMessage: (message: ConversationMessage) => {
+                    // AI 文本已经通过流式事件显示，这里不再重复；人类/系统消息仍保留
+                    if (message.speaker.type === 'ai') {
+                        return;
+                    }
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
                     const nameColor = message.speaker.type === 'ai' ? 'cyan' : 'green';
                     setOutput(prev => [...prev,
