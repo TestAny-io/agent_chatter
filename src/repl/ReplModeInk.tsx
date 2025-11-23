@@ -18,7 +18,6 @@ import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardS
 import { AgentsMenu } from './components/AgentsMenu.js';
 import { RegistryStorage } from '../registry/RegistryStorage.js';
 import { ThinkingIndicator } from './components/ThinkingIndicator.js';
-import { StreamingDisplay } from './components/StreamingDisplay.js';
 import type { AgentEvent } from '../events/AgentEvent.js';
 import type { EventEmitter } from 'events';
 import {
@@ -628,7 +627,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [activeCoordinator, setActiveCoordinator] = useState<ConversationCoordinator | null>(null);
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
     const [executingAgent, setExecutingAgent] = useState<Member | null>(null);
-    const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
 
     // Streaming event handling
     const pendingEventsRef = useRef<AgentEvent[]>([]);
@@ -688,6 +686,47 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         return commands.filter(cmd => cmd.name.startsWith(input));
     };
 
+    const renderEvent = (ev: AgentEvent): React.ReactNode | null => {
+        const key = `stream-${ev.eventId || `${ev.agentId}-${ev.timestamp}`}-${getNextKey()}`;
+        switch (ev.type) {
+            case 'session.started':
+                return null; // too verbose for UI
+            case 'text':
+                return (
+                    <Box key={key} flexDirection="column" marginTop={0}>
+                        <Text>{ev.text}</Text>
+                    </Box>
+                );
+            case 'tool.started':
+                return (
+                    <Text key={key} color="yellow">
+                        ⏺ {ev.toolName ?? 'tool'} ({ev.toolId ?? ''})
+                    </Text>
+                );
+            case 'tool.completed':
+                return (
+                    <Box key={key} flexDirection="column">
+                        <Text color="green">⎿  {ev.toolId ?? ''} {ev.output ?? ''}</Text>
+                        {ev.error && <Text color="red">    error: {ev.error}</Text>}
+                    </Box>
+                );
+            case 'turn.completed':
+                return (
+                    <Text key={key} color={ev.finishReason === 'done' ? 'green' : 'magenta'}>
+                        turn completed ({ev.finishReason})
+                    </Text>
+                );
+            case 'error':
+                return (
+                    <Text key={key} color="red">
+                        error: {ev.error}
+                    </Text>
+                );
+            default:
+                return null;
+        }
+    };
+
     const scheduleStreamFlush = () => {
         if (flushScheduledRef.current) return;
         flushScheduledRef.current = true;
@@ -696,10 +735,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             if (pendingEventsRef.current.length === 0) return;
             const pending = [...pendingEventsRef.current];
             pendingEventsRef.current = [];
-            setStreamEvents(prev => {
-                const merged = [...prev, ...pending];
-                return merged.slice(-100);
-            });
+            const nodes = pending
+                .map(renderEvent)
+                .filter((n): n is React.ReactNode => Boolean(n));
+            if (nodes.length > 0) {
+                setOutput(prev => [...prev, ...nodes]);
+            }
         }, 16);
     };
 
@@ -1570,7 +1611,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 }
             });
             attachEventEmitter(eventEmitter);
-            setStreamEvents([]);
 
             if (!team.members.length) {
                 throw new Error('Team has no members configured. Please update the configuration file.');
@@ -1644,11 +1684,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             {output.map((item, idx) => (
                 <Box key={idx}>{item}</Box>
             ))}
-
-            {/* Streaming event display */}
-            {mode === 'conversation' && streamEvents.length > 0 && (
-                <StreamingDisplay events={streamEvents} />
-            )}
 
             {/* ThinkingIndicator - Show when agent is executing */}
             {mode === 'conversation' && executingAgent && currentConfig &&
