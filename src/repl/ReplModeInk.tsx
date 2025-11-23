@@ -705,24 +705,29 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     </Box>
                 );
             case 'tool.started':
-                return (
-                    <Text key={key} color="yellow">
-                        ⏺ {ev.toolName ?? 'tool'} ({ev.input?.command ?? ev.toolId ?? ''})
-                    </Text>
-                );
+                {
+                    const displayParam =
+                        ev.input?.command ||
+                        ev.input?.pattern ||
+                        ev.input?.file_path ||
+                        ev.input?.path ||
+                        ev.toolId ||
+                        '';
+                    return (
+                        <Text key={key} color="yellow">
+                            ⏺ {ev.toolName ?? 'tool'} ({displayParam})
+                        </Text>
+                    );
+                }
             case 'tool.completed':
                 return (
                     <Box key={key} flexDirection="column">
-                        <Text color="green">⎿  {ev.toolId ?? ''} {truncate(ev.output)}</Text>
+                        <Text color="green">⎿  {truncate(ev.output)}</Text>
                         {ev.error && <Text color="red">    error: {ev.error}</Text>}
                     </Box>
                 );
             case 'turn.completed':
-                return (
-                    <Text key={key} color={ev.finishReason === 'done' ? 'green' : 'magenta'}>
-                        turn completed ({ev.finishReason})
-                    </Text>
-                );
+                return null; // internal state, UI already shows ✓ agent 完成
             case 'error':
                 return (
                     <Text key={key} color="red">
@@ -1598,7 +1603,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(currentConfig, {
                 onMessage: (message: ConversationMessage) => {
                     // AI 文本已经通过流式事件显示，这里不再重复；人类/系统消息仍保留
-                    if (message.speaker.type === 'ai') {
+                    if (message.speaker.type === 'ai' || message.speaker.type === 'system') {
                         return;
                     }
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
@@ -1670,14 +1675,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     ]);
                 }
             }
-
-            setOutput(prev => [...prev,
-                <Text key={`conv-start-${getNextKey()}`} color="green">{'─'.repeat(60)}</Text>,
-                <Text key={`conv-msg-${getNextKey()}`} bold>Conversation Started</Text>,
-                <Text key={`conv-init-${getNextKey()}`} dimColor>Initial message: {cleanMessage}</Text>,
-                <Text key={`conv-tip-${getNextKey()}`} color="yellow">Type your messages below. Type /end to exit conversation mode.</Text>,
-                <Text key={`conv-line-${getNextKey()}`} color="green">{'─'.repeat(60)}</Text>
-            ]);
 
             setActiveCoordinator(coordinator);
             setActiveTeam(team);
