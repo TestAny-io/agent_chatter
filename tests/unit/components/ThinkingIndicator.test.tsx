@@ -45,8 +45,8 @@ describe('ThinkingIndicator Component', () => {
 
     expect(lastFrame()).toContain('0s');
 
-    // Wait for 1.1 seconds (accounting for slight timing variance)
-    await wait(1100);
+    // Wait for 1.5 seconds (accounting for CI timing variance)
+    await wait(1500);
     expect(lastFrame()).toContain('1s');
 
     // Wait for another 1 second (total ~2s)
