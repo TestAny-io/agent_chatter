@@ -195,7 +195,7 @@ describe('AgentValidator', () => {
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-home-'));
       const geminiDir = path.join(tempDir, '.gemini');
       fs.mkdirSync(geminiDir, { recursive: true });
-      fs.writeFileSync(path.join(geminiDir, 'credentials.json'), JSON.stringify({ access_token: 'token' }));
+      fs.writeFileSync(path.join(geminiDir, 'oauth_creds.json'), JSON.stringify({ access_token: 'token' }));
 
       const originalHome = process.env.HOME;
       process.env.HOME = tempDir;
@@ -213,7 +213,7 @@ describe('AgentValidator', () => {
       const agent = createTestAgent('gemini', 'node');
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-config-'));
       process.env.GEMINI_CONFIG_DIR = tempDir;
-      fs.writeFileSync(path.join(tempDir, 'credentials.json'), JSON.stringify({ refresh_token: 'token' }));
+      fs.writeFileSync(path.join(tempDir, 'oauth_creds.json'), JSON.stringify({ refresh_token: 'token' }));
 
       const result = await validator.verify(agent);
 

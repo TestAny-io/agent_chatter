@@ -349,12 +349,14 @@ export class AgentValidator {
       const xdgConfig = process.env.XDG_CONFIG_HOME ? path.resolve(process.env.XDG_CONFIG_HOME) : path.join(home, '.config');
       const customConfig = process.env.GEMINI_CONFIG_DIR;
 
+      const credFile = 'oauth_creds.json';
+
       if (customConfig) {
-        candidates.push(path.join(customConfig, 'credentials.json'));
+        candidates.push(path.join(customConfig, credFile));
       }
       candidates.push(
-        path.join(home, '.gemini', 'credentials.json'),
-        path.join(xdgConfig, 'gemini', 'credentials.json')
+        path.join(home, '.gemini', credFile),
+        path.join(xdgConfig, 'gemini', credFile)
       );
 
       const credPath = candidates.find(p => fs.existsSync(p));
