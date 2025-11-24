@@ -686,7 +686,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         return commands.filter(cmd => cmd.name.startsWith(input));
     };
 
-    const truncate = (val?: string, max = 200) => {
+    const truncate = (val?: string, max = 100) => {
         if (!val) return '';
         return val.length > max ? `${val.slice(0, max)}…` : val;
     };
