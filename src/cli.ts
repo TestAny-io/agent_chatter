@@ -263,13 +263,10 @@ export async function run(argv: string[]): Promise<void> {
     } catch (err: unknown) {
         if (err instanceof CommanderError) {
             if (err.code === 'commander.helpDisplayed') {
-                // Help was displayed, exit gracefully
                 process.exitCode = 0;
                 return;
             }
             if (err.code === 'commander.version') {
-                // Version was requested, output it
-                console.log(program.version());
                 process.exitCode = 0;
                 return;
             }
@@ -282,7 +279,18 @@ export async function run(argv: string[]): Promise<void> {
     }
 }
 
-const invokedAsEntry = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+const invokedAsEntry = (() => {
+    const argvPath = process.argv[1];
+    if (!argvPath) return false;
+    try {
+        const resolvedArgv = fs.realpathSync(path.resolve(argvPath));
+        const resolvedFile = fs.realpathSync(__filename);
+        return resolvedArgv === resolvedFile;
+    } catch {
+        return false;
+    }
+})();
+
 if (invokedAsEntry) {
     void run(process.argv);
 }

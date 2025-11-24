@@ -39,6 +39,25 @@ describe('cli run exit behavior', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('prints version once and exits 0', async () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true as any);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const { run } = await import('../../src/cli.js');
+    await run(['node', 'cli.js', '--version']);
+
+    const output = writeSpy.mock.calls.map(c => String(c[0])).join('');
+    const count = (output.match(new RegExp(pkg.version, 'g')) || []).length
+      + (logSpy.mock.calls.flat().join('').match(new RegExp(pkg.version, 'g')) || []).length;
+
+    expect(count).toBe(1);
+    expect(process.exitCode ?? 0).toBe(0);
+
+    writeSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
   it('runs start command successfully without setting exitCode', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-exit-'));
     const configPath = path.join(tempDir, 'config.json');
