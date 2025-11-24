@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ConversationCoordinator } from '../../src/services/ConversationCoordinator.js';
 import { MessageRouter } from '../../src/services/MessageRouter.js';
 import type { Team, Role } from '../../src/models/Team.js';
 import type { ConversationMessage } from '../../src/models/ConversationMessage.js';
 import type { AgentManager } from '../../src/services/AgentManager.js';
+import { SessionUtils } from '../../src/models/ConversationSession.js';
 
 function createMember(overrides: Partial<Role>): Role {
   return {
@@ -114,6 +115,43 @@ describe('ConversationCoordinator', () => {
     expect(coordinator.getWaitingForRoleId()).toBeNull();
     expect(receivedMessages.some(msg => msg.content.includes('Handing off'))).toBe(true);
     expect(coordinator.getStatus()).toBe('completed');
+  });
+
+  it('drops last context item when identical to message to avoid AI->AI duplication', async () => {
+    const stub = new StubAgentManager({
+      'ai-alpha': [{ success: true, finishReason: 'done' }]
+    });
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router, { contextMessageCount: 5 });
+
+    const ai1 = createMember({ id: 'ai-alpha', name: 'alpha', type: 'ai', agentConfigId: 'config-alpha', order: 0 });
+    const ai2 = createMember({ id: 'ai-beta', name: 'beta', type: 'ai', agentConfigId: 'config-beta', order: 1 });
+    const team = buildTeam([ai1, ai2]);
+
+    coordinator['team'] = team;
+    coordinator['session'] = SessionUtils.createSession(team.id, team.name, 'conversation', ai1.id);
+
+    // Seed last message identical to upcoming message content
+    const msg: ConversationMessage = {
+      id: 'm1',
+      content: 'duplicate',
+      speaker: { roleId: ai1.id, roleName: ai1.name, roleTitle: ai1.displayName, type: 'ai' },
+      routing: { rawNextMarkers: [], resolvedAddressees: [], isDone: false },
+      timestamp: new Date()
+    } as any;
+    coordinator['session'] = SessionUtils.addMessageToSession(coordinator['session']!, msg);
+
+    const buildPrompt = (await import('../../src/utils/PromptBuilder.js')).buildPrompt;
+    const promptSpy = vi.spyOn(await import('../../src/utils/PromptBuilder.js'), 'buildPrompt');
+
+    await (coordinator as any).sendToAgent(ai2 as any, 'duplicate');
+
+    const call = promptSpy.mock.calls[0][0];
+    const lastCtx = call.contextMessages[call.contextMessages.length - 1];
+    expect(lastCtx?.content).not.toBe('duplicate');
+
+    promptSpy.mockRestore();
   });
 
   it('resolves addressees with fuzzy matching and normalization', () => {

@@ -77,7 +77,7 @@ vi.mock('../../src/infrastructure/ProcessManager.js', () => {
   };
 });
 
-describe('ConversationStarter integration', () => {
+describe.sequential('ConversationStarter integration', () => {
   let tempDir: string;
   let tempRegistryPath: string;
   let processMock: { startCalls: any[]; sendCalls: any[]; stopCalls: any[]; reset: () => void };

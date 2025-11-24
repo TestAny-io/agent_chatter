@@ -367,12 +367,18 @@ export class ConversationCoordinator {
       await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId, memberConfig);
 
       // 准备上下文消息
-      const contextMessages: PromptContextMessage[] = this.getRecentMessages(this.contextMessageCount).map(msg => ({
+      let contextMessages: PromptContextMessage[] = this.getRecentMessages(this.contextMessageCount).map(msg => ({
         from: msg.speaker.roleName,
         to: msg.routing?.resolvedAddressees?.map(r => r.roleName).join(', '),
         content: msg.content,
         timestamp: new Date(msg.timestamp)
       }));
+
+      // 如果最新一条与当前 message 内容相同（典型 AI->AI 路由场景），去掉它避免重复
+      const lastCtx = contextMessages[contextMessages.length - 1];
+      if (lastCtx && lastCtx.content === message) {
+        contextMessages = contextMessages.slice(0, -1);
+      }
 
       const prompt = buildPrompt({
         agentType: normalizeAgentType(member.agentType),

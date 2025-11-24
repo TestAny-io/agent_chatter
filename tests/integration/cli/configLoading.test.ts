@@ -11,7 +11,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { execSync } from 'child_process';
 
-describe('CLI Config Loading Integration Tests', () => {
+describe.sequential('CLI Config Loading Integration Tests', () => {
     let testDir: string;
     let originalCwd: string;
     const CLI_PATH = path.join(__dirname, '..', '..', '..', 'out', 'cli.js');

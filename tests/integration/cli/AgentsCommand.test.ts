@@ -2,24 +2,61 @@
  * Integration tests for /agents CLI commands
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from 'vitest';
 import { AgentRegistry } from '../../../src/registry/AgentRegistry.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
-describe('Agents CLI Commands (Integration)', () => {
+// 减少集成测试的外部调用/并发压力：
+// 1) Mock AgentScanner：避免真实扫描本机 CLI，返回固定结果
+// 2) Mock AgentValidator：避免重复执行 CLI 验证，只返回通过
+vi.mock('../../../src/registry/AgentScanner.js', () => {
+  class AgentScanner {
+    async scanAgents() {
+      return [
+        { name: 'claude', displayName: 'Claude Code', command: 'claude', found: true },
+        { name: 'codex', displayName: 'OpenAI Codex', command: 'codex', found: true },
+        { name: 'gemini', displayName: 'Google Gemini', command: 'gemini', found: true }
+      ];
+    }
+  }
+  return { AgentScanner };
+});
+
+vi.mock('../../../src/registry/AgentValidator.js', () => {
+  class AgentValidator {
+    async verify() {
+      return {
+        status: 'verified' as const,
+        checks: [
+          { name: 'Executable Check', passed: true, message: 'mocked executable check' },
+          { name: 'Version Check', passed: true, message: 'mocked version check' },
+          { name: 'Authentication Check', passed: true, message: 'mocked auth check' }
+        ]
+      };
+    }
+  }
+  return { AgentValidator };
+});
+
+describe.sequential('Agents CLI Commands (Integration)', () => {
   let testRegistryPath: string;
   let registry: AgentRegistry;
+  let tempRoot: string;
+
+  beforeAll(() => {
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-registry-cli-suite-'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
 
   beforeEach(() => {
-    // 创建临时测试目录
-    const testDir = path.join(
-      os.tmpdir(),
-      `agent-registry-cli-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    // 每个测试独立的 registry 文件，避免状态串扰
+    const testDir = path.join(tempRoot, `case-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     fs.mkdirSync(testDir, { recursive: true });
-
     testRegistryPath = path.join(testDir, 'config.json');
     registry = new AgentRegistry(testRegistryPath);
   });
