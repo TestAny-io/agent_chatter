@@ -10,23 +10,8 @@ import * as path from 'path';
 import { detectAllTools } from '../utils/ToolDetector.js';
 import { initializeServices, startConversation } from '../utils/ConversationStarter.js';
 import type { CLIConfig } from '../utils/ConversationStarter.js';
-
-// 颜色定义
-const colors = {
-    reset: '\x1b[0m',
-    bright: '\x1b[1m',
-    dim: '\x1b[2m',
-    cyan: '\x1b[36m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    red: '\x1b[31m',
-    blue: '\x1b[34m',
-    magenta: '\x1b[35m',
-};
-
-function c(text: string, color: keyof typeof colors): string {
-    return `${colors[color]}${text}${colors.reset}`;
-}
+import { colorize as c } from '../utils/colors.js';
+import { ConsoleOutput } from '../outputs/ConsoleOutput.js';
 
 export class ReplMode {
     private rl: readline.Interface;
@@ -78,7 +63,8 @@ export class ReplMode {
                 console.log();
                 console.log(c('Goodbye! 👋', 'cyan'));
                 console.log();
-                process.exit(0);
+                this.rl.close();
+                process.exitCode = 0;
             }
 
             // 处理退格
@@ -363,15 +349,15 @@ export class ReplMode {
         }
 
         try {
-            console.log();
-            console.log(c('Initializing services...', 'cyan'));
-            const { coordinator, team } = await initializeServices(this.currentConfig);
+            const output = new ConsoleOutput();
+            output.progress('Initializing services...');
+            const { coordinator, team } = await initializeServices(this.currentConfig, {
+                output
+            });
 
-            await startConversation(coordinator, team, initialMessage);
+            await startConversation(coordinator, team, initialMessage, undefined, output);
 
-            console.log();
-            console.log(c('Conversation ended. You can start another one with /start', 'cyan'));
-            console.log();
+            output.info('Conversation ended. You can start another one with /start');
         } catch (error) {
             console.log(c(`Error: ${error}`, 'red'));
         }
@@ -389,7 +375,6 @@ export class ReplMode {
 
             if (!shouldContinue) {
                 this.rl.close();
-                process.exit(0);
             } else {
                 this.rl.prompt();
             }
@@ -401,7 +386,8 @@ export class ReplMode {
                 console.log(c('Goodbye! 👋', 'cyan'));
                 console.log();
             }
-            process.exit(0);
+            this.isRunning = false;
+            process.exitCode = 0;
         });
 
         // 显示初始提示符

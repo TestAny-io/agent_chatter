@@ -17,21 +17,9 @@ import type { ConversationMessage } from '../models/ConversationMessage.js';
 import { AgentRegistry, type VerificationResult } from '../registry/AgentRegistry.js';
 import type { AgentDefinition as RegistryAgentDefinition } from '../registry/RegistryStorage.js';
 import { EventEmitter } from 'events';
-
-const colors = {
-  reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  dim: '\x1b[2m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  blue: '\x1b[34m',
-};
-
-function colorize(text: string, color: keyof typeof colors): string {
-  return `${colors[color]}${text}${colors.reset}`;
-}
+import { colorize } from './colors.js';
+import type { IOutput } from '../outputs/IOutput.js';
+import { SilentOutput } from '../outputs/IOutput.js';
 
 export interface AgentDefinition {
   name: string;
@@ -103,20 +91,7 @@ export interface InitializeServicesOptions {
   registryPath?: string;  // Optional registry path for testing
   onAgentStarted?: (member: Member) => void;  // Callback when agent starts thinking (REPL UI)
   onAgentCompleted?: (member: Member) => void;  // Callback when agent completes (REPL UI)
-}
-
-/**
- * 显示消息
- */
-function displayMessage(message: ConversationMessage): void {
-  const speaker = message.speaker;
-  const timestamp = new Date(message.timestamp).toLocaleTimeString();
-  const nameColor = speaker.type === 'ai' ? 'cyan' : 'green';
-
-  console.log('');
-  console.log(colorize(`[${timestamp}] ${speaker.roleTitle}:`, nameColor));
-  console.log(message.content);
-  console.log(colorize('─'.repeat(60), 'dim'));
+  output?: IOutput;
 }
 
 /**
@@ -176,7 +151,8 @@ function ensureDir(targetPath: string, label: string): void {
   try {
     fs.mkdirSync(targetPath, { recursive: true });
   } catch (error) {
-    console.warn(colorize(`⚠ 无法创建 ${label}: ${targetPath} (${String(error)})`, 'yellow'));
+    // warning handled by caller via output
+    throw new Error(`⚠ 无法创建 ${label}: ${targetPath} (${String(error)})`);
   }
 }
 
@@ -253,7 +229,7 @@ export function loadInstructionContent(filePath?: string): string | undefined {
       return fs.readFileSync(filePath, 'utf-8');
     }
   } catch (error) {
-    console.warn(colorize(`⚠ 无法读取指令文件 ${filePath}: ${String(error)}`, 'yellow'));
+    // Ignore read errors in Phase 1; caller can decide to surface warnings if needed
   }
   return undefined;
 }
@@ -344,6 +320,7 @@ export async function initializeServices(
   eventEmitter: EventEmitter;
   contextCollector: import('../services/ContextEventCollector.js').ContextEventCollector;
 }> {
+  const output: IOutput = options?.output ?? new SilentOutput();
   // Enforce Schema 1.1: Reject all other versions
   // Support Schema 1.1 and 1.2
   if (config.schemaVersion !== '1.1' && config.schemaVersion !== '1.2') {
@@ -409,7 +386,7 @@ export async function initializeServices(
       const isFirstVerification = !verification;
 
       if (isFirstVerification) {
-        console.log(colorize(`正在验证 agent: ${member.agentType}...`, 'dim'));
+        output.progress(`正在验证 agent: ${member.agentType}...`);
         verification = await registry.verifyAgent(member.agentType);
         verificationCache.set(member.agentType, verification);
 
@@ -418,20 +395,20 @@ export async function initializeServices(
           if (verification.checks) {
             errorMsg += '\n详细检查结果:';
             for (const check of verification.checks) {
-              const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
+              const status = check.passed ? '✓' : '✗';
               errorMsg += `\n  ${status} ${check.name}: ${check.message}`;
             }
           }
           throw new Error(errorMsg);
         }
-        console.log(colorize(`✓ Agent ${member.agentType} 验证成功`, 'green'));
+        output.success(`✓ Agent ${member.agentType} 验证成功`);
       } else {
-        console.log(colorize(`✓ Agent ${member.agentType} (使用缓存的验证结果)`, 'dim'));
+        output.progress(`✓ Agent ${member.agentType} (使用缓存的验证结果)`);
       }
 
       env = buildEnv(member.agentType, member);
 
-      console.log(colorize(`  工作目录: ${projectRoot} (来源: 启动目录)`, 'dim'));
+      output.keyValue('工作目录', `${projectRoot} (来源: 启动目录)`);
 
       // Map agent type name to adapter type
       const adapterType = member.agentType === 'claude' ? 'claude-code' :
@@ -489,10 +466,13 @@ export async function initializeServices(
     {
       contextMessageCount: options?.contextMessageCount ?? 5,
       onMessage: options?.onMessage ?? ((message: ConversationMessage) => {
-        displayMessage(message);
+        const speaker = message.speaker;
+        const timestamp = new Date(message.timestamp).toLocaleTimeString();
+        output.info(`[${timestamp}] ${speaker.roleTitle}: ${message.content}`);
+        output.separator();
       }),
       onStatusChange: options?.onStatusChange ?? ((status: ConversationStatus) => {
-        console.log(colorize(`[Status] ${status}`, 'dim'));
+        output.progress(`[Status] ${status}`);
       }),
       onUnresolvedAddressees: options?.onUnresolvedAddressees,
       conversationConfig: config.conversation,  // Pass conversation config
@@ -512,21 +492,22 @@ export async function startConversation(
   coordinator: ConversationCoordinator,
   team: Team,
   initialMessage: string,
-  firstSpeaker?: string
+  firstSpeaker?: string,
+  output: IOutput = new SilentOutput()
 ): Promise<void> {
   const firstSpeakerId = firstSpeaker
     ? team.members.find(r => r.name === firstSpeaker)?.id
     : team.members[0].id;
 
   if (!firstSpeakerId) {
-    console.error(colorize('Error: Invalid first speaker', 'red'));
+    output.error('Error: Invalid first speaker');
     return;
   }
 
-  console.log(colorize('\n=== 对话开始 ===\n', 'bright'));
-  console.log(colorize(`初始消息: ${initialMessage}`, 'blue'));
-  console.log(colorize(`第一个发言者: ${team.members.find(r => r.id === firstSpeakerId)?.displayName}`, 'blue'));
-  console.log(colorize('─'.repeat(60), 'dim'));
+  output.separator();
+  output.info(`初始消息: ${initialMessage}`);
+  output.info(`第一个发言者: ${team.members.find(r => r.id === firstSpeakerId)?.displayName}`);
+  output.separator('─', 60);
 
   await coordinator.startConversation(team, initialMessage, firstSpeakerId);
 
@@ -543,7 +524,7 @@ export async function startConversation(
         isWaitingForInput = false;
 
         if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
-          console.log(colorize('\n用户终止对话', 'yellow'));
+          output.warn('用户终止对话');
           coordinator.stop();
           clearInterval(checkInterval);
         } else {
@@ -555,7 +536,7 @@ export async function startConversation(
     const session = (coordinator as any).session;
     if (session && session.status === 'completed') {
       clearInterval(checkInterval);
-      console.log(colorize('\n=== 对话结束 ===\n', 'bright'));
+      output.separator();
     }
   }, 500);
 }

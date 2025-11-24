@@ -8,23 +8,7 @@ import { Command } from 'commander';
 import * as readline from 'readline';
 import { AgentRegistry } from '../registry/AgentRegistry.js';
 import type { AgentType } from '../utils/AgentDefaults.js';
-
-// 颜色输出辅助函数
-const colors = {
-  reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  dim: '\x1b[2m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  blue: '\x1b[34m',
-  magenta: '\x1b[35m',
-};
-
-function colorize(text: string, color: keyof typeof colors): string {
-  return `${colors[color]}${text}${colors.reset}`;
-}
+import { colorize } from '../utils/colors.js';
 
 /**
  * 创建 readline 接口

@@ -5,6 +5,7 @@ import * as path from 'path';
 import { initializeServices } from '../../src/utils/ConversationStarter.js';
 import type { CLIConfig } from '../../src/utils/ConversationStarter.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
+import type { IOutput } from '../../src/outputs/IOutput.js';
 
 // Mock AgentValidator to avoid calling real CLI commands in CI
 vi.mock('../../src/registry/AgentValidator.js', () => {
@@ -211,4 +212,60 @@ describe('ConversationStarter integration', () => {
     const { team } = await initializeServices(config, { registryPath: tempRegistryPath });
     expect(team.members[0].systemInstruction).toBeUndefined();
   }, 30000); // Increased timeout for real-time verification
+
+  it('emits progress and success via provided output implementation', async () => {
+    const aiRoleDir = path.join(tempDir, 'dev', 'alpha');
+    const observerDir = path.join(tempDir, 'observer');
+    fs.mkdirSync(aiRoleDir, { recursive: true });
+    fs.mkdirSync(observerDir, { recursive: true });
+    fs.writeFileSync(path.join(aiRoleDir, 'AGENTS.md'), 'Instructions');
+
+    const config: CLIConfig = {
+      schemaVersion: '1.1',
+      agents: [{ name: 'claude', args: ['--output-format=stream-json'], usePty: false }],
+      team: {
+        name: 'output-team',
+        description: 'output test',
+        members: [
+          {
+            displayName: 'Claude Dev',
+            name: 'claude-dev',
+            type: 'ai',
+            role: 'developer',
+            agentType: 'claude',
+            roleDir: aiRoleDir
+          },
+          {
+            displayName: 'Observer',
+            name: 'obs',
+            type: 'human',
+            role: 'observer',
+            roleDir: observerDir
+          }
+        ]
+      }
+    };
+
+    class MockOutput implements IOutput {
+      calls: Array<{ method: string; args: any[] }> = [];
+      info(message: string): void { this.calls.push({ method: 'info', args: [message] }); }
+      success(message: string): void { this.calls.push({ method: 'success', args: [message] }); }
+      warn(message: string): void { this.calls.push({ method: 'warn', args: [message] }); }
+      error(message: string): void { this.calls.push({ method: 'error', args: [message] }); }
+      progress(message: string): void { this.calls.push({ method: 'progress', args: [message] }); }
+      separator(char?: string, length?: number): void { this.calls.push({ method: 'separator', args: [char, length] }); }
+      keyValue(key: string, value: string): void { this.calls.push({ method: 'keyValue', args: [key, value] }); }
+    }
+
+    const output = new MockOutput();
+    await initializeServices(config, { registryPath: tempRegistryPath, output });
+
+    const progressCall = output.calls.find(c => c.method === 'progress');
+    const successCall = output.calls.find(c => c.method === 'success');
+    const keyValueCall = output.calls.find(c => c.method === 'keyValue' && String(c.args[0]).includes('工作目录'));
+
+    expect(progressCall).toBeTruthy();
+    expect(successCall).toBeTruthy();
+    expect(keyValueCall).toBeTruthy();
+  }, 30000);
 });

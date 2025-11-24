@@ -6,7 +6,7 @@
  * 让多个 CLI AI agents 自动对话的命令行工具
  */
 
-import { Command } from 'commander';
+import { Command, CommanderError } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,12 +19,15 @@ import {
   type CLIConfig,
 } from './utils/ConversationStarter.js';
 import { createAgentsCommand } from './commands/AgentsCommand.js';
+import { ConsoleOutput } from './outputs/ConsoleOutput.js';
+import type { IOutput } from './outputs/IOutput.js';
 import {
   getTeamConfigDir,
   ensureTeamConfigDir,
   resolveTeamConfigPath,
   formatMissingConfigError
 } from './utils/TeamConfigPaths.js';
+import { colorize } from './utils/colors.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -35,29 +38,13 @@ const VERSION = packageJson.version;
 
 const program = new Command();
 
-// 颜色输出辅助函数（简单版本，不依赖 chalk 避免 ESM 问题）
-const colors = {
-    reset: '\x1b[0m',
-    bright: '\x1b[1m',
-    dim: '\x1b[2m',
-    cyan: '\x1b[36m',
-    green: '\x1b[32m',
-    yellow: '\x1b[33m',
-    red: '\x1b[31m',
-    blue: '\x1b[34m',
-    magenta: '\x1b[35m',
-};
-
-function colorize(text: string, color: keyof typeof colors): string {
-    return `${colors[color]}${text}${colors.reset}`;
-}
-
 /**
  * 显示工具状态
  */
-function displayToolStatus(tools: ToolStatus[], showHeader: boolean = true): void {
+function displayToolStatus(tools: ToolStatus[], output: IOutput, showHeader: boolean = true): void {
     if (showHeader) {
-        console.log(colorize('\n=== AI CLI 工具检测 ===\n', 'bright'));
+        output.separator();
+        output.info('=== AI CLI 工具检测 ===');
     }
 
     const installed: ToolStatus[] = [];
@@ -72,28 +59,28 @@ function displayToolStatus(tools: ToolStatus[], showHeader: boolean = true): voi
     });
 
     if (installed.length > 0) {
-        console.log(colorize('✓ 已安装的工具:', 'green'));
+        output.success('✓ 已安装的工具:');
         installed.forEach(tool => {
-            const version = tool.version ? colorize(` (v${tool.version})`, 'dim') : '';
-            console.log(`  ${colorize('●', 'green')} ${tool.displayName}${version}`);
+            const version = tool.version ? ` (v${tool.version})` : '';
+            output.info(`  ● ${tool.displayName}${version}`);
         });
-        console.log();
+        output.separator();
     }
 
     if (notInstalled.length > 0) {
-        console.log(colorize('✗ 未安装的工具:', 'yellow'));
+        output.warn('✗ 未安装的工具:');
         notInstalled.forEach(tool => {
-            console.log(`  ${colorize('○', 'dim')} ${tool.displayName}`);
+            output.info(`  ○ ${tool.displayName}`);
             if (tool.installHint) {
-                console.log(colorize(`    安装方式: ${tool.installHint}`, 'dim'));
+                output.info(`    安装方式: ${tool.installHint}`);
             }
         });
-        console.log();
+        output.separator();
     }
 
     if (installed.length === 0) {
-        console.log(colorize('⚠ 警告: 没有检测到任何 AI CLI 工具', 'yellow'));
-        console.log(colorize('  请先安装至少一个 AI CLI 工具才能使用 Agent Chatter\n', 'yellow'));
+        output.warn('⚠ 警告: 没有检测到任何 AI CLI 工具');
+        output.warn('  请先安装至少一个 AI CLI 工具才能使用 Agent Chatter');
     }
 }
 
@@ -102,36 +89,30 @@ function displayToolStatus(tools: ToolStatus[], showHeader: boolean = true): voi
  */
 function loadConfig(configPath: string): CLIConfig {
     const readConfig = (file: string): CLIConfig => {
-        try {
-            const content = fs.readFileSync(file, 'utf-8');
-            const config = JSON.parse(content);
+        const content = fs.readFileSync(file, 'utf-8');
+        const config = JSON.parse(content);
 
-            // Apply conversation config defaults
-            if (!config.conversation) {
-                config.conversation = {};
-            }
-            if (config.conversation.maxAgentResponseTime === undefined) {
-                config.conversation.maxAgentResponseTime = 1800000;  // 30 minutes
-            }
-            if (config.conversation.showThinkingTimer === undefined) {
-                config.conversation.showThinkingTimer = true;
-            }
-            if (config.conversation.allowEscCancel === undefined) {
-                config.conversation.allowEscCancel = true;
-            }
-
-            return config;
-        } catch (error) {
-            console.error(colorize(`Error: Failed to parse config file: ${error}`, 'red'));
-            process.exit(1);
+        // Apply conversation config defaults
+        if (!config.conversation) {
+            config.conversation = {};
         }
+        if (config.conversation.maxAgentResponseTime === undefined) {
+            config.conversation.maxAgentResponseTime = 1800000;  // 30 minutes
+        }
+        if (config.conversation.showThinkingTimer === undefined) {
+            config.conversation.showThinkingTimer = true;
+        }
+        if (config.conversation.allowEscCancel === undefined) {
+            config.conversation.allowEscCancel = true;
+        }
+
+        return config;
     };
 
     const resolution = resolveTeamConfigPath(configPath);
 
     if (!resolution.exists) {
-        console.error(colorize(formatMissingConfigError(configPath, resolution), 'red'));
-        process.exit(1);
+        throw new Error(formatMissingConfigError(configPath, resolution));
     }
 
     if (resolution.warning) {
@@ -161,29 +142,27 @@ program
     .option('-m, --message <text>', '初始消息', 'Hello!')
     .option('-s, --speaker <name>', '第一个发言者的名称')
     .action(async (options) => {
-        try {
-            // 检测已安装的工具
-            console.log(colorize('正在检测系统中的 AI CLI 工具...', 'cyan'));
-            const tools = await detectAllTools();
-            displayToolStatus(tools, true);
+        const output = new ConsoleOutput({ colors: true, verbose: true });
+        // 检测已安装的工具
+        output.progress('正在检测系统中的 AI CLI 工具...');
+        const tools = await detectAllTools();
+        displayToolStatus(tools, output, true);
 
-            // 加载配置
-            const config = loadConfig(options.config);
+        // 加载配置
+        const config = loadConfig(options.config);
 
-            // 获取全局 registry 选项
-            const registryPath = program.opts().registry;
+        // 获取全局 registry 选项
+        const registryPath = program.opts().registry;
 
-            // 初始化服务
-            console.log(colorize('正在初始化服务...', 'cyan'));
-            const { coordinator, team } = await initializeServices(config, { registryPath });
+        // 初始化服务
+        output.progress('正在初始化服务...');
+        const { coordinator, team } = await initializeServices(config, {
+            registryPath,
+            output
+        });
 
-            // 启动对话
-            await startConversation(coordinator, team, options.message, options.speaker);
-
-        } catch (error) {
-            console.error(colorize(`Error: ${error}`, 'red'));
-            process.exit(1);
-        }
+        // 启动对话
+        await startConversation(coordinator, team, options.message, options.speaker, output);
     });
 
 program
@@ -262,22 +241,41 @@ program
     .command('status')
     .description('检测系统中已安装的 AI CLI 工具')
     .action(async () => {
-        try {
-            console.log(colorize('正在检测系统中的 AI CLI 工具...', 'cyan'));
-            const tools = await detectAllTools();
-            displayToolStatus(tools, true);
+        const output = new ConsoleOutput({ colors: true, verbose: true });
+        output.progress('正在检测系统中的 AI CLI 工具...');
+        const tools = await detectAllTools();
+        displayToolStatus(tools, output, true);
 
-            console.log(colorize('提示:', 'cyan'));
-            console.log('  - 使用 ' + colorize('agent-chatter start', 'bright') + ' 启动对话');
-            console.log('  - 使用 ' + colorize('agent-chatter config-example', 'bright') + ' 生成示例配置文件\n');
-        } catch (error) {
-            console.error(colorize(`Error: ${error}`, 'red'));
-            process.exit(1);
-        }
+        output.info('提示:');
+        output.info('  - 使用 agent-chatter start 启动对话');
+        output.info('  - 使用 agent-chatter config-example 生成示例配置文件');
     });
 
 // 添加 agents 命令
 program.addCommand(createAgentsCommand());
 
-// 解析命令行参数
-program.parse();
+program.exitOverride();
+
+export async function run(argv: string[]): Promise<void> {
+    const fallbackOutput = new ConsoleOutput({ colors: true, verbose: true });
+    try {
+        await program.parseAsync(argv);
+    } catch (err: unknown) {
+        if (err instanceof CommanderError) {
+            if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') {
+                process.exitCode = 0;
+                return;
+            }
+            process.exitCode = err.exitCode ?? 1;
+            fallbackOutput.error(err.message);
+            return;
+        }
+        fallbackOutput.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+        process.exitCode = 1;
+    }
+}
+
+const invokedAsEntry = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+if (invokedAsEntry) {
+    void run(process.argv);
+}
