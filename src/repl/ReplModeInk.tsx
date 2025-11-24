@@ -706,16 +706,28 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 );
             case 'tool.started':
                 {
+                    const formatTodos = (todos: any[]) => {
+                        const names = todos
+                            .map(t => t?.content)
+                            .filter(Boolean)
+                            .join(' | ');
+                        return names ? `todos: ${names}` : '';
+                    };
+
                     const displayParam =
                         ev.input?.command ||
                         ev.input?.pattern ||
                         ev.input?.file_path ||
                         ev.input?.path ||
-                        ev.toolId ||
+                        (Array.isArray(ev.input?.todos) ? formatTodos(ev.input?.todos) : '') ||
+                        ev.input?.notebook_path ||
+                        ev.input?.prompt ||
                         '';
                     return (
                         <Text key={key} color="yellow">
-                            ⏺ {ev.toolName ?? 'tool'} ({displayParam})
+                            {displayParam
+                                ? `⏺ ${ev.toolName ?? 'tool'} (${displayParam})`
+                                : `⏺ ${ev.toolName ?? 'tool'}`}
                         </Text>
                     );
                 }

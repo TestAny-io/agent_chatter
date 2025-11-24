@@ -19,15 +19,15 @@ When Claude agent uses tools, the UI displays internal tool IDs (e.g., `toolu_01
 
 **Problem:** The tool ID `toolu_01QbLDLcKXwk3LU1V52RY14L` should not be displayed to users.
 
-**Expected:** Either show meaningful parameter or show nothing, e.g.:
+**Expected:** Show task contents from the input:
 ```
-⏺ TodoWrite
+⏺ TodoWrite (Review code, Run tests, Deploy to production)
 ⎿  Todos have been modified successfully...
 ```
 
-Or if there's useful input info:
+Or if no meaningful info available, just show tool name:
 ```
-⏺ TodoWrite (todos array)
+⏺ TodoWrite
 ⎿  Todos have been modified successfully...
 ```
 
@@ -248,7 +248,11 @@ function getToolDisplayParam(ev: AgentEvent): string {
     case 'Task':
       return input?.subagent_type ? `subagent: ${input.subagent_type}` : '';
     case 'TodoWrite':
-      return input?.todos ? `${input.todos.length} items` : '';
+      if (input?.todos && Array.isArray(input.todos)) {
+        const contents = input.todos.map((t: any) => t.content).filter(Boolean);
+        return contents.length > 0 ? contents.join(', ') : '';
+      }
+      return '';
     case 'AskUserQuestion':
       return input?.questions ? `${input.questions.length} questions` : '';
     // Default: no param
@@ -275,7 +279,7 @@ case 'tool.started':
 **Result:**
 ```
 ⏺ Bash (npm test)
-⏺ TodoWrite (5 items)                ← Informative!
+⏺ TodoWrite (Review code, Run tests, Deploy to production)  ← Shows task contents!
 ⏺ AskUserQuestion (2 questions)      ← Informative!
 ⏺ Task (subagent: Explore)           ← Informative!
 ⏺ Read (/path/to/file.ts)

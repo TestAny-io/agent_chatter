@@ -8,7 +8,7 @@ const baseContext = [
 ];
 
 describe('PromptBuilder', () => {
-  it('merges system instruction and file content, inlines for codex/gemini', () => {
+  it('merges system instruction and file content, inlines for codex', () => {
     const out = buildPrompt({
       agentType: 'openai-codex',
       systemInstructionText: 'SYS',
@@ -25,6 +25,28 @@ describe('PromptBuilder', () => {
     expect(out.prompt).toContain('A -> B: one');
     expect(out.prompt).toContain('[MESSAGE]');
     expect(out.prompt).toContain('MSG');
+  });
+
+  it('builds gemini prompt without bracketed tags', () => {
+    const out = buildPrompt({
+      agentType: 'google-gemini',
+      systemInstructionText: 'SYS',
+      instructionFileText: 'FILE',
+      contextMessages: baseContext,
+      message: 'MSG',
+      maxBytes: 1024 * 1024
+    });
+    expect(out.systemFlag).toBeUndefined();
+    expect(out.prompt).toContain('Instructions:');
+    expect(out.prompt).toContain('SYS');
+    expect(out.prompt).toContain('FILE');
+    expect(out.prompt).toContain('Conversation so far:');
+    expect(out.prompt).toContain('A -> B: one');
+    expect(out.prompt).toContain('User message:');
+    expect(out.prompt).toContain('MSG');
+    expect(out.prompt).not.toContain('[SYSTEM]');
+    expect(out.prompt).not.toContain('[CONTEXT]');
+    expect(out.prompt).not.toContain('[MESSAGE]');
   });
 
   it('uses systemFlag for claude and prompt only has context+message', () => {
