@@ -190,25 +190,37 @@ describe('AgentValidator', () => {
   });
 
   describe('checkAuthentication - Gemini', () => {
-    it('checks for Gemini credentials file', async () => {
+    it('checks for Gemini credentials file in default locations', async () => {
       const agent = createTestAgent('gemini', 'node');
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-home-'));
+      const geminiDir = path.join(tempDir, '.gemini');
+      fs.mkdirSync(geminiDir, { recursive: true });
+      fs.writeFileSync(path.join(geminiDir, 'credentials.json'), JSON.stringify({ access_token: 'token' }));
+
+      const originalHome = process.env.HOME;
+      process.env.HOME = tempDir;
 
       const result = await validator.verify(agent);
 
       const authCheck = result.checks?.find(c => c.name === 'Authentication Check');
       expect(authCheck).toBeDefined();
       expect(typeof authCheck?.passed).toBe('boolean');
+
+      process.env.HOME = originalHome;
     });
 
-    it('returns authentication status message', async () => {
+    it('checks XDG/GEMINI_CONFIG_DIR fallback', async () => {
       const agent = createTestAgent('gemini', 'node');
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-config-'));
+      process.env.GEMINI_CONFIG_DIR = tempDir;
+      fs.writeFileSync(path.join(tempDir, 'credentials.json'), JSON.stringify({ refresh_token: 'token' }));
 
       const result = await validator.verify(agent);
 
       const authCheck = result.checks?.find(c => c.name === 'Authentication Check');
-      expect(authCheck?.message).toBeDefined();
-      expect(typeof authCheck?.message).toBe('string');
-      expect(authCheck?.message.length).toBeGreaterThan(0);
+      expect(authCheck?.passed).toBe(true);
+      expect(authCheck?.message).toContain('Authenticated');
+      delete process.env.GEMINI_CONFIG_DIR;
     });
   });
 

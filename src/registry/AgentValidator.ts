@@ -343,10 +343,23 @@ export class AgentValidator {
    */
   private async checkGeminiAuth(command: string): Promise<CheckResult> {
     try {
-      // Gemini 使用 OAuth 凭证文件
-      const credPath = path.join(os.homedir(), '.gemini', 'credentials.json');
+      // Gemini 使用 OAuth 凭证文件，路径因版本/安装方式而异
+      const candidates: string[] = [];
+      const home = os.homedir();
+      const xdgConfig = process.env.XDG_CONFIG_HOME ? path.resolve(process.env.XDG_CONFIG_HOME) : path.join(home, '.config');
+      const customConfig = process.env.GEMINI_CONFIG_DIR;
 
-      if (!fs.existsSync(credPath)) {
+      if (customConfig) {
+        candidates.push(path.join(customConfig, 'credentials.json'));
+      }
+      candidates.push(
+        path.join(home, '.gemini', 'credentials.json'),
+        path.join(xdgConfig, 'gemini', 'credentials.json')
+      );
+
+      const credPath = candidates.find(p => fs.existsSync(p));
+
+      if (!credPath) {
         return {
           name: 'Authentication Check',
           passed: false,
