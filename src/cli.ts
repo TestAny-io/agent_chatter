@@ -262,7 +262,14 @@ export async function run(argv: string[]): Promise<void> {
         await program.parseAsync(argv);
     } catch (err: unknown) {
         if (err instanceof CommanderError) {
-            if (err.code === 'commander.helpDisplayed' || err.code === 'commander.version') {
+            if (err.code === 'commander.helpDisplayed') {
+                // Help was displayed, exit gracefully
+                process.exitCode = 0;
+                return;
+            }
+            if (err.code === 'commander.version') {
+                // Version was requested, output it
+                console.log(program.version());
                 process.exitCode = 0;
                 return;
             }
