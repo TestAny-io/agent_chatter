@@ -201,6 +201,49 @@ describe('ConversationCoordinator', () => {
     sendSpy.mockRestore();
   });
 
+  it('processes queued NEXT before falling back to human when current message has no NEXT', async () => {
+    const stub = new StubAgentManager({});
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router);
+
+    const ai1 = createMember({ id: 'ai-alpha', name: 'alpha', type: 'ai', agentConfigId: 'config-alpha', order: 0 });
+    const ai2 = createMember({ id: 'ai-beta', name: 'beta', type: 'ai', agentConfigId: 'config-beta', order: 1 });
+    const ai3 = createMember({ id: 'ai-gamma', name: 'gamma', type: 'ai', agentConfigId: 'config-gamma', order: 2 });
+    const human = createMember({ id: 'human-1', name: 'human', type: 'human', order: 3 });
+    const team = buildTeam([ai1, ai2, ai3, human]);
+
+    // seed team/session
+    (coordinator as any).team = team;
+    (coordinator as any).session = SessionUtils.createSession(team.id, team.name, 'start', ai1.id);
+
+    // 预先在队列中放入待处理路由
+    (coordinator as any).routingQueue = [
+      { member: ai2, content: 'queued-task' },
+      { member: ai3, content: 'queued-task' }
+    ];
+
+    const sendSpy = vi
+      .spyOn(ConversationCoordinator.prototype as any, 'sendToAgent')
+      .mockResolvedValue(undefined);
+
+    const message: ConversationMessage = {
+      id: 'm-no-next',
+      content: 'no next markers',
+      speaker: { roleId: ai1.id, roleName: ai1.name, roleTitle: ai1.displayName, type: 'ai' },
+      routing: { rawNextMarkers: [], resolvedAddressees: [], isDone: false }
+    } as any;
+
+    await (coordinator as any).routeToNext(message);
+
+    expect(sendSpy).toHaveBeenCalledTimes(2);
+    expect(sendSpy).toHaveBeenNthCalledWith(1, ai2, 'queued-task');
+    expect(sendSpy).toHaveBeenNthCalledWith(2, ai3, 'queued-task');
+    expect((coordinator as any).waitingForRoleId).toBeNull(); // 未立即 fallback 到 human
+
+    sendSpy.mockRestore();
+  });
+
   it('AI message with [DONE] continues to next agent, not terminating conversation', async () => {
     // NEW BEHAVIOR: When AI returns "[DONE]", it only indicates the agent's reply is complete.
     // The conversation should continue to the next agent (via round-robin), not terminate.

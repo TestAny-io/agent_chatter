@@ -264,7 +264,13 @@ export class ConversationCoordinator {
     let resolvedMembers: Member[] = [];
 
     if (addressees.length === 0) {
-      // 没有指定接收者，兜底路由到第一个 human 成员
+      // 没有指定接收者，如果队列已有待处理路由则继续处理队列
+      if (this.routingQueue.length > 0) {
+        await this.processRoutingQueue();
+        return;
+      }
+
+      // 队列为空，兜底路由到第一个 human 成员
       const firstHuman = this.team.members.find(m => m.type === 'human');
       if (firstHuman) {
         resolvedMembers = [firstHuman];
@@ -441,6 +447,12 @@ export class ConversationCoordinator {
       if (!response.success && process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.error(`[Debug][AgentResult] ${member.id} finished with ${response.finishReason}`);
+      }
+
+      // 如果路由队列中已有待处理的 NEXT，优先继续处理队列
+      if (this.routingQueue.length > 0) {
+        await this.processRoutingQueue();
+        return;
       }
 
       // 将本轮 agent 输出记录到会话并路由下一位（使用完整摘要文本做路由，不截断）
