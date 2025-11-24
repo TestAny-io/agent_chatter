@@ -53,6 +53,8 @@ export class ConversationCoordinator {
   private contextMessageCount: number;
   private waitingForRoleId: string | null = null;  // 等待哪个角色的输入
   private currentExecutingMember: Member | null = null;  // Currently executing agent (for cancellation)
+  private routingQueue: Array<{ member: Member; content: string }> = [];
+  private routingInProgress = false;
   /**
    * 获取下一个轮到的成员（循环轮询）
    */
@@ -249,23 +251,10 @@ export class ConversationCoordinator {
     let resolvedMembers: Member[] = [];
 
     if (addressees.length === 0) {
-      // 没有指定接收者，使用轮询机制选择下一个成员
-      const currentMember = this.team.members.find(m => m.id === message.speaker.roleId);
-      if (currentMember) {
-        // 根据 order 字段找到下一个成员
-        const sortedMembers = [...this.team.members].sort((a, b) => a.order - b.order);
-        const currentIndex = sortedMembers.findIndex(m => m.id === currentMember.id);
-        const nextIndex = (currentIndex + 1) % sortedMembers.length;
-        resolvedMembers = [sortedMembers[nextIndex]];
-      } else {
-        // 找不到当前成员，暂停对话
-        this.status = 'paused';
-        this.notifyStatusChange();
-        if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.error('[Debug][Routing] No current member found; pausing conversation');
-        }
-        return;
+      // 没有指定接收者，兜底路由到第一个 human 成员
+      const firstHuman = this.team.members.find(m => m.type === 'human');
+      if (firstHuman) {
+        resolvedMembers = [firstHuman];
       }
     } else {
       // 解析接收者
@@ -304,19 +293,34 @@ export class ConversationCoordinator {
       );
     }
 
-    // 发送给所有接收者
+    // 入队并串行处理
     for (const member of resolvedMembers) {
       const delivery = this.prepareDelivery(member, message.content);
+      this.routingQueue.push({ member, content: delivery.content });
+    }
+    await this.processRoutingQueue();
+  }
+
+  private async processRoutingQueue(): Promise<void> {
+    if (this.routingInProgress) return;
+    this.routingInProgress = true;
+
+    while (this.routingQueue.length > 0) {
+      const { member, content } = this.routingQueue.shift()!;
 
       if (member.type === 'ai') {
-        await this.sendToAgent(member, delivery.content);
-      } else {
-        // 人类接收者，暂停对话
-        this.waitingForRoleId = member.id;
-        this.status = 'paused';
-        this.notifyStatusChange();
+        await this.sendToAgent(member, content);
+        continue;
       }
+
+      // human: 暂停并等待输入，保留队列顺序
+      this.waitingForRoleId = member.id;
+      this.status = 'paused';
+      this.notifyStatusChange();
+      break;
     }
+
+    this.routingInProgress = false;
   }
 
   /**

@@ -45,13 +45,15 @@ export class MessageRouter {
     while ((match = this.NEXT_PATTERN.exec(message)) !== null) {
       const addresseeList = match[1];
       if (addresseeList && addresseeList.trim()) {
-        // 分割多个接收者（用逗号分隔）
         const names = addresseeList
           .split(',')
           .map(name => name.trim())
           .filter(name => name.length > 0);
 
-        addressees.push(...names);
+        // 只接受单个收件人；逗号形式视为无效并跳过
+        if (names.length === 1) {
+          addressees.push(names[0]);
+        }
       }
     }
 
