@@ -107,6 +107,9 @@ export class ConversationCoordinator {
     this.status = 'active';
     this.notifyStatusChange();
 
+    // 解析初始消息中的 [NEXT]，预先排队后续路由（第一个发言者由 firstSpeakerId 决定）
+    const initialParsed = this.messageRouter.parseMessage(initialMessage);
+
     // 创建初始消息记录（作为 system 消息）
     // 这样后续 agent 可以在 context 中看到初始任务
     const initialSystemMessage: ConversationMessage = MessageUtils.createSystemMessage(
@@ -119,6 +122,16 @@ export class ConversationCoordinator {
     const firstMember = team.members.find(m => m.id === firstSpeakerId);
     if (!firstMember) {
       throw new Error(`Member ${firstSpeakerId} not found in team`);
+    }
+
+    // 预先排队 initial NEXT：过滤掉第一个发言者自身，剩余的按出现顺序入队
+    if (initialParsed.addressees.length > 0) {
+      const initialResolved = this.resolveAddressees(initialParsed.addressees);
+      const filtered = initialResolved.filter((m, idx) => !(idx === 0 && m.id === firstMember.id));
+      for (const member of filtered) {
+        const delivery = this.prepareDelivery(member, initialParsed.cleanContent);
+        this.routingQueue.push({ member, content: delivery.content });
+      }
     }
 
     if (firstMember.type === 'ai') {

@@ -175,6 +175,32 @@ describe('ConversationCoordinator', () => {
     expect(helper).toBe('alpha');
   });
 
+  it('seeds routing queue with multiple NEXT markers from initial message, skipping first speaker', async () => {
+    const stub = new StubAgentManager({});
+    const agentManager = stub as unknown as AgentManager;
+    const router = new MessageRouter();
+
+    const ai1 = createMember({ id: 'ai-alpha', name: 'alpha', type: 'ai', agentConfigId: 'config-alpha', order: 0 });
+    const ai2 = createMember({ id: 'ai-beta', name: 'beta', type: 'ai', agentConfigId: 'config-beta', order: 1 });
+    const ai3 = createMember({ id: 'ai-gamma', name: 'gamma', type: 'ai', agentConfigId: 'config-gamma', order: 2 });
+    const team = buildTeam([ai1, ai2, ai3]);
+
+    const coordinator = new ConversationCoordinator(agentManager, router);
+    const sendSpy = vi
+      .spyOn(ConversationCoordinator.prototype as any, 'sendToAgent')
+      .mockResolvedValue(undefined);
+
+    await coordinator.startConversation(team, 'task [NEXT:ai-alpha][NEXT:ai-beta][NEXT:ai-gamma]', ai1.id);
+
+    // 第一条由 firstSpeaker 调用，后续 NEXT 入队（不含首个发言者）
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+    const queue = (coordinator as any).routingQueue;
+    expect(queue.map((q: any) => q.member.id)).toEqual(['ai-beta', 'ai-gamma']);
+    expect(queue.map((q: any) => q.content)).toEqual(['task', 'task']);
+
+    sendSpy.mockRestore();
+  });
+
   it('AI message with [DONE] continues to next agent, not terminating conversation', async () => {
     // NEW BEHAVIOR: When AI returns "[DONE]", it only indicates the agent's reply is complete.
     // The conversation should continue to the next agent (via round-robin), not terminate.
