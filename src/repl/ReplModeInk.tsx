@@ -1665,7 +1665,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             // Parse initial message for [NEXT:xxx] directive
             const parseResult = messageRouter.parseMessage(initialMessage);
             let firstSpeakerId = team.members[0].id;
-            let cleanMessage = initialMessage;
 
             if (parseResult.addressees.length > 0) {
                 // Try to find the member specified in [NEXT:xxx]
@@ -1687,7 +1686,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
                 if (targetMember) {
                     firstSpeakerId = targetMember.id;
-                    cleanMessage = parseResult.cleanContent; // Use cleaned message without [NEXT] markers
                     setOutput(prev => [...prev,
                         <Text key={`next-hint-${getNextKey()}`} dimColor>
                             → Starting with {targetMember.displayName} as specified in [NEXT] directive
@@ -1706,7 +1704,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setActiveTeam(team);
             setMode('conversation');
 
-            coordinator.startConversation(team, cleanMessage, firstSpeakerId);
+            // Pass original message with all [NEXT] markers to coordinator
+            // Coordinator will handle all routing internally
+            coordinator.startConversation(team, initialMessage, firstSpeakerId);
 
         } catch (error) {
             setOutput(prev => [...prev, <Text key={`start-err2-${getNextKey()}`} color="red">Error: {String(error)}</Text>]);

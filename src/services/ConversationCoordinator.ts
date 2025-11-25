@@ -127,10 +127,26 @@ export class ConversationCoordinator {
     // 预先排队 initial NEXT：过滤掉第一个发言者自身，剩余的按出现顺序入队
     if (initialParsed.addressees.length > 0) {
       const initialResolved = this.resolveAddressees(initialParsed.addressees);
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][StartConversation] Parsed addressees from initial message: ${JSON.stringify(initialParsed.addressees)}`);
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][StartConversation] Resolved to members: ${initialResolved.map(m => m.name).join(', ')}`);
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][StartConversation] First speaker: ${firstMember.name}`);
+      }
       const filtered = initialResolved.filter((m, idx) => !(idx === 0 && m.id === firstMember.id));
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][StartConversation] After filtering: ${filtered.map(m => m.name).join(', ')}`);
+      }
       for (const member of filtered) {
         const delivery = this.prepareDelivery(member, initialParsed.cleanContent);
         this.routingQueue.push({ member, content: delivery.content });
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error(`[Debug][StartConversation] Queued ${member.name} with content: ${delivery.content.substring(0, 50)}...`);
+        }
       }
     }
 
@@ -321,11 +337,26 @@ export class ConversationCoordinator {
   }
 
   private async processRoutingQueue(): Promise<void> {
-    if (this.routingInProgress) return;
+    if (this.routingInProgress) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('[Debug][ProcessQueue] Already in progress, skipping');
+      }
+      return;
+    }
     this.routingInProgress = true;
+
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(`[Debug][ProcessQueue] Processing queue with ${this.routingQueue.length} items`);
+    }
 
     while (this.routingQueue.length > 0) {
       const { member, content } = this.routingQueue.shift()!;
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][ProcessQueue] Processing ${member.name} (${member.type})`);
+      }
 
       if (member.type === 'ai') {
         await this.sendToAgent(member, content);
@@ -336,9 +367,17 @@ export class ConversationCoordinator {
       this.waitingForRoleId = member.id;
       this.status = 'paused';
       this.notifyStatusChange();
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error(`[Debug][ProcessQueue] Paused for human ${member.name}`);
+      }
       break;
     }
 
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error('[Debug][ProcessQueue] Finished processing queue');
+    }
     this.routingInProgress = false;
   }
 
