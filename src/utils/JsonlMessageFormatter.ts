@@ -79,8 +79,8 @@ export function formatJsonl(agentType: SupportedJsonlAgent | undefined, raw: str
         continue;
       }
 
-      // Gemini: message content (delta or full)
-      if (obj.type === 'message' && typeof obj.content === 'string') {
+      // Gemini: message content (delta or full) - only assistant messages
+      if (obj.type === 'message' && obj.role === 'assistant' && typeof obj.content === 'string') {
         parts.push(stripAnsi(obj.content));
         continue;
       }

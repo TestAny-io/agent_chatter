@@ -530,6 +530,7 @@ export class ConversationCoordinator {
         agentType: normalizeAgentType(member.agentType),
         systemInstructionText: member.systemInstruction,
         instructionFileText: member.instructionFileText,
+        teamTask: this.session?.teamTask,
         contextMessages,
         message
       });

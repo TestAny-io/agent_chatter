@@ -17,9 +17,19 @@ describe('JsonlMessageFormatter', () => {
   });
 
   it('parses Gemini message events', () => {
-    const raw = '{"type":"message","content":"Gemini hello"}\n{"type":"result"}';
+    // Gemini outputs both user (echo of prompt) and assistant messages
+    // We should only capture assistant messages
+    const raw = '{"type":"message","role":"user","content":"User prompt"}\n{"type":"message","role":"assistant","content":"Gemini hello"}\n{"type":"result"}';
     const result = formatJsonl('gemini', raw);
     expect(result.text).toBe('Gemini hello');
+    expect(result.completed).toBe(true);
+  });
+
+  it('filters out Gemini user role messages from multi-message output', () => {
+    // Delta messages should accumulate only assistant messages
+    const raw = '{"type":"message","role":"user","content":"User prompt"}\n{"type":"message","role":"assistant","content":"Part 1","delta":true}\n{"type":"message","role":"assistant","content":" Part 2","delta":true}\n{"type":"result"}';
+    const result = formatJsonl('gemini', raw);
+    expect(result.text).toBe('Part 1\n Part 2');
     expect(result.completed).toBe(true);
   });
 

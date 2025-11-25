@@ -21,6 +21,7 @@ interface PromptInput {
   agentType: 'claude-code' | 'openai-codex' | 'google-gemini' | string;
   systemInstructionText?: string;      // 配置字段
   instructionFileText?: string;        // 指令文件内容
+  teamTask?: string | null;            // [TEAM_TASK] 团队任务（会话级别）
   contextMessages: Array<{
     from: string;
     to?: string;
@@ -39,20 +40,25 @@ function buildPrompt(input: PromptInput): PromptOutput;
 ```
 
 ### 通用拼装模板（按优先级）
-1. `[SYSTEM]`  
-   - `systemInstructionText` + `instructionFileText` 合并；缺一补一。  
-   - 可选加“短角色摘要”防截断。
-2. `[CONTEXT]` 最近 N 条消息（默认 5），格式 `FROM -> TO: content`。
-3. `[MESSAGE]` 当前输入。
+1. `[SYSTEM]`
+   - `systemInstructionText` + `instructionFileText` 合并；缺一补一。
+   - 可选加"短角色摘要"防截断。
+2. `[TEAM_TASK]`（可选）
+   - 会话级别的团队任务，由用户通过 `[TEAM_TASK] xxx` 标记设置。
+   - 在整个会话期间保持不变，每轮都会发送给 Agent。
+3. `[CONTEXT]` 最近 N 条消息（默认 5），格式 `FROM -> TO: content`。
+4. `[MESSAGE]` 当前输入。
 
 ### Agent 特定策略
-- **Claude Code**：  
-  - 推荐 `systemFlag = [SYSTEM]...` 传 `--append-system-prompt`，`prompt = [CONTEXT][MESSAGE]` 传 `-p`。Stateless 分支需显式支持该 flag；若无法支持可退回全内联。
-- **Codex**：  
-  - 全部内联成一个字符串 `prompt = [SYSTEM][CONTEXT][MESSAGE]`。  
+- **Claude Code**：
+  - `systemFlag = [SYSTEM]...` 传 `--append-system-prompt`
+  - `prompt = [TEAM_TASK][CONTEXT][MESSAGE]` 传 `-p`
+  - Stateless 分支需显式支持该 flag；若无法支持可退回全内联。
+- **Codex**：
+  - 全部内联成一个字符串 `prompt = [SYSTEM][TEAM_TASK][CONTEXT][MESSAGE]`。
   - `--json` 只影响输出。
-- **Gemini**：  
-  - 同 Codex，内联字符串；CLI 会转为 parts。
+- **Gemini**：
+  - 同 Codex，内联字符串（不使用 `[SECTION]` 标记，而是 `Instructions:` / `Team Task:` / `Conversation so far:` / `User message:` 格式）；CLI 会转为 parts。
 
 ## 集成改动
 - `ConversationStarter`：构造成员时不再用指令文件覆盖配置字段；传递两者文本给 PromptBuilder。
@@ -72,8 +78,9 @@ function buildPrompt(input: PromptInput): PromptOutput;
 - 统一硬上限（适用于三种 Agent）：最终发送的字符串总长 < **768 KB**（UTF-8 字节），低于 macOS `ARG_MAX` 1 MB，避免“上一轮正常、下一轮爆掉”的不一致体验。
 - 优先级分段截断（在 PromptBuilder 内执行）：
   1. `[SYSTEM]`：必保留；如过长，先摘要/截断指令文件部分，保住配置字段和关键规则。
-  2. `[CONTEXT]`：如超预算，按时间顺序整条消息从最旧开始删除，直到满足长度（无需更细粒度）。
-  3. `[MESSAGE]`：当前输入。
+  2. `[TEAM_TASK]`：会话级任务，优先保留。
+  3. `[CONTEXT]`：如超预算，按时间顺序整条消息从最旧开始删除，直到满足长度（无需更细粒度）。
+  4. `[MESSAGE]`：当前输入。
 - 流程：拼装 → 计算 UTF-8 长度 → 若超 768 KB，按优先级裁剪；无法满足最小必要段时返回错误/提示（而非静默截断）。
 - 调试：DEBUG 模式下输出裁剪决策（如 `[SYSTEM] 摘要至 2 KB；CONTEXT 裁剪至 3 条`），便于诊断。
 
