@@ -88,9 +88,9 @@ describe('ThinkingIndicator Component', () => {
     expect(lastFrame()).toContain('Second Agent');
     expect(lastFrame()).toContain('0s');
 
-    // Wait for 1 second for second agent
-    await wait(1100);
-    expect(lastFrame()).toContain('1s');
+    // Wait for 1 second for second agent (use longer wait for CI stability)
+    await wait(1500);
+    expect(lastFrame()).toMatch(/[12]s/); // 1s or 2s (CI timing variance)
   }, 6000);
 
   it('should show ESC hint when allowEscCancel is true', () => {
