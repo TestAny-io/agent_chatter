@@ -20,10 +20,6 @@ vi.mock('../../../src/services/AgentManager.js', () => ({
   }
 }));
 
-vi.mock('../../../src/utils/PromptBuilder.js', () => ({
-  buildPrompt: vi.fn(() => ({ prompt: 'mock-prompt', systemFlag: undefined }))
-}));
-
 vi.mock('../../../src/utils/JsonlMessageFormatter.js', () => ({
   formatJsonl: vi.fn((type: string, raw: string) => ({ text: raw }))
 }));
@@ -130,10 +126,13 @@ describe('ConversationCoordinator Routing', () => {
     const team = buildTeam([ai1, ai2, ai3, human]);
 
     (coordinator as any).team = team;
-    (coordinator as any).session = SessionUtils.createSession(team.id, team.name);
+    const session = SessionUtils.createSession(team.id, team.name);
+    (coordinator as any).session = session;
+
+    // Bug 7 fix: routingQueue only stores { member }, content is looked up dynamically
     (coordinator as any).routingQueue = [
-      { member: ai2, content: 'queued-task' },
-      { member: ai3, content: 'queued-task' }
+      { member: ai2 },
+      { member: ai3 }
     ];
 
     const sendSpy = vi
@@ -147,11 +146,15 @@ describe('ConversationCoordinator Routing', () => {
       routing: { rawNextMarkers: [], resolvedAddressees: [] }
     } as any;
 
+    // Add message to session so processRoutingQueue can find latest content
+    session.messages.push(message);
+
     await (coordinator as any).routeToNext(message);
 
     expect(sendSpy).toHaveBeenCalledTimes(2);
-    expect(sendSpy).toHaveBeenNthCalledWith(1, ai2, 'queued-task');
-    expect(sendSpy).toHaveBeenNthCalledWith(2, ai3, 'queued-task');
+    // Content is now dynamically retrieved from latest message
+    expect(sendSpy).toHaveBeenNthCalledWith(1, ai2, 'no next markers');
+    expect(sendSpy).toHaveBeenNthCalledWith(2, ai3, 'no next markers');
     expect((coordinator as any).waitingForRoleId).toBeNull();
   });
 

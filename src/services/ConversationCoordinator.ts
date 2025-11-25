@@ -16,17 +16,16 @@
  */
 
 import type { Team, Member } from '../models/Team.js';
-import type { ConversationMessage, MessageDelivery } from '../models/ConversationMessage.js';
+import type { ConversationMessage } from '../models/ConversationMessage.js';
 import { MessageUtils } from '../models/ConversationMessage.js';
 import type { ConversationSession } from '../models/ConversationSession.js';
 import { SessionUtils } from '../models/ConversationSession.js';
 import { AgentManager } from './AgentManager.js';
 import { MessageRouter } from './MessageRouter.js';
 import type { ConversationConfig } from '../models/CLIConfig.js';
-import { buildPrompt, type PromptContextMessage } from '../utils/PromptBuilder.js';
 import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
-import type { ContextEventCollector, ContextSummary } from './ContextEventCollector.js';
-import type { AgentEvent } from '../events/AgentEvent.js';
+import { ContextManager } from '../context/ContextManager.js';
+import type { AgentType } from '../context/types.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -60,8 +59,9 @@ export class ConversationCoordinator {
   private contextMessageCount: number;
   private waitingForRoleId: string | null = null;  // 等待哪个角色的输入
   private currentExecutingMember: Member | null = null;  // Currently executing agent (for cancellation)
-  private routingQueue: Array<{ member: Member; content: string }> = [];
+  private routingQueue: Array<{ member: Member }> = [];
   private routingInProgress = false;
+  private contextManager: ContextManager;
   /**
    * 获取下一个轮到的成员（循环轮询）
    */
@@ -81,10 +81,14 @@ export class ConversationCoordinator {
   constructor(
     private agentManager: AgentManager,
     private messageRouter: MessageRouter,
-    private options: ConversationCoordinatorOptions = {},
-    private contextCollector?: ContextEventCollector
+    private options: ConversationCoordinatorOptions = {}
   ) {
     this.contextMessageCount = options.contextMessageCount || 5;
+
+    // Initialize ContextManager with matching window size
+    this.contextManager = new ContextManager({
+      contextWindowSize: this.contextMessageCount,
+    });
   }
 
   /**
@@ -95,6 +99,7 @@ export class ConversationCoordinator {
     this.session = null;
     this.waitingForRoleId = null;
     this.routingQueue = [];
+    this.contextManager.clear();
   }
 
   hasActiveSession(): boolean {
@@ -145,7 +150,7 @@ export class ConversationCoordinator {
       }
     );
 
-    this.session = SessionUtils.addMessageToSession(this.session, message);
+    this.storeMessage(message);
     this.notifyMessage(message);
 
     // Clear waitingForRoleId (if user buzzed in or responded)
@@ -228,35 +233,13 @@ export class ConversationCoordinator {
   }
 
   private updateTeamTask(newTask: string): void {
-    if (!this.session) return;
+    // Update ContextManager (handles truncation internally)
+    this.contextManager.setTeamTask(newTask);
 
-    const MAX_TEAM_TASK_BYTES = 5 * 1024; // 5KB limit
-    const taskBytes = Buffer.byteLength(newTask, 'utf-8');
-
-    if (taskBytes > MAX_TEAM_TASK_BYTES) {
-      // Truncate and warn
-      this.session.teamTask = this.truncateToBytes(newTask, MAX_TEAM_TASK_BYTES - 3) + '...';
-      // eslint-disable-next-line no-console
-      console.warn(
-        `Warning: Team task truncated from ${taskBytes} bytes to ${MAX_TEAM_TASK_BYTES} bytes (5KB limit).`
-      );
-    } else {
-      this.session.teamTask = newTask;
+    // Sync to session for backward compatibility
+    if (this.session) {
+      this.session.teamTask = this.contextManager.getTeamTask();
     }
-  }
-
-  private truncateToBytes(str: string, maxBytes: number): string {
-    let bytes = 0;
-    let truncated = '';
-
-    for (const char of str) {
-      const charBytes = Buffer.byteLength(char, 'utf-8');
-      if (bytes + charBytes > maxBytes) break;
-      truncated += char;
-      bytes += charBytes;
-    }
-
-    return truncated;
   }
 
   /**
@@ -297,7 +280,7 @@ export class ConversationCoordinator {
     );
 
     // 添加到历史
-    this.session = SessionUtils.addMessageToSession(this.session, message);
+    this.storeMessage(message);
     this.notifyMessage(message);
 
     // 路由到下一个接收者
@@ -337,7 +320,7 @@ export class ConversationCoordinator {
     );
 
     // 添加到历史
-    this.session = SessionUtils.addMessageToSession(this.session, message);
+    this.storeMessage(message);
     this.notifyMessage(message);
 
     // 恢复对话
@@ -416,10 +399,9 @@ export class ConversationCoordinator {
       );
     }
 
-    // 入队并串行处理
+    // 入队并串行处理（只存 member，处理时动态获取最新消息）
     for (const member of resolvedMembers) {
-      const delivery = this.prepareDelivery(member, message.content);
-      this.routingQueue.push({ member, content: delivery.content });
+      this.routingQueue.push({ member });
     }
     await this.processRoutingQueue();
   }
@@ -440,14 +422,19 @@ export class ConversationCoordinator {
     }
 
     while (this.routingQueue.length > 0) {
-      const { member, content } = this.routingQueue.shift()!;
+      const { member } = this.routingQueue.shift()!;
+
+      // 动态获取最新消息作为 [MESSAGE]
+      const latestMessage = this.session?.messages[this.session.messages.length - 1];
+      const messageContent = latestMessage?.content ?? '';
+
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error(`[Debug][ProcessQueue] Processing ${member.name} (${member.type})`);
+        console.error(`[Debug][ProcessQueue] Processing ${member.name} (${member.type}), latest message from: ${latestMessage?.speaker.roleName}`);
       }
 
       if (member.type === 'ai') {
-        await this.sendToAgent(member, content);
+        await this.sendToAgent(member, messageContent);
         continue;
       }
 
@@ -467,22 +454,6 @@ export class ConversationCoordinator {
       console.error('[Debug][ProcessQueue] Finished processing queue');
     }
     this.routingInProgress = false;
-  }
-
-  /**
-   * 准备消息交付（添加上下文）
-   */
-  private prepareDelivery(recipient: Member, content: string): MessageDelivery {
-    const contextMessages = this.getRecentMessages(this.contextMessageCount);
-
-    return {
-      recipient: {
-        roleId: recipient.id,
-        roleName: recipient.name
-      },
-      content,
-      context: contextMessages
-    };
   }
 
   /**
@@ -512,28 +483,18 @@ export class ConversationCoordinator {
       // 确保 Agent 已启动
       await this.agentManager.ensureAgentStarted(member.id, member.agentConfigId, memberConfig);
 
-      // 准备上下文消息
-      let contextMessages: PromptContextMessage[] = this.getRecentMessages(this.contextMessageCount).map(msg => ({
-        from: msg.speaker.roleName,
-        to: msg.routing?.resolvedAddressees?.map(r => r.roleName).join(', '),
-        content: msg.content,
-        timestamp: new Date(msg.timestamp)
-      }));
+      // Use ContextManager to prepare context and assemble prompt
+      const agentType = normalizeAgentType(member.agentType) as AgentType;
+      const contextInput = this.contextManager.getContextForAgent(
+        member.id,
+        agentType,
+        {
+          systemInstruction: member.systemInstruction,
+          instructionFileText: member.instructionFileText,
+        }
+      );
 
-      // 如果最新一条与当前 message 内容相同（典型 AI->AI 路由场景），去掉它避免重复
-      const lastCtx = contextMessages[contextMessages.length - 1];
-      if (lastCtx && lastCtx.content === message) {
-        contextMessages = contextMessages.slice(0, -1);
-      }
-
-      const prompt = buildPrompt({
-        agentType: normalizeAgentType(member.agentType),
-        systemInstructionText: member.systemInstruction,
-        instructionFileText: member.instructionFileText,
-        teamTask: this.session?.teamTask,
-        contextMessages,
-        message
-      });
+      const prompt = this.contextManager.assemblePrompt(agentType, contextInput);
 
       // Get timeout from conversation config (default: 30 minutes)
       const maxTimeout = this.options.conversationConfig?.maxAgentResponseTime ?? 1800000;
@@ -580,27 +541,6 @@ export class ConversationCoordinator {
       // 如果路由队列中已有待处理的 NEXT，优先继续处理队列
       if (this.routingQueue.length > 0) {
         await this.processRoutingQueue();
-        return;
-      }
-
-      // 将本轮 agent 输出记录到会话并路由下一位（使用完整摘要文本做路由，不截断）
-      const summary = this.contextCollector?.getRecentSummaries(1).find(s => s.agentId === member.id);
-      if (summary) {
-        const parsed = this.messageRouter.parseMessage(summary.text);
-        const messageEntry: ConversationMessage = MessageUtils.createMessage(
-          member.id,
-          member.name,
-          member.displayName,
-          member.type,
-          parsed.cleanContent,
-          {
-            rawNextMarkers: parsed.addressees,
-            resolvedAddressees: []
-          }
-        );
-        this.session = SessionUtils.addMessageToSession(this.session!, messageEntry);
-        this.notifyMessage(messageEntry);
-        await this.routeToNext(messageEntry);
         return;
       }
 
@@ -689,44 +629,6 @@ export class ConversationCoordinator {
   }
 
   /**
-   * 获取最近的 N 条消息
-   */
-  private getRecentMessages(count: number): ConversationMessage[] {
-    if (!this.session) {
-      return [];
-    }
-
-    const messages = this.session.messages;
-    return messages.slice(-count);
-  }
-
-  /**
-   * 获取最近的 N 条上下文，优先使用事件汇总，回退到消息历史
-   */
-  private getRecentContext(count: number): PromptContextMessage[] {
-    const summaries: ContextSummary[] = this.contextCollector
-      ? this.contextCollector.getRecentSummaries(count)
-      : [];
-
-    if (summaries.length > 0) {
-      return summaries.slice(-count).map(s => ({
-        from: s.agentName ?? s.agentId,
-        to: undefined,
-        content: s.text,
-        timestamp: new Date(s.timestamp)
-      }));
-    }
-
-    // Fallback: original message history
-    return this.getRecentMessages(count).map(msg => ({
-      from: msg.speaker.roleName,
-      to: msg.routing?.resolvedAddressees?.map(r => r.roleName).join(', '),
-      content: msg.content,
-      timestamp: new Date(msg.timestamp)
-    }));
-  }
-
-  /**
    * 处理对话完成
    */
   private handleConversationComplete(): void {
@@ -741,6 +643,26 @@ export class ConversationCoordinator {
 
     // 停止所有 Agent
     this.agentManager.cleanup();
+  }
+
+  /**
+   * Store message in both session and ContextManager
+   * This keeps both data stores in sync
+   */
+  private storeMessage(message: ConversationMessage): void {
+    // Add to session (for backward compatibility)
+    if (this.session) {
+      this.session = SessionUtils.addMessageToSession(this.session, message);
+    }
+
+    // Add to ContextManager (new system)
+    // ContextManager expects message without ID, but will ignore if one exists
+    this.contextManager.addMessage({
+      timestamp: message.timestamp,
+      speaker: message.speaker,
+      content: message.content,
+      routing: message.routing,
+    });
   }
 
   /**

@@ -408,8 +408,7 @@ export async function initializeServices(
       conversationConfig: config.conversation,
       onAgentStarted: options?.onAgentStarted,
       onAgentCompleted: options?.onAgentCompleted
-    },
-    contextCollector
+    }
   );
 
   return { coordinator, team, processManager, messageRouter, agentManager, eventEmitter, contextCollector };

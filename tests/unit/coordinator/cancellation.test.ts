@@ -19,10 +19,6 @@ vi.mock('../../../src/services/AgentManager.js', () => ({
   }
 }));
 
-vi.mock('../../../src/utils/PromptBuilder.js', () => ({
-  buildPrompt: vi.fn(() => ({ prompt: 'mock-prompt', systemFlag: undefined }))
-}));
-
 vi.mock('../../../src/utils/JsonlMessageFormatter.js', () => ({
   formatJsonl: vi.fn((type: string, raw: string) => ({ text: raw }))
 }));
