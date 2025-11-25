@@ -234,10 +234,16 @@ export class AgentManager {
         for (const event of events) {
           this.eventEmitter.emit('agent-event', event);
 
-          // Accumulate text from text events (all agents emit text events for message content)
-          // Skip reasoning text (internal thoughts) - only accumulate message content
-          if (event.type === 'text' && event.text && event.category !== 'reasoning') {
-            accumulatedText += event.text;
+          // Accumulate text from text events for routing queue
+          // Only accumulate from 'result' category (Claude's final result) or 'message' category (Codex/Gemini)
+          // Skip 'assistant-message' (streaming chunks) and 'reasoning' (internal thoughts) to avoid duplicates
+          if (event.type === 'text' && event.text) {
+            const category = event.category;
+            // Claude: use 'result' (final complete response from result event)
+            // Codex/Gemini: use 'message' or undefined (their text events are final)
+            if (category === 'result' || category === 'message' || category === undefined) {
+              accumulatedText += event.text;
+            }
           }
 
           if (event.type === 'turn.completed' && !hasCompleted) {
