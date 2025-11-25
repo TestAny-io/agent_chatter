@@ -1,75 +1,27 @@
 /**
- * ConversationStarter - 启动对话的共享工具
+ * ServiceInitializer - 服务初始化器
+ *
+ * 负责初始化所有核心服务（从 ConversationStarter 迁移）
+ * 提供 initializeServices 函数用于 CLI 和 REPL
  */
 
-import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ConversationCoordinator, type ConversationStatus } from '../services/ConversationCoordinator.js';
-import { AgentManager } from '../services/AgentManager.js';
+import { ConversationCoordinator, type ConversationStatus } from './ConversationCoordinator.js';
+import { AgentManager } from './AgentManager.js';
 import { ProcessManager } from '../infrastructure/ProcessManager.js';
-import { MessageRouter } from '../services/MessageRouter.js';
-import { AgentConfigManager } from '../services/AgentConfigManager.js';
-import { TeamManager } from '../services/TeamManager.js';
+import { MessageRouter } from './MessageRouter.js';
+import { AgentConfigManager } from './AgentConfigManager.js';
+import { TeamManager } from './TeamManager.js';
 import { MockStorageService } from '../infrastructure/StorageService.js';
 import type { Team, Member } from '../models/Team.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
+import type { CLIConfig, AgentDefinition, TeamMemberConfig } from '../models/CLIConfig.js';
 import { AgentRegistry, type VerificationResult } from '../registry/AgentRegistry.js';
 import type { AgentDefinition as RegistryAgentDefinition } from '../registry/RegistryStorage.js';
 import { EventEmitter } from 'events';
-import { colorize } from './colors.js';
 import type { IOutput } from '../outputs/IOutput.js';
 import { SilentOutput } from '../outputs/IOutput.js';
-
-export interface AgentDefinition {
-  name: string;
-  command?: string; // Optional in schema 1.1 when referencing registry agent
-  args?: string[];
-  usePty?: boolean;
-}
-
-export interface RoleDefinitionConfig {
-  name: string;
-  displayName?: string;
-  description?: string;
-}
-
-export interface TeamMemberConfig {
-  displayName: string;
-  name: string;
-  displayRole?: string;
-  role: string;
-  type: 'ai' | 'human';
-  agentType?: string;
-  themeColor?: string;
-  roleDir: string;
-  instructionFile?: string;
-  env?: Record<string, string>;
-  systemInstruction?: string; // Schema 1.2+
-}
-
-export interface TeamConfig {
-  name: string;
-  displayName?: string;
-  description: string;
-  instructionFile?: string;
-  roleDefinitions?: RoleDefinitionConfig[];
-  members: TeamMemberConfig[];
-}
-
-export interface ConversationConfig {
-  maxAgentResponseTime?: number;  // Maximum timeout for agent response in ms (default: 1800000 = 30 minutes)
-  showThinkingTimer?: boolean;     // Show timer when agent is thinking in REPL (default: true)
-  allowEscCancel?: boolean;         // Allow ESC key to cancel agent execution in REPL (default: true)
-}
-
-export interface CLIConfig {
-  schemaVersion?: string;
-  agents?: AgentDefinition[]; // Optional in schema 1.1+, agents loaded from global registry
-  team: TeamConfig;
-  maxRounds?: number;
-  conversation?: ConversationConfig;  // Conversation-level configuration
-}
 
 interface NormalizedAgent {
   name: string;
@@ -95,71 +47,15 @@ export interface InitializeServicesOptions {
 }
 
 /**
- * 等待用户输入
+ * Check if args array contains a flag
  */
-function waitForUserInput(prompt: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(colorize(prompt, 'yellow'), (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
-}
-
-function normalizeAgentDefinitions(agents: AgentDefinition[]): Map<string, NormalizedAgent> {
-  const map = new Map<string, NormalizedAgent>();
-  for (const agent of agents) {
-    if (!agent.command) {
-      throw new Error(`Agent "${agent.name}" is missing command field. This function requires complete agent definitions.`);
-    }
-    map.set(agent.name, {
-      name: agent.name,
-      command: agent.command,
-      args: agent.args ?? [],
-      usePty: agent.usePty
-    });
-  }
-  return map;
-}
-
-export function resolveInstructionFile(member: TeamMemberConfig, roleDir: string): string | undefined {
-  const defaultFileName = member.agentType
-    ? member.agentType.toLowerCase().includes('gemini')
-      ? 'GEMINI.md'
-      : member.agentType.toLowerCase().includes('claude')
-        ? 'CLAUDE.md'
-        : 'AGENTS.md'
-    : 'README.md';
-
-  const target = member.instructionFile ?? defaultFileName;
-  if (!target) {
-    return undefined;
-  }
-
-  if (path.isAbsolute(target)) {
-    return target;
-  }
-  return path.resolve(roleDir, target);
-}
-
-function ensureDir(targetPath: string, label: string): void {
-  try {
-    fs.mkdirSync(targetPath, { recursive: true });
-  } catch (error) {
-    // warning handled by caller via output
-    throw new Error(`⚠ 无法创建 ${label}: ${targetPath} (${String(error)})`);
-  }
-}
-
 export function hasFlag(args: string[], flag: string): boolean {
   return args.some(arg => arg === flag || arg.startsWith(`${flag}=`));
 }
 
+/**
+ * Add bypass args for different agent types
+ */
 export function withBypassArgs(agentType: string, baseArgs: string[]): string[] {
   const args = [...baseArgs];
 
@@ -197,9 +93,41 @@ export function withBypassArgs(agentType: string, baseArgs: string[]): string[] 
   return args;
 }
 
-export function normalizeMemberPaths(
-  member: TeamMemberConfig
-): NormalizedPaths {
+/**
+ * Resolve instruction file path for a team member
+ */
+export function resolveInstructionFile(member: TeamMemberConfig, roleDir: string): string | undefined {
+  const defaultFileName = member.agentType
+    ? member.agentType.toLowerCase().includes('gemini')
+      ? 'GEMINI.md'
+      : member.agentType.toLowerCase().includes('claude')
+        ? 'CLAUDE.md'
+        : 'AGENTS.md'
+    : 'README.md';
+
+  const target = member.instructionFile ?? defaultFileName;
+  if (!target) {
+    return undefined;
+  }
+
+  if (path.isAbsolute(target)) {
+    return target;
+  }
+  return path.resolve(roleDir, target);
+}
+
+function ensureDir(targetPath: string, label: string): void {
+  try {
+    fs.mkdirSync(targetPath, { recursive: true });
+  } catch (error) {
+    throw new Error(`Cannot create ${label}: ${targetPath} (${String(error)})`);
+  }
+}
+
+/**
+ * Normalize member paths (roleDir and instructionFile)
+ */
+export function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
   const roleDir = path.resolve(member.roleDir);
   const instructionFile = resolveInstructionFile(member, roleDir);
 
@@ -208,6 +136,9 @@ export function normalizeMemberPaths(
   return { roleDir, instructionFile };
 }
 
+/**
+ * Build environment variables for agent
+ */
 export function buildEnv(agentType: string | undefined, member: TeamMemberConfig): Record<string, string> {
   const env: Record<string, string> = {};
 
@@ -220,6 +151,9 @@ export function buildEnv(agentType: string | undefined, member: TeamMemberConfig
   return env;
 }
 
+/**
+ * Load instruction file content
+ */
 export function loadInstructionContent(filePath?: string): string | undefined {
   if (!filePath) {
     return undefined;
@@ -228,15 +162,14 @@ export function loadInstructionContent(filePath?: string): string | undefined {
     if (fs.existsSync(filePath)) {
       return fs.readFileSync(filePath, 'utf-8');
     }
-  } catch (error) {
-    // Ignore read errors in Phase 1; caller can decide to surface warnings if needed
+  } catch {
+    // Ignore read errors
   }
   return undefined;
 }
 
 /**
- * 从全局 registry 加载 agents 并与 team 配置合并
- * Schema 1.1: Team config 可以引用 registry agent 并覆盖 args/usePty
+ * Load and merge agents from global registry with team config
  */
 async function loadAndMergeAgents(
   teamAgents: AgentDefinition[] | undefined,
@@ -306,7 +239,7 @@ async function loadAndMergeAgents(
 }
 
 /**
- * 初始化服务和团队
+ * Initialize all services and create team
  */
 export async function initializeServices(
   config: CLIConfig,
@@ -318,11 +251,11 @@ export async function initializeServices(
   messageRouter: MessageRouter;
   agentManager: AgentManager;
   eventEmitter: EventEmitter;
-  contextCollector: import('../services/ContextEventCollector.js').ContextEventCollector;
+  contextCollector: import('./ContextEventCollector.js').ContextEventCollector;
 }> {
   const output: IOutput = options?.output ?? new SilentOutput();
-  // Enforce Schema 1.1: Reject all other versions
-  // Support Schema 1.1 and 1.2
+
+  // Enforce Schema 1.1+: Reject older versions
   if (config.schemaVersion !== '1.1' && config.schemaVersion !== '1.2') {
     const foundVersion = config.schemaVersion || 'missing';
     throw new Error(
@@ -351,13 +284,12 @@ export async function initializeServices(
   const agentManager = new AgentManager(processManager, agentConfigManager);
   const projectRoot = process.cwd();
   const eventEmitter = agentManager.getEventEmitter();
-  const contextCollector = new (await import('../services/ContextEventCollector.js')).ContextEventCollector(eventEmitter, {
+  const contextCollector = new (await import('./ContextEventCollector.js')).ContextEventCollector(eventEmitter, {
     projectRoot,
     persist: true
   });
 
-  // Schema 1.1+: Load and merge agents from global registry with team config
-  // Schema 1.0: Team config provides complete definitions (backward compatibility)
+  // Load and merge agents from global registry with team config
   const registryPath = options?.registryPath;
   const agentDefinitionMap = await loadAndMergeAgents(config.agents, registryPath);
   const teamMembers: Array<Omit<Member, 'id'>> = [];
@@ -373,48 +305,46 @@ export async function initializeServices(
 
     if (member.type === 'ai') {
       if (!member.agentType) {
-        throw new Error(`AI 成员 "${member.name}" 缺少 agentType`);
+        throw new Error(`AI member "${member.name}" is missing agentType`);
       }
       const agentDef = agentDefinitionMap.get(member.agentType);
       if (!agentDef) {
-        throw new Error(`未找到 agentType "${member.agentType}" 的定义`);
+        throw new Error(`Agent type "${member.agentType}" definition not found`);
       }
 
       // Real-time verification: Validate agent before starting conversation
-      // Use cached verification result if agent was already verified
       let verification = verificationCache.get(member.agentType);
       const isFirstVerification = !verification;
 
       if (isFirstVerification) {
-        output.progress(`正在验证 agent: ${member.agentType}...`);
+        output.progress(`Verifying agent: ${member.agentType}...`);
         verification = await registry.verifyAgent(member.agentType);
         verificationCache.set(member.agentType, verification);
 
         if (verification.status !== 'verified') {
-          let errorMsg = `Agent "${member.agentType}" 验证失败: ${verification.error || 'Unknown error'}`;
+          let errorMsg = `Agent "${member.agentType}" verification failed: ${verification.error || 'Unknown error'}`;
           if (verification.checks) {
-            errorMsg += '\n详细检查结果:';
+            errorMsg += '\nDetailed check results:';
             for (const check of verification.checks) {
-              const status = check.passed ? '✓' : '✗';
+              const status = check.passed ? 'PASS' : 'FAIL';
               errorMsg += `\n  ${status} ${check.name}: ${check.message}`;
             }
           }
           throw new Error(errorMsg);
         }
-        output.success(`✓ Agent ${member.agentType} 验证成功`);
+        output.success(`Agent ${member.agentType} verified`);
       } else {
-        output.progress(`✓ Agent ${member.agentType} (使用缓存的验证结果)`);
+        output.progress(`Agent ${member.agentType} (using cached verification)`);
       }
 
       env = buildEnv(member.agentType, member);
-
-      output.keyValue('工作目录', `${projectRoot} (来源: 启动目录)`);
+      output.keyValue('Working directory', `${projectRoot} (from: startup directory)`);
 
       // Map agent type name to adapter type
       const adapterType = member.agentType === 'claude' ? 'claude-code' :
                           member.agentType === 'codex' ? 'openai-codex' :
                           member.agentType === 'gemini' ? 'google-gemini' :
-                          member.agentType; // fallback to member.agentType for custom agents
+                          member.agentType;
 
       const agentArgs = withBypassArgs(member.agentType, agentDef.args);
 
@@ -475,68 +405,12 @@ export async function initializeServices(
         output.progress(`[Status] ${status}`);
       }),
       onUnresolvedAddressees: options?.onUnresolvedAddressees,
-      conversationConfig: config.conversation,  // Pass conversation config
-      onAgentStarted: options?.onAgentStarted,  // Pass agent started callback
-      onAgentCompleted: options?.onAgentCompleted  // Pass agent completed callback
+      conversationConfig: config.conversation,
+      onAgentStarted: options?.onAgentStarted,
+      onAgentCompleted: options?.onAgentCompleted
     },
     contextCollector
   );
 
   return { coordinator, team, processManager, messageRouter, agentManager, eventEmitter, contextCollector };
-}
-
-/**
- * 启动对话
- */
-export async function startConversation(
-  coordinator: ConversationCoordinator,
-  team: Team,
-  initialMessage: string,
-  firstSpeaker?: string,
-  output: IOutput = new SilentOutput()
-): Promise<void> {
-  const firstSpeakerId = firstSpeaker
-    ? team.members.find(r => r.name === firstSpeaker)?.id
-    : team.members[0].id;
-
-  if (!firstSpeakerId) {
-    output.error('Error: Invalid first speaker');
-    return;
-  }
-
-  output.separator();
-  output.info(`初始消息: ${initialMessage}`);
-  output.info(`第一个发言者: ${team.members.find(r => r.id === firstSpeakerId)?.displayName}`);
-  output.separator('─', 60);
-
-  await coordinator.startConversation(team, initialMessage, firstSpeakerId);
-
-  let isWaitingForInput = false;
-  const checkInterval = setInterval(async () => {
-    const waitingRoleId = coordinator.getWaitingForRoleId();
-
-    if (waitingRoleId && !isWaitingForInput) {
-      const role = team.members.find(r => r.id === waitingRoleId);
-
-      if (role && role.type === 'human') {
-        isWaitingForInput = true;
-        const userInput = await waitForUserInput(`\n${role.displayName}, 请输入你的消息: `);
-        isWaitingForInput = false;
-
-        if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
-          output.warn('用户终止对话');
-          coordinator.stop();
-          clearInterval(checkInterval);
-        } else {
-          coordinator.injectMessage(waitingRoleId, userInput);
-        }
-      }
-    }
-
-    const session = (coordinator as any).session;
-    if (session && session.status === 'completed') {
-      clearInterval(checkInterval);
-      output.separator();
-    }
-  }, 500);
 }

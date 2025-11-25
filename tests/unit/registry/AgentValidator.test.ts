@@ -163,6 +163,27 @@ describe('AgentValidator', () => {
       expect(authCheck?.message).toBeDefined();
       expect(typeof authCheck?.message).toBe('string');
     });
+
+    it('accepts environment variable API key', async () => {
+      const agent = createTestAgent('claude', 'node');
+      const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+      const originalClaude = process.env.CLAUDE_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'test-key';
+      delete process.env.CLAUDE_API_KEY;
+
+      const result = await validator.verify(agent);
+
+      const authCheck = result.checks?.find(c => c.name === 'Authentication Check');
+      expect(authCheck?.passed).toBe(true);
+      expect(authCheck?.message).toContain('environment');
+
+      process.env.ANTHROPIC_API_KEY = originalAnthropic;
+      if (originalClaude === undefined) {
+        delete process.env.CLAUDE_API_KEY;
+      } else {
+        process.env.CLAUDE_API_KEY = originalClaude;
+      }
+    });
   });
 
   describe('checkAuthentication - Codex', () => {
@@ -186,6 +207,31 @@ describe('AgentValidator', () => {
       expect(typeof authCheck?.message).toBe('string');
       // Message 应该包含认证相关的信息
       expect(authCheck?.message.length).toBeGreaterThan(0);
+    });
+
+    it('accepts environment variable API key', async () => {
+      const agent = createTestAgent('codex', 'node');
+      const originalOpenai = process.env.OPENAI_API_KEY;
+      const originalCodex = process.env.CODEX_API_KEY;
+      process.env.OPENAI_API_KEY = 'test-key';
+      delete process.env.CODEX_API_KEY;
+
+      const result = await validator.verify(agent);
+
+      const authCheck = result.checks?.find(c => c.name === 'Authentication Check');
+      expect(authCheck?.passed).toBe(true);
+      expect(authCheck?.message).toContain('environment');
+
+      if (originalOpenai === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalOpenai;
+      }
+      if (originalCodex === undefined) {
+        delete process.env.CODEX_API_KEY;
+      } else {
+        process.env.CODEX_API_KEY = originalCodex;
+      }
     });
   });
 
@@ -221,6 +267,31 @@ describe('AgentValidator', () => {
       expect(authCheck?.passed).toBe(true);
       expect(authCheck?.message).toContain('Authenticated');
       delete process.env.GEMINI_CONFIG_DIR;
+    });
+
+    it('accepts environment variable API key', async () => {
+      const agent = createTestAgent('gemini', 'node');
+      const originalGemini = process.env.GEMINI_API_KEY;
+      const originalGoogle = process.env.GOOGLE_API_KEY;
+      process.env.GEMINI_API_KEY = 'test-key';
+      delete process.env.GOOGLE_API_KEY;
+
+      const result = await validator.verify(agent);
+
+      const authCheck = result.checks?.find(c => c.name === 'Authentication Check');
+      expect(authCheck?.passed).toBe(true);
+      expect(authCheck?.message).toContain('environment');
+
+      if (originalGemini === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalGemini;
+      }
+      if (originalGoogle === undefined) {
+        delete process.env.GOOGLE_API_KEY;
+      } else {
+        process.env.GOOGLE_API_KEY = originalGoogle;
+      }
     });
   });
 

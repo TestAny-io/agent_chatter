@@ -16,9 +16,8 @@ export interface ConversationSession {
   updatedAt: Date;
   status: 'active' | 'paused' | 'completed';
 
-  // 初始参数
-  initialMessage: string;
-  firstSpeakerId: string;
+  // 团队任务上下文
+  teamTask: string | null;
 
   // 消息历史
   messages: ConversationMessage[];
@@ -41,9 +40,7 @@ export class SessionUtils {
 
   static createSession(
     teamId: string,
-    teamName: string,
-    initialMessage: string,
-    firstSpeakerId: string
+    teamName: string
   ): ConversationSession {
     const now = new Date();
     return {
@@ -54,8 +51,7 @@ export class SessionUtils {
       createdAt: now,
       updatedAt: now,
       status: 'active',
-      initialMessage,
-      firstSpeakerId,
+      teamTask: null,
       messages: [],
       stats: {
         totalMessages: 0,

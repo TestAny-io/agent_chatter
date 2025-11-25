@@ -13,12 +13,29 @@ import * as os from 'os';
 // 2) Mock AgentValidator：避免重复执行 CLI 验证，只返回通过
 vi.mock('../../../src/registry/AgentScanner.js', () => {
   class AgentScanner {
-    async scanAgents() {
+    async scanAll() {
       return [
         { name: 'claude', displayName: 'Claude Code', command: 'claude', found: true },
         { name: 'codex', displayName: 'OpenAI Codex', command: 'codex', found: true },
         { name: 'gemini', displayName: 'Google Gemini', command: 'gemini', found: true }
       ];
+    }
+    async scan(agentType: string) {
+      const agents: Record<string, any> = {
+        claude: { name: 'claude', displayName: 'Claude Code', command: 'claude', found: true },
+        codex: { name: 'codex', displayName: 'OpenAI Codex', command: 'codex', found: true },
+        gemini: { name: 'gemini', displayName: 'Google Gemini', command: 'gemini', found: true }
+      };
+      return agents[agentType] || { name: agentType, displayName: agentType, command: agentType, found: false };
+    }
+    createAgentDefinition(scanned: any) {
+      return {
+        name: scanned.name,
+        displayName: scanned.displayName,
+        command: scanned.command,
+        version: scanned.version,
+        installedAt: new Date().toISOString()
+      };
     }
   }
   return { AgentScanner };
@@ -26,8 +43,9 @@ vi.mock('../../../src/registry/AgentScanner.js', () => {
 
 vi.mock('../../../src/registry/AgentValidator.js', () => {
   class AgentValidator {
-    async verify() {
+    async verify(agent: { name: string }) {
       return {
+        name: agent.name,
         status: 'verified' as const,
         checks: [
           { name: 'Executable Check', passed: true, message: 'mocked executable check' },

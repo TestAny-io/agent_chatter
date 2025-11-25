@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -8,11 +8,9 @@ import {
   normalizeMemberPaths,
   loadInstructionContent,
   hasFlag,
-  withBypassArgs,
-  startConversation,
-  type TeamMemberConfig
-} from '../../src/utils/ConversationStarter.js';
-import type { Team } from '../../src/models/Team.js';
+  withBypassArgs
+} from '../../src/services/ServiceInitializer.js';
+import type { TeamMemberConfig } from '../../src/models/CLIConfig.js';
 
 let tempDir: string;
 
@@ -35,7 +33,7 @@ beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starter-test-'));
 });
 
-describe('ConversationStarter helpers', () => {
+describe('ServiceInitializer helpers', () => {
   it('buildEnv merges user-provided environment variables', () => {
     const member = createMember({ env: { CUSTOM: '1', VAR: 'value' } });
     const env = buildEnv('codex', member);
@@ -87,89 +85,8 @@ describe('ConversationStarter helpers', () => {
   });
 });
 
-describe('startConversation output wiring', () => {
-  class MockOutput {
-    calls: Array<{ method: string; args: any[] }> = [];
-    info(message: string) { this.calls.push({ method: 'info', args: [message] }); }
-    success(message: string) { this.calls.push({ method: 'success', args: [message] }); }
-    warn(message: string) { this.calls.push({ method: 'warn', args: [message] }); }
-    error(message: string) { this.calls.push({ method: 'error', args: [message] }); }
-    progress(message: string) { this.calls.push({ method: 'progress', args: [message] }); }
-    separator(char?: string, length?: number) { this.calls.push({ method: 'separator', args: [char, length] }); }
-    keyValue(key: string, value: string) { this.calls.push({ method: 'keyValue', args: [key, value] }); }
-  }
-
-  it('emits error when first speaker is invalid via provided output', async () => {
-    const output = new MockOutput();
-    const coordinator = {
-      startConversation: vi.fn(),
-      getWaitingForRoleId: vi.fn(),
-      stop: vi.fn(),
-      injectMessage: vi.fn()
-    } as any;
-
-    const team: Team = {
-      id: 't1',
-      name: 'team',
-      displayName: 'Team',
-      description: '',
-      members: []
-    };
-
-    await startConversation(coordinator, team, 'hello', 'missing', output as any);
-
-    expect(output.calls[0]).toEqual({ method: 'error', args: ['Error: Invalid first speaker'] });
-    expect(coordinator.startConversation).not.toHaveBeenCalled();
-  });
-
-  it('uses output for separators and info and clears interval when session completes', async () => {
-    vi.useFakeTimers();
-    const output = new MockOutput();
-    const coordinator = {
-      startConversation: vi.fn(async () => {
-        (coordinator as any).session = { status: 'completed' };
-      }),
-      getWaitingForRoleId: vi.fn(() => undefined),
-      stop: vi.fn(),
-      injectMessage: vi.fn()
-    } as any;
-
-    const team: Team = {
-      id: 't1',
-      name: 'team',
-      displayName: 'Team',
-      description: '',
-      members: [
-        {
-          id: 'm1',
-          name: 'alpha',
-          displayName: 'Alpha',
-          displayRole: 'Dev',
-          role: 'dev',
-          type: 'ai',
-          roleDir: '',
-          order: 0
-        }
-      ]
-    };
-
-    await startConversation(coordinator, team, 'hello world', 'alpha', output as any);
-
-    // Run interval once to process completion path
-    vi.advanceTimersByTime(600);
-    vi.useRealTimers();
-
-    const methods = output.calls.map(c => c.method);
-    expect(methods.filter(m => m === 'separator').length).toBe(3); // start, divider, completion
-    expect(output.calls.find(c => c.method === 'info' && c.args[0].includes('初始消息'))).toBeTruthy();
-    expect(output.calls.find(c => c.method === 'info' && c.args[0].includes('第一个发言者'))).toBeTruthy();
-    expect(coordinator.startConversation).toHaveBeenCalledWith(team, 'hello world', 'm1');
-  });
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+// Note: startConversation was removed in the first-message refactor.
+// The new flow uses coordinator.setTeam() + coordinator.sendMessage().
 
 describe('Bypass Args Injection', () => {
   describe('hasFlag', () => {

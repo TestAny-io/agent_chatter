@@ -3,8 +3,8 @@
  *
  * 重要：此模型已修复"消息归属错误"问题
  * - speaker 是结构化对象
- * - content 已剥离 [NEXT:] 和 [DONE] 标记
- * - routing 包含解析后的路由信息和 isDone 标记
+ * - content 已剥离 [NEXT:] 标记
+ * - routing 包含解析后的路由信息
  */
 export interface ConversationMessage {
   id: string;
@@ -18,7 +18,7 @@ export interface ConversationMessage {
     type: 'ai' | 'human' | 'system';
   };
 
-  // 消息内容（已剥离 [NEXT:] 和 [DONE] 标记）
+  // 消息内容（已剥离 [NEXT:] 标记）
   content: string;
 
   // 路由信息（从内容中解析出来）
@@ -29,7 +29,6 @@ export interface ConversationMessage {
       roleId: string | null;   // 解析到的角色 ID
       roleName: string | null;
     }>;
-    isDone: boolean;           // 是否包含 [DONE] 标记
   };
 }
 
@@ -64,9 +63,6 @@ export interface ParseResult {
 
   // 剥离标记后的干净内容
   cleanContent: string;
-
-  // 是否包含 [DONE] 标记
-  isDone: boolean;
 }
 
 /**

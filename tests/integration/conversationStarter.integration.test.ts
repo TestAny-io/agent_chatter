@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { initializeServices } from '../../src/utils/ConversationStarter.js';
-import type { CLIConfig } from '../../src/utils/ConversationStarter.js';
+import { initializeServices } from '../../src/services/ServiceInitializer.js';
+import type { CLIConfig } from '../../src/models/CLIConfig.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
 import type { IOutput } from '../../src/outputs/IOutput.js';
 
@@ -77,7 +77,7 @@ vi.mock('../../src/infrastructure/ProcessManager.js', () => {
   };
 });
 
-describe.sequential('ConversationStarter integration', () => {
+describe.sequential('ServiceInitializer integration', () => {
   let tempDir: string;
   let tempRegistryPath: string;
   let processMock: { startCalls: any[]; sendCalls: any[]; stopCalls: any[]; reset: () => void };
@@ -158,8 +158,9 @@ describe.sequential('ConversationStarter integration', () => {
     expect(team.members[0].instructionFileText).toContain('integration test agent');
     expect(team.members[0].env?.CUSTOM).toBe('1');
 
-    const firstSpeaker = team.members[0].id;
-    await coordinator.startConversation(team, 'Review the new feature', firstSpeaker);
+    // New API: setTeam() + sendMessage()
+    coordinator.setTeam(team);
+    await coordinator.sendMessage('Review the new feature');
 
     // In stateless mode (Claude), ProcessManager is not used. We still expect the
     // conversation to pause after the AI message is delivered.
@@ -262,7 +263,7 @@ describe.sequential('ConversationStarter integration', () => {
 
     const progressCall = output.calls.find(c => c.method === 'progress');
     const successCall = output.calls.find(c => c.method === 'success');
-    const keyValueCall = output.calls.find(c => c.method === 'keyValue' && String(c.args[0]).includes('工作目录'));
+    const keyValueCall = output.calls.find(c => c.method === 'keyValue' && String(c.args[0]).includes('Working directory'));
 
     expect(progressCall).toBeTruthy();
     expect(successCall).toBeTruthy();

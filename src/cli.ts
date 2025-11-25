@@ -13,11 +13,7 @@ import { fileURLToPath } from 'url';
 import { detectAllTools } from './utils/ToolDetector.js';
 import type { ToolStatus } from './utils/ToolDetector.js';
 import { startReplInk } from './repl/ReplModeInk.js';
-import {
-  initializeServices,
-  startConversation,
-  type CLIConfig,
-} from './utils/ConversationStarter.js';
+import type { CLIConfig } from './models/CLIConfig.js';
 import { createAgentsCommand } from './commands/AgentsCommand.js';
 import { ConsoleOutput } from './outputs/ConsoleOutput.js';
 import type { IOutput } from './outputs/IOutput.js';
@@ -135,35 +131,8 @@ program
         startReplInk(options.registry);
     });
 
-program
-    .command('start')
-    .description('启动一次对话')
-    .requiredOption('-c, --config <path>', '配置文件路径')
-    .option('-m, --message <text>', '初始消息', 'Hello!')
-    .option('-s, --speaker <name>', '第一个发言者的名称')
-    .action(async (options) => {
-        const output = new ConsoleOutput({ colors: true, verbose: true });
-        // 检测已安装的工具
-        output.progress('正在检测系统中的 AI CLI 工具...');
-        const tools = await detectAllTools();
-        displayToolStatus(tools, output, true);
-
-        // 加载配置
-        const config = loadConfig(options.config);
-
-        // 获取全局 registry 选项
-        const registryPath = program.opts().registry;
-
-        // 初始化服务
-        output.progress('正在初始化服务...');
-        const { coordinator, team } = await initializeServices(config, {
-            registryPath,
-            output
-        });
-
-        // 启动对话
-        await startConversation(coordinator, team, options.message, options.speaker, output);
-    });
+// Note: 'start' subcommand removed per design decision.
+// Use REPL mode with /team deploy to start conversations.
 
 program
     .command('config-example')
@@ -247,7 +216,8 @@ program
         displayToolStatus(tools, output, true);
 
         output.info('提示:');
-        output.info('  - 使用 agent-chatter start 启动对话');
+        output.info('  - 直接运行 agent-chatter 启动 REPL 模式');
+        output.info('  - 在 REPL 中使用 /team deploy <name> 部署团队后直接输入消息');
         output.info('  - 使用 agent-chatter config-example 生成示例配置文件');
     });
 

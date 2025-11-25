@@ -46,7 +46,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
       } as any
     );
     // seed session
-    (coordinator as any).session = SessionUtils.createSession(team.id, team.name, team.displayName);
+    (coordinator as any).session = SessionUtils.createSession(team.id, team.name);
     (coordinator as any).team = team;
     return coordinator;
   };
@@ -60,7 +60,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
       id: 'm1',
       content: 'task',
       speaker: { roleId: aiA.id, roleName: aiA.name, roleTitle: aiA.displayName, type: 'ai' },
-      routing: { rawNextMarkers: ['ai-b', 'ai-c'], resolvedAddressees: [], isDone: false }
+      routing: { rawNextMarkers: ['ai-b', 'ai-c'], resolvedAddressees: [] }
     } as any;
 
     await (coordinator as any).routeToNext(message);
@@ -78,7 +78,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
       id: 'm2',
       content: 'hello',
       speaker: { roleId: aiA.id, roleName: aiA.name, roleTitle: aiA.displayName, type: 'ai' },
-      routing: { rawNextMarkers: [], resolvedAddressees: [], isDone: false }
+      routing: { rawNextMarkers: [], resolvedAddressees: [] }
     } as any;
 
     await (coordinator as any).routeToNext(message);
@@ -96,7 +96,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
       id: 'm3',
       content: 'mix',
       speaker: { roleId: aiA.id, roleName: aiA.name, roleTitle: aiA.displayName, type: 'ai' },
-      routing: { rawNextMarkers: ['ai-b', 'ai-c,d'], resolvedAddressees: [], isDone: false }
+      routing: { rawNextMarkers: ['ai-b', 'ai-c,d'], resolvedAddressees: [] }
     } as any;
 
     await (coordinator as any).routeToNext(message);

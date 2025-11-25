@@ -11,7 +11,8 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { detectAllTools } from '../utils/ToolDetector.js';
 import { ConversationCoordinator } from '../services/ConversationCoordinator.js';
-import { initializeServices, type CLIConfig } from '../utils/ConversationStarter.js';
+import { initializeServices, type InitializeServicesOptions } from '../services/ServiceInitializer.js';
+import type { CLIConfig } from '../models/CLIConfig.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
 import type { Team, RoleDefinition, Member } from '../models/Team.js';
 import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
@@ -41,8 +42,6 @@ const commands = [
     { name: '/help', desc: 'Show this help message' },
     { name: '/status', desc: 'Check installed AI CLI tools' },
     { name: '/agents', desc: 'Manage registered AI agents' },
-    { name: '/start', desc: 'Start a conversation' },
-    { name: '/list', desc: 'List available configuration files (deprecated, use /team list)' },
     { name: '/team', desc: 'Manage team configurations' },
     { name: '/clear', desc: 'Clear the screen' },
     { name: '/exit', desc: 'Exit the application' },
@@ -119,6 +118,22 @@ function HelpMessage() {
                     <Text dimColor>{cmd.desc}</Text>
                 </Box>
             ))}
+            
+            <Box marginTop={1} flexDirection="column">
+                <Text bold>Message Markers:</Text>
+                <Box marginLeft={2}>
+                    <Text color="green">{'[FROM:name]'.padEnd(18)}</Text>
+                    <Text dimColor>Specify human sender (required for multi-human teams)</Text>
+                </Box>
+                <Box marginLeft={2}>
+                    <Text color="green">{'[NEXT:name]'.padEnd(18)}</Text>
+                    <Text dimColor>Route message to specific member</Text>
+                </Box>
+                <Box marginLeft={2}>
+                    <Text color="green">{'[TEAM_TASK:desc]'.padEnd(18)}</Text>
+                    <Text dimColor>Set persistent team-wide task context</Text>
+                </Box>
+            </Box>
         </Box>
     );
 }
@@ -1061,11 +1076,22 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                         <Text dimColor>{'─'.repeat(60)}</Text>
                     </Box>
                 ]);
-                activeCoordinator.injectMessage(waitingRoleId, message);
+                // Use new sendMessage API
+                activeCoordinator.sendMessage(message).catch(err => {
+                    setOutput(prev => [...prev, <Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>]);
+                });
             } else {
-                setOutput(prev => [...prev,
-                    <Text key={`no-waiting-${getNextKey()}`} color="yellow">No team member is waiting for input right now. Wait for the coordinator to prompt you.</Text>
-                ]);
+                // Check if message has [FROM:xxx] to allow buzzing in
+                if (message.match(/\[FROM:/i)) {
+                     // Allow buzzing in even if not waiting
+                     activeCoordinator.sendMessage(message).catch(err => {
+                        setOutput(prev => [...prev, <Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>]);
+                    });
+                } else {
+                    setOutput(prev => [...prev,
+                        <Text key={`no-waiting-${getNextKey()}`} color="yellow">No team member is waiting for input right now. Wait for the coordinator to prompt you, or use [FROM:Name] to buzz in.</Text>
+                    ]);
+                }
             }
         }
     };
@@ -1094,17 +1120,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             case '/list':
                 setOutput(prev => [...prev, <Text key={`list-msg-${getNextKey()}`} dimColor>Looking for configuration files...</Text>]);
                 setOutput(prev => [...prev, <ConfigList key={`list-${getNextKey()}`} currentConfigPath={currentConfigPath} />]);
-                break;
-
-            case '/start':
-                if (!currentConfig) {
-                    setOutput(prev => [...prev, <Text key={`start-err-${getNextKey()}`} color="red">Error: No configuration loaded. Use /team deploy &lt;file&gt; first.</Text>]);
-                } else if (args.length === 0) {
-                    setOutput(prev => [...prev, <Text key={`start-usage-${getNextKey()}`} color="yellow">Usage: /start &lt;initial message&gt;</Text>]);
-                } else {
-                    const message = args.join(' ');
-                    await startConversationInRepl(message);
-                }
                 break;
 
             case '/team':
@@ -1154,7 +1169,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     setOutput(prev => [...prev, <Text key={`team-deploy-usage-${getNextKey()}`} color="yellow">Usage: /team deploy &lt;filename&gt;</Text>]);
                     setOutput(prev => [...prev, <Text key={`team-deploy-hint-${getNextKey()}`} dimColor>Use /team list to see available configurations</Text>]);
                 } else {
-                    loadConfig(subargs[0]);
+                    const config = loadConfig(subargs[0]);
+                    if (config) {
+                        initializeAndDeployTeam(config);
+                    }
                 }
                 break;
 
@@ -1575,12 +1593,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         });
     };
 
-    const loadConfig = (filePath: string) => {
+    const loadConfig = (filePath: string): CLIConfig | null => {
         try {
             const resolution = resolveTeamConfigPath(filePath);
             if (!resolution.exists) {
                 setOutput(prev => [...prev, <Text key={`config-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filePath, resolution)}</Text>]);
-                return;
+                return null;
             }
             if (resolution.warning) {
                 setOutput(prev => [...prev, <Text key={`config-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
@@ -1613,18 +1631,18 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     <Text dimColor>  Agents: {config.agents?.length || 0}</Text>
                 </Box>
             ]);
+            return config;
         } catch (error) {
             setOutput(prev => [...prev, <Text key={`config-err-${getNextKey()}`} color="red">Error: Failed to load configuration: {String(error)}</Text>]);
+            return null;
         }
     };
 
-    const startConversationInRepl = async (initialMessage: string) => {
-        if (!currentConfig) return;
-
+    const initializeAndDeployTeam = async (config: CLIConfig): Promise<ConversationCoordinator | null> => {
         try {
             setOutput(prev => [...prev, <Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>]);
 
-            const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(currentConfig, {
+            const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
                 onMessage: (message: ConversationMessage) => {
                     // AI 文本已经通过流式事件显示，这里不再重复；人类/系统消息仍保留
                     if (message.speaker.type === 'ai' || message.speaker.type === 'system') {
@@ -1662,54 +1680,29 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 throw new Error('Team has no members configured. Please update the configuration file.');
             }
 
-            // Parse initial message for [NEXT:xxx] directive
-            const parseResult = messageRouter.parseMessage(initialMessage);
-            let firstSpeakerId = team.members[0].id;
-
-            if (parseResult.addressees.length > 0) {
-                // Try to find the member specified in [NEXT:xxx]
-                const targetAddresseeName = parseResult.addressees[0]; // Use first addressee
-                const normalizeIdentifier = (str: string): string => {
-                    return str.toLowerCase().replace(/[\s-_]/g, '');
-                };
-
-                const targetMember = team.members.find(m => {
-                    const normalizedAddressee = normalizeIdentifier(targetAddresseeName);
-                    const normalizedId = normalizeIdentifier(m.id);
-                    const normalizedName = normalizeIdentifier(m.name);
-                    const normalizedDisplayName = normalizeIdentifier(m.displayName);
-
-                    return normalizedId === normalizedAddressee ||
-                           normalizedName === normalizedAddressee ||
-                           normalizedDisplayName === normalizedAddressee;
-                });
-
-                if (targetMember) {
-                    firstSpeakerId = targetMember.id;
-                    setOutput(prev => [...prev,
-                        <Text key={`next-hint-${getNextKey()}`} dimColor>
-                            → Starting with {targetMember.displayName} as specified in [NEXT] directive
-                        </Text>
-                    ]);
-                } else {
-                    setOutput(prev => [...prev,
-                        <Text key={`next-warn-${getNextKey()}`} color="yellow">
-                            Warning: Member '{targetAddresseeName}' not found. Starting with first member.
-                        </Text>
-                    ]);
-                }
-            }
-
             setActiveCoordinator(coordinator);
             setActiveTeam(team);
             setMode('conversation');
 
-            // Pass original message with all [NEXT] markers to coordinator
-            // Coordinator will handle all routing internally
-            coordinator.startConversation(team, initialMessage, firstSpeakerId);
+            // NEW: Set team without starting session
+            coordinator.setTeam(team);
+
+            // If only one human member, auto-set as waiting
+            const humans = team.members.filter(m => m.type === 'human');
+            if (humans.length === 1) {
+                coordinator.setWaitingForRoleId(humans[0].id);
+            }
+
+            setOutput(prev => [...prev,
+                <Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>,
+                <Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>
+            ]);
+
+            return coordinator;
 
         } catch (error) {
-            setOutput(prev => [...prev, <Text key={`start-err2-${getNextKey()}`} color="red">Error: {String(error)}</Text>]);
+            setOutput(prev => [...prev, <Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>]);
+            return null;
         }
     };
 
@@ -1798,8 +1791,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                                             return `${waitingMember.displayName}> `;
                                         }
                                     }
+                                    // Fallback: if only one human, show their name
+                                    const humans = activeTeam.members.filter(m => m.type === 'human');
+                                    if (humans.length === 1) {
+                                        return `${humans[0].displayName}> `;
+                                    }
                                 }
-                                // Fallback to generic prompt if no waiting member
+                                // Fallback to generic prompt if multiple humans or no team
                                 return 'you> ';
                             })()}
                         </Text>

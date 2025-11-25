@@ -1,15 +1,15 @@
 /**
- * Integration test for /start command [NEXT:xxx] directive
+ * Integration test for [NEXT:xxx] directive parsing and member resolution
  *
- * Tests that /start command correctly parses and honors [NEXT:member] directives
- * to control which team member starts the conversation.
+ * Tests that MessageRouter correctly parses [NEXT:member] directives
+ * and that member resolution logic works correctly.
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageRouter } from '../../src/services/MessageRouter.js';
 import type { Member } from '../../src/models/Team.js';
 
-describe('/start command [NEXT:xxx] directive', () => {
+describe('[NEXT:xxx] directive parsing and resolution', () => {
   let messageRouter: MessageRouter;
   let mockTeamMembers: Member[];
 
@@ -59,7 +59,6 @@ describe('/start command [NEXT:xxx] directive', () => {
 
       expect(result.addressees).toEqual(['Sarah']);
       expect(result.cleanContent).toBe('Review the code');
-      expect(result.isDone).toBe(false);
     });
 
     it('handles [NEXT:xxx] at the beginning', () => {

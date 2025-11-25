@@ -62,7 +62,9 @@ describe('Conversation flow integration', () => {
       ]
     };
 
-    await coordinator.startConversation(team, 'Start review', 'alpha-id');
+    // New API: setTeam() + sendMessage()
+    coordinator.setTeam(team);
+    await coordinator.sendMessage('Start review');
 
     // After beta (AI) completes, conversation continues to human and pauses
     expect(coordinator.getStatus()).toBe('paused');

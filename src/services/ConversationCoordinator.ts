@@ -2,10 +2,17 @@
  * ConversationCoordinator - 对话协调器
  *
  * 负责协调整个对话流程：
- * 1. 管理对话历史
- * 2. 路由消息到正确的接收者
- * 3. 处理 [NEXT] 和 [DONE] 标记
- * 4. 协调 Agent 之间的交互
+ * 1. 管理对话历史和会话状态
+ * 2. 路由消息到正确的接收者（基于 [NEXT] 标记或轮询）
+ * 3. 协调 Agent 之间的交互
+ *
+ * 入口 API：
+ * - setTeam(team): 设置当前团队
+ * - sendMessage(content): 发送消息并触发路由
+ *
+ * 会话控制：
+ * - 人类用户通过输入 /end 或带特定指令终止会话
+ * - AI 完成回复后自动路由到下一位成员
  */
 
 import type { Team, Member } from '../models/Team.js';
@@ -15,7 +22,7 @@ import type { ConversationSession } from '../models/ConversationSession.js';
 import { SessionUtils } from '../models/ConversationSession.js';
 import { AgentManager } from './AgentManager.js';
 import { MessageRouter } from './MessageRouter.js';
-import type { ConversationConfig } from '../utils/ConversationStarter.js';
+import type { ConversationConfig } from '../models/CLIConfig.js';
 import { buildPrompt, type PromptContextMessage } from '../utils/PromptBuilder.js';
 import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
 import type { ContextEventCollector, ContextSummary } from './ContextEventCollector.js';
@@ -81,83 +88,175 @@ export class ConversationCoordinator {
   }
 
   /**
-   * 获取正在等待输入的角色 ID
+   * Set team without starting conversation
    */
-  getWaitingForRoleId(): string | null {
-    return this.waitingForRoleId;
+  setTeam(team: Team): void {
+    this.team = team;
+    this.session = null;
+    this.waitingForRoleId = null;
+    this.routingQueue = [];
+  }
+
+  hasActiveSession(): boolean {
+    return this.session !== null;
   }
 
   /**
-   * 开始新对话
+   * Send a message to the conversation
+   * Replaces startConversation and injectMessage
    */
-  async startConversation(
-    team: Team,
-    initialMessage: string,
-    firstSpeakerId: string
-  ): Promise<void> {
-    this.team = team;
-    this.session = SessionUtils.createSession(
-      team.id,
-      team.name,
-      initialMessage,
-      firstSpeakerId
-    );
-
-    this.waitingForRoleId = null;  // 清除之前的等待状态
-    this.status = 'active';
-    this.notifyStatusChange();
-
-    // 解析初始消息中的 [NEXT]，预先排队后续路由（第一个发言者由 firstSpeakerId 决定）
-    const initialParsed = this.messageRouter.parseMessage(initialMessage);
-
-    // 创建初始消息记录（作为 system 消息）
-    // 这样后续 agent 可以在 context 中看到初始任务
-    const initialSystemMessage: ConversationMessage = MessageUtils.createSystemMessage(
-      `Initial task: ${initialMessage}`
-    );
-    this.session = SessionUtils.addMessageToSession(this.session, initialSystemMessage);
-    this.notifyMessage(initialSystemMessage);
-
-    // 发送初始消息给第一个发言者
-    const firstMember = team.members.find(m => m.id === firstSpeakerId);
-    if (!firstMember) {
-      throw new Error(`Member ${firstSpeakerId} not found in team`);
+  async sendMessage(content: string, explicitSenderId?: string): Promise<void> {
+    // AUTO-INITIALIZE SESSION ON FIRST MESSAGE
+    if (!this.session) {
+      if (!this.team) {
+        throw new Error('No team loaded. Use /team deploy <config> first');
+      }
+      this.session = SessionUtils.createSession(this.team.id, this.team.name);
     }
 
-    // 预先排队 initial NEXT：过滤掉第一个发言者自身，剩余的按出现顺序入队
-    if (initialParsed.addressees.length > 0) {
-      const initialResolved = this.resolveAddressees(initialParsed.addressees);
-      if (process.env.DEBUG) {
-        // eslint-disable-next-line no-console
-        console.error(`[Debug][StartConversation] Parsed addressees from initial message: ${JSON.stringify(initialParsed.addressees)}`);
-        // eslint-disable-next-line no-console
-        console.error(`[Debug][StartConversation] Resolved to members: ${initialResolved.map(m => m.name).join(', ')}`);
-        // eslint-disable-next-line no-console
-        console.error(`[Debug][StartConversation] First speaker: ${firstMember.name}`);
-      }
-      const filtered = initialResolved.filter((m, idx) => !(idx === 0 && m.id === firstMember.id));
-      if (process.env.DEBUG) {
-        // eslint-disable-next-line no-console
-        console.error(`[Debug][StartConversation] After filtering: ${filtered.map(m => m.name).join(', ')}`);
-      }
-      for (const member of filtered) {
-        const delivery = this.prepareDelivery(member, initialParsed.cleanContent);
-        this.routingQueue.push({ member, content: delivery.content });
-        if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.error(`[Debug][StartConversation] Queued ${member.name} with content: ${delivery.content.substring(0, 50)}...`);
-        }
+    // Parse message markers
+    const parsed = this.messageRouter.parseMessage(content);
+
+    // Resolve sender
+    const sender = this.resolveSender(explicitSenderId, parsed.fromMember);
+
+    // FIRST MESSAGE VALIDATION
+    if (this.session.messages.length === 0) {
+      if (sender.type !== 'human') {
+        throw new Error('First message must be from a human member');
       }
     }
 
-    if (firstMember.type === 'ai') {
-      await this.sendToAgent(firstMember, initialMessage);
+    // Update team task if marker present
+    if (parsed.teamTask) {
+      this.updateTeamTask(parsed.teamTask);
+    }
+
+    // Create and store message
+    const message: ConversationMessage = MessageUtils.createMessage(
+      sender.id,
+      sender.name,
+      sender.displayName,
+      sender.type,
+      parsed.cleanContent,
+      {
+        rawNextMarkers: parsed.addressees,
+        resolvedAddressees: []
+      }
+    );
+
+    this.session = SessionUtils.addMessageToSession(this.session, message);
+    this.notifyMessage(message);
+
+    // Clear waitingForRoleId (if user buzzed in or responded)
+    this.waitingForRoleId = null;
+
+    // Route to next member(s)
+    await this.routeToNext(message);
+  }
+
+  private resolveSender(
+    explicitSenderId?: string,
+    fromMarker?: string
+  ): Member {
+    if (!this.team) {
+      throw new Error('Team not loaded');
+    }
+
+    // PRIORITY 1: Explicit sender ID (programmatic calls)
+    if (explicitSenderId) {
+      const member = this.team.members.find(m => m.id === explicitSenderId);
+      if (!member) throw new Error(`Internal error: Member ID ${explicitSenderId} not found`);
+      return member;
+    }
+
+    // PRIORITY 2: [FROM:xxx] marker (user-specified, allows buzzing in)
+    if (fromMarker) {
+      const member = this.resolveMemberFromIdentifier(fromMarker);
+
+      if (!member) {
+        const humans = this.team.members.filter(m => m.type === 'human');
+        throw new Error(
+          `Error: Member '${fromMarker}' not found.\n` +
+          `Available human members: ${humans.map(h => h.name).join(', ')}`
+        );
+      }
+
+      if (member.type !== 'human') {
+        const humans = this.team.members.filter(m => m.type === 'human');
+        throw new Error(
+          `Error: Cannot use [FROM:${fromMarker}]. ${member.displayName} is an AI agent.\n` +
+          `[FROM:xxx] is only for human members: ${humans.map(h => h.name).join(', ')}`
+        );
+      }
+
+      return member;
+    }
+
+    // PRIORITY 3: waitingForRoleId (system set from previous routing)
+    if (this.waitingForRoleId) {
+      const member = this.team.members.find(m => m.id === this.waitingForRoleId);
+      if (member && member.type === 'human') {
+        return member;
+      }
+    }
+
+    // PRIORITY 4: Single human auto-select
+    const humans = this.team.members.filter(m => m.type === 'human');
+    if (humans.length === 1) {
+      return humans[0];
+    }
+
+    // PRIORITY 5: Multi-human without [FROM] → ERROR
+    throw new Error(
+      `Error: Multiple human members detected. Please specify sender with [FROM:xxx]\n` +
+      `Available members: ${humans.map(h => h.name).join(', ')}\n\n` +
+      `Example: [FROM:${humans[0].name}] Your message here`
+    );
+  }
+
+  private resolveMemberFromIdentifier(identifier: string): Member | undefined {
+    if (!this.team) return undefined;
+    const normalizedIdentifier = this.normalizeIdentifier(identifier);
+    return this.team.members.find(m => {
+      const normalizedId = this.normalizeIdentifier(m.id);
+      if (normalizedId === normalizedIdentifier) return true;
+      const normalizedName = this.normalizeIdentifier(m.name);
+      const normalizedDisplayName = this.normalizeIdentifier(m.displayName);
+      return normalizedName === normalizedIdentifier || normalizedDisplayName === normalizedIdentifier;
+    });
+  }
+
+  private updateTeamTask(newTask: string): void {
+    if (!this.session) return;
+
+    const MAX_TEAM_TASK_BYTES = 5 * 1024; // 5KB limit
+    const taskBytes = Buffer.byteLength(newTask, 'utf-8');
+
+    if (taskBytes > MAX_TEAM_TASK_BYTES) {
+      // Truncate and warn
+      this.session.teamTask = this.truncateToBytes(newTask, MAX_TEAM_TASK_BYTES - 3) + '...';
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Warning: Team task truncated from ${taskBytes} bytes to ${MAX_TEAM_TASK_BYTES} bytes (5KB limit).`
+      );
     } else {
-      // 如果第一个发言者是人类，暂停并等待输入
-      this.waitingForRoleId = firstMember.id;
-      this.status = 'paused';
-      this.notifyStatusChange();
+      this.session.teamTask = newTask;
     }
+  }
+
+  private truncateToBytes(str: string, maxBytes: number): string {
+    let bytes = 0;
+    let truncated = '';
+
+    for (const char of str) {
+      const charBytes = Buffer.byteLength(char, 'utf-8');
+      if (bytes + charBytes > maxBytes) break;
+      truncated += char;
+      bytes += charBytes;
+    }
+
+    return truncated;
   }
 
   /**
@@ -193,17 +292,13 @@ export class ConversationCoordinator {
       parsed.cleanContent,
       {
         rawNextMarkers: parsed.addressees,
-        resolvedAddressees: [],
-        isDone: parsed.isDone
+        resolvedAddressees: []
       }
     );
 
     // 添加到历史
     this.session = SessionUtils.addMessageToSession(this.session, message);
     this.notifyMessage(message);
-
-    // AI 消息中的 [DONE] 只表示当前 Agent 回复完成，不表示会话终止
-    // 会话终止由人类用户通过 /end 命令或带 [DONE] 的消息来控制
 
     // 路由到下一个接收者
     await this.routeToNext(message);
@@ -237,8 +332,7 @@ export class ConversationCoordinator {
       parsed.cleanContent,
       {
         rawNextMarkers: parsed.addressees,
-        resolvedAddressees: [],
-        isDone: parsed.isDone
+        resolvedAddressees: []
       }
     );
 
@@ -250,12 +344,6 @@ export class ConversationCoordinator {
     if (this.status === 'paused') {
       this.status = 'active';
       this.notifyStatusChange();
-    }
-
-    // 检查是否完成
-    if (parsed.isDone) {
-      this.handleConversationComplete();
-      return;
     }
 
     // 路由到下一个接收者
@@ -506,8 +594,7 @@ export class ConversationCoordinator {
           parsed.cleanContent,
           {
             rawNextMarkers: parsed.addressees,
-            resolvedAddressees: [],
-            isDone: parsed.isDone
+            resolvedAddressees: []
           }
         );
         this.session = SessionUtils.addMessageToSession(this.session!, messageEntry);
@@ -685,6 +772,20 @@ export class ConversationCoordinator {
    */
   getStatus(): ConversationStatus {
     return this.status;
+  }
+
+  /**
+   * 获取等待输入的角色 ID
+   */
+  getWaitingForRoleId(): string | null {
+    return this.waitingForRoleId;
+  }
+
+  /**
+   * 设置等待输入的角色 ID
+   */
+  setWaitingForRoleId(roleId: string | null): void {
+    this.waitingForRoleId = roleId;
   }
 
   /**

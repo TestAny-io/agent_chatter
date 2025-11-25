@@ -195,6 +195,16 @@ export class AgentValidator {
    */
   private async checkClaudeAuth(command: string): Promise<CheckResult> {
     try {
+      // 优先支持环境变量（API Key 模式）
+      const envKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+      if (envKey && envKey.trim()) {
+        return {
+          name: 'Authentication Check',
+          passed: true,
+          message: 'Authenticated via environment variable'
+        };
+      }
+
       // 方法1：检查配置文件
       const configPath = path.join(os.homedir(), '.claude', 'config.json');
       if (fs.existsSync(configPath)) {
@@ -277,6 +287,16 @@ export class AgentValidator {
    */
   private async checkCodexAuth(command: string): Promise<CheckResult> {
     try {
+      // 支持环境变量（API Key 模式）
+      const envKey = process.env.OPENAI_API_KEY || process.env.CODEX_API_KEY;
+      if (envKey && envKey.trim()) {
+        return {
+          name: 'Authentication Check',
+          passed: true,
+          message: 'Authenticated via environment variable'
+        };
+      }
+
       // Codex 使用认证文件
       const authPath = path.join(os.homedir(), '.codex', 'auth.json');
 
@@ -343,23 +363,68 @@ export class AgentValidator {
    */
   private async checkGeminiAuth(command: string): Promise<CheckResult> {
     try {
-      // Gemini 使用 OAuth 凭证文件，路径因版本/安装方式而异
-      const candidates: string[] = [];
+      // 支持环境变量（API Key 模式）
+      const envKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (envKey && envKey.trim()) {
+        return {
+          name: 'Authentication Check',
+          passed: true,
+          message: 'Authenticated via environment variable'
+        };
+      }
+
       const home = os.homedir();
       const xdgConfig = process.env.XDG_CONFIG_HOME ? path.resolve(process.env.XDG_CONFIG_HOME) : path.join(home, '.config');
       const customConfig = process.env.GEMINI_CONFIG_DIR;
 
-      const credFile = 'oauth_creds.json';
+      // 检查 settings.json 确定认证类型
+      const settingsCandidates = [
+        customConfig ? path.join(customConfig, 'settings.json') : null,
+        path.join(home, '.gemini', 'settings.json'),
+        path.join(xdgConfig, 'gemini', 'settings.json')
+      ].filter(Boolean) as string[];
 
-      if (customConfig) {
-        candidates.push(path.join(customConfig, credFile));
+      const settingsPath = settingsCandidates.find(p => fs.existsSync(p));
+
+      if (settingsPath) {
+        try {
+          const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+          const authType = settings?.security?.auth?.selectedType;
+
+          // 如果使用 API Key 或 OAuth 认证，检查 token 文件是否存在
+          if (authType === 'gemini-api-key' || authType === 'google-oauth') {
+            const tokenCandidates = [
+              customConfig ? path.join(customConfig, 'mcp-oauth-tokens-v2.json') : null,
+              path.join(home, '.gemini', 'mcp-oauth-tokens-v2.json'),
+              path.join(xdgConfig, 'gemini', 'mcp-oauth-tokens-v2.json')
+            ].filter(Boolean) as string[];
+
+            const tokenPath = tokenCandidates.find(p => fs.existsSync(p));
+            if (tokenPath) {
+              // Token 文件存在且有内容即视为已认证（内容是加密的）
+              const stat = fs.statSync(tokenPath);
+              if (stat.size > 0) {
+                return {
+                  name: 'Authentication Check',
+                  passed: true,
+                  message: `Authenticated via ${authType === 'gemini-api-key' ? 'API Key' : 'Google OAuth'}`
+                };
+              }
+            }
+          }
+        } catch {
+          // settings.json 解析失败，继续检查其他方式
+        }
       }
-      candidates.push(
-        path.join(home, '.gemini', credFile),
-        path.join(xdgConfig, 'gemini', credFile)
-      );
 
-      const credPath = candidates.find(p => fs.existsSync(p));
+      // 回退：检查传统 OAuth 凭证文件
+      const credCandidates = [
+        customConfig ? path.join(customConfig, 'oauth_creds.json') : null,
+        path.join(home, '.gemini', 'oauth_creds.json'),
+        path.join(xdgConfig, 'gemini', 'oauth_creds.json')
+      ].filter(Boolean) as string[];
+
+      const credPath = credCandidates.find(p => fs.existsSync(p));
 
       if (!credPath) {
         return {

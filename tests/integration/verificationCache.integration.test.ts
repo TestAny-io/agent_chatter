@@ -6,8 +6,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { initializeServices } from '../../src/utils/ConversationStarter.js';
-import type { CLIConfig } from '../../src/utils/ConversationStarter.js';
+import { initializeServices } from '../../src/services/ServiceInitializer.js';
+import type { CLIConfig } from '../../src/models/CLIConfig.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
 
 // Mock AgentValidator to avoid calling real CLI commands in CI
