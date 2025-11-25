@@ -162,7 +162,7 @@ export class AgentManager {
     roleId: string,
     message: string,
     options: Partial<SendOptions> & { systemFlag?: string; teamContext: TeamContext }
-  ): Promise<{ success: boolean; finishReason?: 'done' | 'error' | 'cancelled' | 'timeout' }> {
+  ): Promise<{ success: boolean; finishReason?: 'done' | 'error' | 'cancelled' | 'timeout'; accumulatedText?: string }> {
     const agent = this.agents.get(roleId);
     if (!agent) {
       throw new Error(`Role ${roleId} has no running agent`);
@@ -227,15 +227,23 @@ export class AgentManager {
 
       let stderr = '';
       let hasCompleted = false;
+      let accumulatedText = '';  // Accumulate result text for routing queue
       const debugPrefix = process.env.DEBUG ? `[Agent:${agent.adapter.agentType}:${roleId}]` : null;
 
       const emitEvents = (events: AgentEvent[]) => {
         for (const event of events) {
           this.eventEmitter.emit('agent-event', event);
+
+          // Accumulate text from text events (all agents emit text events for message content)
+          // Skip reasoning text (internal thoughts) - only accumulate message content
+          if (event.type === 'text' && event.text && event.category !== 'reasoning') {
+            accumulatedText += event.text;
+          }
+
           if (event.type === 'turn.completed' && !hasCompleted) {
             hasCompleted = true;
             clearTimeout(timeoutHandle);
-            resolve({ success: event.finishReason === 'done', finishReason: event.finishReason });
+            resolve({ success: event.finishReason === 'done', finishReason: event.finishReason, accumulatedText });
           }
         }
       };
@@ -283,7 +291,7 @@ export class AgentManager {
           hasCompleted = true;
           childProcess.kill('SIGTERM');
           emitSynthetic({ type: 'turn.completed', finishReason: 'timeout' });
-          resolve({ success: false, finishReason: 'timeout' });
+          resolve({ success: false, finishReason: 'timeout', accumulatedText });
         }
       }, timeoutMs);
 
@@ -318,7 +326,7 @@ export class AgentManager {
             hasCompleted = true;
             clearTimeout(timeoutHandle);
             emitSynthetic({ type: 'turn.completed', finishReason: 'cancelled' });
-            resolve({ success: false, finishReason: 'cancelled' });
+            resolve({ success: false, finishReason: 'cancelled', accumulatedText });
           }
           return;
         }
@@ -340,7 +348,7 @@ export class AgentManager {
 
           // code is 0/null but no turn.completed observed — emit a fallback completion
           emitSynthetic({ type: 'turn.completed', finishReason: 'done' });
-          resolve({ success: true, finishReason: 'done' });
+          resolve({ success: true, finishReason: 'done', accumulatedText });
         }
       });
     });

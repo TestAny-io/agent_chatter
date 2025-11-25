@@ -29,11 +29,16 @@ export class ClaudeContextAssembler implements IContextAssembler {
       maxBytes,
     } = input;
 
-    // Build systemFlag (for --append-system-prompt)
-    const systemFlag = this.buildSystemFlag(systemInstruction, instructionFileText);
+    // Build system instruction text (for --append-system-prompt AND inline [SYSTEM])
+    const systemText = this.buildSystemFlag(systemInstruction, instructionFileText);
 
-    // Build sections
+    // Build sections - order: [SYSTEM], [TEAM_TASK], [CONTEXT], [MESSAGE]
     const sections: string[] = [];
+
+    // [SYSTEM] - embed system instruction in prompt (before MESSAGE)
+    if (systemText?.trim()) {
+      sections.push(`[SYSTEM]\n${systemText.trim()}`);
+    }
 
     // [TEAM_TASK] - only if content exists
     if (teamTask?.trim()) {
@@ -55,8 +60,8 @@ export class ClaudeContextAssembler implements IContextAssembler {
 
     let prompt = sections.join('\n\n');
 
-    // Apply byte budget
-    const result = this.applyByteBudget(prompt, systemFlag, maxBytes, contextMessages);
+    // Apply byte budget (systemFlag is now embedded in prompt, pass as undefined for --append-system-prompt)
+    const result = this.applyByteBudget(prompt, systemText, maxBytes, contextMessages);
 
     return result;
   }

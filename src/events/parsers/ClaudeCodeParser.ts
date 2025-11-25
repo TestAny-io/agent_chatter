@@ -121,12 +121,27 @@ export class ClaudeCodeParser implements StreamParser {
           output: typeof json.content === 'string' ? json.content : undefined,
           error: json.is_error ? json.content : undefined
         }];
-      case 'result':
-        return [{
+      case 'result': {
+        const evs: AgentEvent[] = [];
+        // Emit text event with result content for accumulation
+        if (json.result && typeof json.result === 'string') {
+          evs.push({
+            ...base,
+            eventId: randomUUID(),
+            type: 'text',
+            text: json.result,
+            role: 'assistant',
+            category: 'result'
+          });
+        }
+        evs.push({
           ...base,
+          eventId: randomUUID(),
           type: 'turn.completed',
           finishReason: json.is_error ? 'error' : 'done'
-        }];
+        });
+        return evs;
+      }
       case 'message_stop':
         return []; // ignore, rely on result
       default:

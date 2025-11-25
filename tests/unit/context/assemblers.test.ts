@@ -51,7 +51,7 @@ describe('ClaudeContextAssembler', () => {
       expect(output.systemFlag).toBe('You are Max\n\nBe helpful');
     });
 
-    it('separates systemFlag from prompt', () => {
+    it('embeds [SYSTEM] in prompt AND provides systemFlag', () => {
       const input = createInput({
         currentMessage: 'Hello',
         systemInstruction: 'System text',
@@ -59,7 +59,10 @@ describe('ClaudeContextAssembler', () => {
 
       const output = assembler.assemble(input);
 
-      expect(output.prompt).not.toContain('System text');
+      // [SYSTEM] is now embedded in prompt before [MESSAGE]
+      expect(output.prompt).toContain('[SYSTEM]');
+      expect(output.prompt).toContain('System text');
+      // systemFlag is still provided for --append-system-prompt
       expect(output.systemFlag).toBe('System text');
     });
 
@@ -196,7 +199,7 @@ describe('GeminiContextAssembler', () => {
       expect(output.prompt).toContain('You are Carol');
       expect(output.prompt).toContain('Team Task:');
       expect(output.prompt).toContain('Conversation so far:');
-      expect(output.prompt).toContain('Your task:');
+      expect(output.prompt).toContain('Last message:');
       expect(output.systemFlag).toBeUndefined();
     });
 

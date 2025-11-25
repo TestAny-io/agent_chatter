@@ -117,7 +117,8 @@ describe('AgentManager', () => {
     });
 
     const response = await promise;
-    expect(response).toEqual({ success: true, finishReason: 'done' });
+    // accumulatedText may have some content depending on parser output
+    expect(response).toMatchObject({ success: true, finishReason: 'done' });
     // Spawn should be called with -p and append system prompt
     const spawnArgs = mockSpawn.mock.calls[0][1];
     expect(spawnArgs).toContain('-p');
@@ -250,8 +251,8 @@ describe('AgentManager', () => {
       // Simulate process exit after being killed
       fakeChildProcess.emit('exit', null, 'SIGTERM');
 
-      // Verify the promise resolves with cancelled
-      await expect(sendPromise).resolves.toEqual({ success: false, finishReason: 'cancelled' });
+      // Verify the promise resolves with cancelled (accumulatedText may be empty string)
+      await expect(sendPromise).resolves.toMatchObject({ success: false, finishReason: 'cancelled' });
     });
 
     it('sends SIGKILL after 5 seconds if SIGTERM fails', async () => {

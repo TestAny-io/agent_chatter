@@ -538,6 +538,12 @@ export class ConversationCoordinator {
         console.error(`[Debug][AgentResult] ${member.id} finished with ${response.finishReason}`);
       }
 
+      // Store accumulated AI response to ContextManager for subsequent AI routing
+      // This ensures the next AI in routingQueue receives the previous AI's response
+      if (response.accumulatedText && response.accumulatedText.trim()) {
+        await this.onAgentResponse(member.id, response.accumulatedText);
+      }
+
       // 如果路由队列中已有待处理的 NEXT，优先继续处理队列
       if (this.routingQueue.length > 0) {
         await this.processRoutingQueue();

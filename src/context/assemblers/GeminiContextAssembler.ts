@@ -50,9 +50,9 @@ export class GeminiContextAssembler implements IContextAssembler {
       sections.push(`Conversation so far:\n${contextLines.join('\n')}`);
     }
 
-    // Your task:
+    // Last message:
     if (currentMessage?.trim()) {
-      sections.push(`Your task:\n${currentMessage.trim()}`);
+      sections.push(`Last message:\n${currentMessage.trim()}`);
     }
 
     let prompt = sections.join('\n\n');
@@ -113,11 +113,11 @@ export class GeminiContextAssembler implements IContextAssembler {
     // Extract sections using Gemini's format
     const instructionsMatch = prompt.match(/Instructions:\n([\s\S]*?)(?=\n\n[A-Z]|$)/);
     const teamTaskMatch = prompt.match(/Team Task:\n([\s\S]*?)(?=\n\n[A-Z]|$)/);
-    const taskMatch = prompt.match(/Your task:\n([\s\S]*)$/);
+    const lastMessageMatch = prompt.match(/Last message:\n([\s\S]*)$/);
 
     const instructionsSection = instructionsMatch ? `Instructions:\n${instructionsMatch[1]}` : '';
     const teamTaskSection = teamTaskMatch ? `Team Task:\n${teamTaskMatch[1]}` : '';
-    const taskSection = taskMatch ? `Your task:\n${taskMatch[1]}` : '';
+    const lastMessageSection = lastMessageMatch ? `Last message:\n${lastMessageMatch[1]}` : '';
 
     // Try removing context messages one by one from oldest
     let remainingContext = [...contextMessages];
@@ -135,7 +135,7 @@ export class GeminiContextAssembler implements IContextAssembler {
         sections.push(`Conversation so far:\n${contextLines.join('\n')}`);
       }
 
-      if (taskSection) sections.push(taskSection);
+      if (lastMessageSection) sections.push(lastMessageSection);
 
       const newPrompt = sections.join('\n\n');
 
@@ -150,7 +150,7 @@ export class GeminiContextAssembler implements IContextAssembler {
     const finalSections: string[] = [];
     if (instructionsSection) finalSections.push(instructionsSection);
     if (teamTaskSection) finalSections.push(teamTaskSection);
-    if (taskSection) finalSections.push(taskSection);
+    if (lastMessageSection) finalSections.push(lastMessageSection);
 
     const finalPrompt = finalSections.join('\n\n');
 

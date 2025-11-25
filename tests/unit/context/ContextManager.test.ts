@@ -457,7 +457,7 @@ describe('ContextManager', () => {
       const output = manager.assemblePrompt('google-gemini', input);
 
       expect(output.prompt).toContain('Instructions:');
-      expect(output.prompt).toContain('Your task:');
+      expect(output.prompt).toContain('Last message:');
       expect(output.systemFlag).toBeUndefined();
     });
 

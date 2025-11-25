@@ -1067,11 +1067,17 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         if (activeCoordinator && activeTeam) {
             const waitingRoleId = activeCoordinator.getWaitingForRoleId();
 
-            if (waitingRoleId) {
-                const waitingRole = activeTeam.members.find(r => r.id === waitingRoleId);
+            // Check if single human - allow sending without explicit waitingRoleId
+            const humans = activeTeam.members.filter(m => m.type === 'human');
+            const isSingleHuman = humans.length === 1;
+
+            if (waitingRoleId || isSingleHuman) {
+                const displayRole = waitingRoleId
+                    ? activeTeam.members.find(r => r.id === waitingRoleId)
+                    : humans[0];
                 setOutput(prev => [...prev,
                     <Box key={`user-msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
-                        <Text color="green">[{waitingRole?.displayName || 'You'}]:</Text>
+                        <Text color="green">[{displayRole?.displayName || 'You'}]:</Text>
                         <Text>{message}</Text>
                         <Text dimColor>{'─'.repeat(60)}</Text>
                     </Box>

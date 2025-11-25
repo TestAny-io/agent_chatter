@@ -79,6 +79,10 @@ export class GeminiParser implements StreamParser {
       case 'init':
         return { ...base, type: 'session.started' };
       case 'message':
+        // Skip user messages (echo of prompt) - only process assistant/system messages
+        if (json.role === 'user') {
+          return null;
+        }
         return {
           ...base,
           type: 'text',
