@@ -712,6 +712,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             case 'session.started':
                 return null; // too verbose for UI
             case 'text':
+                // Skip 'result' category for Claude - it duplicates the streaming 'assistant-message' content
+                // We display 'assistant-message' (streaming chunks) for real-time feedback
+                // but skip 'result' (final complete response) to avoid showing the same text twice
+                if (ev.category === 'result') {
+                    return null;
+                }
                 return (
                     <Box key={key} flexDirection="column" marginTop={0}>
                         <Text color={ev.category === 'reasoning' ? 'gray' : undefined}>
@@ -1147,8 +1153,21 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 break;
 
             default:
-                setOutput(prev => [...prev, <Text key={`unknown-${getNextKey()}`} color="yellow">Unknown command: {command}</Text>]);
-                setOutput(prev => [...prev, <Text key={`help-hint-${getNextKey()}`} dimColor>Type /help for available commands.</Text>]);
+                // Check if this looks like a conversation message (not starting with /)
+                if (!command.startsWith('/')) {
+                    setOutput(prev => [...prev,
+                        <Box key={`not-deployed-${getNextKey()}`} flexDirection="column" marginY={1}>
+                            <Text color="yellow">⚠ You are not in conversation mode.</Text>
+                            <Text dimColor>To start a conversation:</Text>
+                            <Text dimColor>  1. Use <Text color="green">/team list</Text> to see available teams</Text>
+                            <Text dimColor>  2. Use <Text color="green">/team deploy &lt;filename&gt;</Text> to deploy a team</Text>
+                            <Text dimColor>  3. Then type your message to start talking</Text>
+                        </Box>
+                    ]);
+                } else {
+                    setOutput(prev => [...prev, <Text key={`unknown-${getNextKey()}`} color="yellow">Unknown command: {command}</Text>]);
+                    setOutput(prev => [...prev, <Text key={`help-hint-${getNextKey()}`} dimColor>Type /help for available commands.</Text>]);
+                }
         }
     };
 
@@ -1829,5 +1848,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 }
 
 export function startReplInk(registryPath?: string) {
-    render(<App registryPath={registryPath} />);
+    render(<App registryPath={registryPath} />, {
+        // Enable incremental rendering to only update changed lines
+        // This reduces flickering when input text wraps to multiple lines
+        incrementalRendering: true
+    });
 }

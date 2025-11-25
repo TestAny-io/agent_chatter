@@ -400,7 +400,17 @@ export class ConversationCoordinator {
     }
 
     // 入队并串行处理（只存 member，处理时动态获取最新消息）
+    // 去重相邻的重复成员（例如 [max, max, carol] -> [max, carol]）
     for (const member of resolvedMembers) {
+      const lastInQueue = this.routingQueue[this.routingQueue.length - 1];
+      // Only skip if the immediately previous entry is the same member
+      if (lastInQueue && lastInQueue.member.id === member.id) {
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error(`[Debug][Routing] Skipping duplicate adjacent member: ${member.name}(${member.id})`);
+        }
+        continue;
+      }
       this.routingQueue.push({ member });
     }
     await this.processRoutingQueue();
