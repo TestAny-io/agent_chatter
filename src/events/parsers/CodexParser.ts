@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import type { AgentEvent, AgentType } from '../AgentEvent.js';
+import type { AgentEvent, AgentType, TodoItem } from '../AgentEvent.js';
+import { isValidTodoItem } from '../AgentEvent.js';
 import type { StreamParser } from '../StreamParser.js';
 import type { TeamContext } from '../../models/Team.js';
 
@@ -73,27 +74,42 @@ export class CodexParser implements StreamParser {
       case 'thread.started':
         return { ...base, type: 'session.started' };
 
-      case 'item.started': {
+      case 'item.started':
+      case 'item.updated': {
         const itemType = json.item?.type;
-        const toolName = this.mapToolName(itemType);
-        if (toolName) {
-          return {
-            ...base,
-            type: 'tool.started',
-            toolName,
-            toolId: json.item.id,
-            input: {
-              command: json.item.command,
-              path: json.item.path,
-              content: json.item.content
-            }
-          };
+
+        // Handle todo_list items
+        if (itemType === 'todo_list') {
+          return this.parseTodoListEvent(json, base);
+        }
+
+        // Handle tool items (only for item.started)
+        if (json.type === 'item.started') {
+          const toolName = this.mapToolName(itemType);
+          if (toolName) {
+            return {
+              ...base,
+              type: 'tool.started',
+              toolName,
+              toolId: json.item.id,
+              input: {
+                command: json.item.command,
+                path: json.item.path,
+                content: json.item.content
+              }
+            };
+          }
         }
         return null;
       }
 
       case 'item.completed': {
         const itemType = json.item?.type;
+
+        // Handle todo_list completion
+        if (itemType === 'todo_list') {
+          return this.parseTodoListEvent(json, base);
+        }
 
         if (itemType === 'reasoning') {
           return {
@@ -139,6 +155,35 @@ export class CodexParser implements StreamParser {
       default:
         return null;
     }
+  }
+
+  /**
+   * Parse Codex todo_list item into unified TodoListEvent.
+   * Validates items and skips invalid ones.
+   */
+  private parseTodoListEvent(json: any, base: any): AgentEvent | null {
+    const item = json.item;
+    if (!item || !Array.isArray(item.items)) {
+      return null;
+    }
+
+    const items: TodoItem[] = [];
+    for (const todoItem of item.items) {
+      const mapped: TodoItem = {
+        text: todoItem.text,
+        status: todoItem.completed ? 'completed' : 'pending'
+      };
+      if (isValidTodoItem(mapped)) {
+        items.push(mapped);
+      }
+    }
+
+    return {
+      ...base,
+      type: 'todo_list',
+      todoId: item.id || randomUUID(),
+      items
+    };
   }
 
   private mapToolName(itemType?: string): string | null {

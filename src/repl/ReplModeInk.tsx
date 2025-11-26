@@ -19,7 +19,7 @@ import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardS
 import { AgentsMenu } from './components/AgentsMenu.js';
 import { RegistryStorage } from '../registry/RegistryStorage.js';
 import { ThinkingIndicator } from './components/ThinkingIndicator.js';
-import type { AgentEvent } from '../events/AgentEvent.js';
+import type { AgentEvent, TodoItem, TodoStatus, TodoListEvent } from '../events/AgentEvent.js';
 import type { EventEmitter } from 'events';
 import {
     getTeamConfigDir,
@@ -137,6 +137,48 @@ function HelpMessage() {
         </Box>
     );
 }
+
+// ===== Todo List Types and Component =====
+
+interface ActiveTodoList {
+    todoId: string;
+    agentId: string;
+    memberDisplayName: string;
+    memberThemeColor: string;
+    items: TodoItem[];
+}
+
+/**
+ * Renders the active todo list with in-place updates.
+ * Shows member name in their theme color.
+ */
+function TodoListView({ todoList }: { todoList: ActiveTodoList }) {
+    const statusEmoji = (status: TodoStatus): string => {
+        switch (status) {
+            case 'completed': return '✅';
+            case 'cancelled': return '❌';
+            default: return '⭕';  // pending, in_progress
+        }
+    };
+
+    return (
+        <Box flexDirection="column" marginY={1}>
+            <Text bold color={todoList.memberThemeColor}>
+                📋 Plan ({todoList.memberDisplayName}):
+            </Text>
+            {todoList.items.map((item, idx) => (
+                <Text
+                    key={`${todoList.todoId}-${idx}`}
+                    color={item.status === 'completed' ? 'green' : 'yellow'}
+                >
+                    {statusEmoji(item.status)} {item.text}
+                </Text>
+            ))}
+        </Box>
+    );
+}
+
+// ===== End Todo List Types and Component =====
 
 // 工具状态显示
 function StatusDisplay({ tools }: { tools: any[] }) {
@@ -633,7 +675,6 @@ interface FormState {
 // 主应用组件
 function App({ registryPath }: { registryPath?: string } = {}) {
     const [input, setInput] = useState('');
-    // Historical output: render via <Static> to avoid re-render storms when typing.
     const [output, setOutput] = useState<React.ReactNode[]>([]);
     const [currentConfig, setCurrentConfig] = useState<CLIConfig | null>(null);
     const [currentConfigPath, setCurrentConfigPath] = useState<string | null>(null);
@@ -643,6 +684,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [activeCoordinator, setActiveCoordinator] = useState<ConversationCoordinator | null>(null);
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
     const [executingAgent, setExecutingAgent] = useState<Member | null>(null);
+    const [activeTodoList, setActiveTodoList] = useState<ActiveTodoList | null>(null);
 
     // Streaming event handling
     const pendingEventsRef = useRef<AgentEvent[]>([]);
@@ -708,12 +750,14 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     };
 
     /**
-     * Append a new line to output, with optional sliding window to keep render fast.
-     * Static render means old items won't re-render; we still cap length to prevent memory bloat.
+     * Append node(s) to output, with optional sliding window to keep render fast.
+     * Supports both single ReactNode and ReactNode[] - arrays are flattened into individual items.
      */
-    const appendOutput = (node: React.ReactNode, maxItems = 500) => {
+    const appendOutput = (nodeOrNodes: React.ReactNode | React.ReactNode[], maxItems = 500) => {
         setOutput(prev => {
-            const next = [...prev, node];
+            // Flatten arrays into individual items for correct sliding window counting
+            const nodesToAdd = Array.isArray(nodeOrNodes) ? nodeOrNodes : [nodeOrNodes];
+            const next = [...prev, ...nodesToAdd];
             if (next.length > maxItems) {
                 // drop oldest
                 return next.slice(next.length - maxItems);
@@ -783,6 +827,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                         error: {ev.error}
                     </Text>
                 );
+            case 'todo_list':
+                // IMPORTANT: Do NOT render here - handled separately via activeTodoList state
+                return null;
             default:
                 return null;
         }
@@ -817,6 +864,39 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         }, 16);
     };
 
+    /**
+     * Handle todo_list events - update activeTodoList state for in-place rendering.
+     * Looks up member info from activeTeam to get display name and theme color.
+     */
+    const handleTodoListEvent = (ev: TodoListEvent) => {
+        // Find the member info for display
+        let memberDisplayName = ev.agentId;
+        let memberThemeColor = 'cyan';
+
+        if (activeTeam) {
+            const member = activeTeam.members.find(m => m.id === ev.agentId);
+            if (member) {
+                memberDisplayName = member.displayName;
+                memberThemeColor = member.themeColor || 'cyan';
+            }
+        }
+
+        setActiveTodoList({
+            todoId: ev.todoId,
+            agentId: ev.agentId,
+            memberDisplayName,
+            memberThemeColor,
+            items: ev.items
+        });
+    };
+
+    /**
+     * Clear todo list - call on agent switch, cancel, or error.
+     */
+    const clearTodoList = () => {
+        setActiveTodoList(null);
+    };
+
     const attachEventEmitter = (emitter: EventEmitter | null) => {
         // Cleanup previous listener
         if (eventListenerRef.current && eventEmitterRef.current) {
@@ -827,6 +907,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         if (!emitter) return;
 
         const listener = (ev: AgentEvent) => {
+            // Handle todo_list events separately - update state, don't add to output
+            if (ev.type === 'todo_list') {
+                handleTodoListEvent(ev as TodoListEvent);
+                return;
+            }
             pendingEventsRef.current.push(ev);
             scheduleStreamFlush();
         };
@@ -879,6 +964,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 const allowEscCancel = currentConfig.conversation?.allowEscCancel ?? true;
                 if (allowEscCancel) {
                     activeCoordinator.handleUserCancellation();
+                    clearTodoList(); // Clear todo list on cancel
                     appendOutput(<Text key={`agent-cancelled-${getNextKey()}`} color="yellow">Agent execution cancelled by user (ESC)</Text>);
                     return;
                 }
@@ -890,6 +976,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             if (mode === 'conversation' && activeCoordinator) {
                 // 退出对话模式
                 activeCoordinator.stop();
+                clearTodoList(); // Clear todo list on exit
                 setMode('normal');
                 setActiveCoordinator(null);
                 setActiveTeam(null);
@@ -1709,6 +1796,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
+            // 将欢迎屏幕作为首批输出（若尚未输出过）
+            if (output.length === 0 && (mode === 'normal' || mode === 'conversation')) {
+                appendOutput(<WelcomeScreen />);
+            }
+
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
                 onMessage: (message: ConversationMessage) => {
                     // AI 文本已经通过流式事件显示，这里不再重复；人类/系统消息仍保留
@@ -1730,12 +1822,15 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 },
                 onAgentStarted: (member: Member) => {
                     flushPendingNow();
+                    clearTodoList(); // Clear previous agent's todo list on agent switch
                     const color = member.themeColor ?? 'white';
                     appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
                     flushPendingNow();
+                    // NOTE: Do NOT clearTodoList here - per design, todo list stays visible
+                    // after turn completes until next agent starts or new todo arrives
                     const color = member.themeColor ?? 'cyan';
                     appendOutput(<Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>);
                     setExecutingAgent(null);
@@ -1773,13 +1868,15 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     return (
         <Box flexDirection="column">
-            {/* 欢迎屏幕（只在normal和conversation模式下显示） */}
-            {(mode === 'normal' || mode === 'conversation') && <WelcomeScreen />}
+            {/* 输出历史（含欢迎屏幕作为首批输出，随内容上推） */}
+            {output.map((item, idx) => (
+                <Box key={`output-${idx}`}>{item}</Box>
+            ))}
 
-            {/* 输出历史：使用 Static 渲染，避免随着输入重渲染整段日志 */}
-            <Static items={output}>
-                {(item, idx) => <Box key={`output-${idx}`}>{item}</Box>}
-            </Static>
+            {/* TodoListView - Dynamic in-place todo list display */}
+            {mode === 'conversation' && activeTodoList && (
+                <TodoListView todoList={activeTodoList} />
+            )}
 
             {/* ThinkingIndicator - Show when agent is executing */}
             {mode === 'conversation' && executingAgent && currentConfig &&

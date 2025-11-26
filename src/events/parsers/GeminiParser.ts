@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import type { AgentEvent, AgentType } from '../AgentEvent.js';
+import type { AgentEvent, AgentType, TodoItem, TodoStatus } from '../AgentEvent.js';
+import { isValidTodoItem } from '../AgentEvent.js';
 import type { StreamParser } from '../StreamParser.js';
 import type { TeamContext } from '../../models/Team.js';
 
@@ -90,14 +91,22 @@ export class GeminiParser implements StreamParser {
           role: ['assistant', 'system'].includes(json.role) ? json.role as 'assistant' | 'system' : undefined,
           category: json.role === 'assistant' ? 'message' : undefined
         };
-      case 'tool_use':
+      case 'tool_use': {
+        const toolName = json.tool_name ?? json.name;
+
+        // Check for write_todos - emit TodoListEvent instead of tool.started
+        if (toolName === 'write_todos') {
+          return this.parseWriteTodosEvent(json, base);
+        }
+
         return {
           ...base,
           type: 'tool.started',
-          toolName: json.tool_name ?? json.name,
+          toolName,
           toolId: json.tool_id ?? json.id,
           input: json.parameters ?? json.input ?? {}
         };
+      }
       case 'tool_result':
         return {
           ...base,
@@ -115,5 +124,33 @@ export class GeminiParser implements StreamParser {
       default:
         return null;
     }
+  }
+
+  /**
+   * Parse Gemini write_todos tool call into unified TodoListEvent.
+   */
+  private parseWriteTodosEvent(json: any, base: any): AgentEvent | null {
+    const parameters = json.parameters ?? json.input;
+    if (!parameters || !Array.isArray(parameters.todos)) {
+      return null;
+    }
+
+    const items: TodoItem[] = [];
+    for (const todoItem of parameters.todos) {
+      const mapped: TodoItem = {
+        text: todoItem.description,
+        status: todoItem.status as TodoStatus
+      };
+      if (isValidTodoItem(mapped)) {
+        items.push(mapped);
+      }
+    }
+
+    return {
+      ...base,
+      type: 'todo_list',
+      todoId: json.tool_id ?? json.id ?? randomUUID(),
+      items
+    };
   }
 }
