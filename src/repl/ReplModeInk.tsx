@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { render, Box, Text, useInput, useApp, Static } from 'ink';
+import { render, Box, Text, useInput, useApp, Static, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import * as fs from 'fs';
 import { watch } from 'fs';
@@ -80,27 +80,79 @@ function WelcomeScreen() {
 }
 
 // 命令提示组件
+// In alternateBuffer mode, we need a fixed height to prevent layout jumps
+const MAX_VISIBLE_HINTS = 5;  // Max visible command hints (not counting scroll indicators)
+const HINT_BOX_HEIGHT = MAX_VISIBLE_HINTS + 1;  // +1 for marginTop
+
 function CommandHints({ input, selectedIndex }: { input: string; selectedIndex: number }) {
     if (!input.startsWith('/')) {
-        return null;
+        // Return empty placeholder with fixed height to prevent layout shift
+        return <Box height={HINT_BOX_HEIGHT} />;
     }
 
     const matches = commands.filter(cmd => cmd.name.startsWith(input));
 
     if (matches.length === 0) {
-        return null;
+        // Return empty placeholder with fixed height to prevent layout shift
+        return <Box height={HINT_BOX_HEIGHT} />;
+    }
+
+    // If all matches fit, show them all
+    if (matches.length <= MAX_VISIBLE_HINTS) {
+        return (
+            <Box flexDirection="column" marginLeft={2} marginTop={1} height={HINT_BOX_HEIGHT}>
+                {matches.map((cmd, idx) => (
+                    <Box key={cmd.name}>
+                        <Text color={idx === selectedIndex ? 'green' : 'gray'} bold={idx === selectedIndex}>
+                            {idx === selectedIndex ? '▶ ' : '  '}{cmd.name}
+                        </Text>
+                        <Text dimColor> - {cmd.desc}</Text>
+                    </Box>
+                ))}
+            </Box>
+        );
+    }
+
+    // Need scrolling: reserve 1 line for scroll indicator, show MAX_VISIBLE_HINTS - 1 items
+    const visibleItems = MAX_VISIBLE_HINTS - 1;
+
+    // Calculate scroll window to keep selectedIndex visible
+    let startIdx = 0;
+    if (selectedIndex >= visibleItems) {
+        startIdx = selectedIndex - visibleItems + 1;
+    }
+    startIdx = Math.max(0, Math.min(startIdx, matches.length - visibleItems));
+
+    const displayMatches = matches.slice(startIdx, startIdx + visibleItems);
+    const hasMoreAbove = startIdx > 0;
+    const hasMoreBelow = startIdx + visibleItems < matches.length;
+
+    // Build scroll indicator text
+    let scrollIndicator = '';
+    if (hasMoreAbove && hasMoreBelow) {
+        scrollIndicator = `↑${startIdx} more above | ↓${matches.length - startIdx - visibleItems} more below`;
+    } else if (hasMoreAbove) {
+        scrollIndicator = `↑ ${startIdx} more above`;
+    } else if (hasMoreBelow) {
+        scrollIndicator = `↓ ${matches.length - startIdx - visibleItems} more below`;
     }
 
     return (
-        <Box flexDirection="column" marginLeft={2} marginTop={1}>
-            {matches.map((cmd, idx) => (
-                <Box key={cmd.name}>
-                    <Text color={idx === selectedIndex ? 'green' : 'gray'} bold={idx === selectedIndex}>
-                        {idx === selectedIndex ? '▶ ' : '  '}{cmd.name}
-                    </Text>
-                    <Text dimColor> - {cmd.desc}</Text>
-                </Box>
-            ))}
+        <Box flexDirection="column" marginLeft={2} marginTop={1} height={HINT_BOX_HEIGHT}>
+            {displayMatches.map((cmd, idx) => {
+                const actualIdx = startIdx + idx;
+                return (
+                    <Box key={cmd.name}>
+                        <Text color={actualIdx === selectedIndex ? 'green' : 'gray'} bold={actualIdx === selectedIndex}>
+                            {actualIdx === selectedIndex ? '▶ ' : '  '}{cmd.name}
+                        </Text>
+                        <Text dimColor> - {cmd.desc}</Text>
+                    </Box>
+                );
+            })}
+            {scrollIndicator && (
+                <Text dimColor>  {scrollIndicator}</Text>
+            )}
         </Box>
     );
 }
@@ -672,6 +724,9 @@ interface FormState {
 
 // 主应用组件
 function App({ registryPath }: { registryPath?: string } = {}) {
+    const { stdout } = useStdout();
+    const terminalWidth = stdout?.columns || 80;
+
     const [input, setInput] = useState('');
     // Initialize output with WelcomeScreen as first item - it will be rendered once via Static
     const [output, setOutput] = useState<React.ReactNode[]>([<WelcomeScreen key="welcome" />]);
@@ -1852,8 +1907,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 coordinator.setWaitingForRoleId(humans[0].id);
             }
 
-                appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
-                appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>);
+            appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
+            appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>);
+
+            // Force a re-render after Static updates in alternateBuffer mode
+            // This ensures the input prompt is visible after deploy
+            setTimeout(() => setInput(prev => prev), 50);
 
             return coordinator;
 
@@ -1935,43 +1994,55 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 />
             )}
 
-            {/* 当前输入行 - hide when exiting to prevent render artifacts */}
+            {/* 输入区域 - 使用上下横线确保在 alternateBuffer 模式下始终可见 */}
             {!isExiting && (mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
-                <Box marginTop={1}>
-                    {mode === 'conversation' ? (
-                        <Text color="green" bold>
-                            {(() => {
-                                // Get waiting member's display name for the prompt
-                                if (activeCoordinator && activeTeam) {
-                                    const waitingRoleId = activeCoordinator.getWaitingForRoleId();
-                                    if (waitingRoleId) {
-                                        const waitingMember = activeTeam.members.find(m => m.id === waitingRoleId);
-                                        if (waitingMember) {
-                                            return `${waitingMember.displayName}> `;
+                <Box flexDirection="column" marginTop={1}>
+                    {/* 上横线 */}
+                    <Text color={mode === 'conversation' ? 'green' : 'cyan'}>
+                        {'─'.repeat(terminalWidth - 4)}
+                    </Text>
+                    {/* 输入行 */}
+                    <Box>
+                        {mode === 'conversation' ? (
+                            <Text color="green" bold>
+                                {(() => {
+                                    // Get waiting member's display name for the prompt
+                                    if (activeCoordinator && activeTeam) {
+                                        const waitingRoleId = activeCoordinator.getWaitingForRoleId();
+                                        if (waitingRoleId) {
+                                            const waitingMember = activeTeam.members.find(m => m.id === waitingRoleId);
+                                            if (waitingMember) {
+                                                return `${waitingMember.displayName}> `;
+                                            }
+                                        }
+                                        // Fallback: if only one human, show their name
+                                        const humans = activeTeam.members.filter(m => m.type === 'human');
+                                        if (humans.length === 1) {
+                                            return `${humans[0].displayName}> `;
                                         }
                                     }
-                                    // Fallback: if only one human, show their name
-                                    const humans = activeTeam.members.filter(m => m.type === 'human');
-                                    if (humans.length === 1) {
-                                        return `${humans[0].displayName}> `;
-                                    }
-                                }
-                                // Fallback to generic prompt if multiple humans or no team
-                                return 'you> ';
-                            })()}
-                        </Text>
-                    ) : mode === 'wizard' ? (
-                        <Text color="cyan" bold>wizard&gt; </Text>
-                    ) : mode === 'form' ? (
-                        <Text color="cyan" bold>input&gt; </Text>
-                    ) : (
-                        <Text color="cyan">agent-chatter&gt; </Text>
-                    )}
-                    <TextInput
-                        value={input}
-                        onChange={setInput}
-                        onSubmit={handleInputSubmit}
-                    />
+                                    // Fallback to generic prompt if multiple humans or no team
+                                    return 'you> ';
+                                })()}
+                            </Text>
+                        ) : mode === 'wizard' ? (
+                            <Text color="cyan" bold>wizard&gt; </Text>
+                        ) : mode === 'form' ? (
+                            <Text color="cyan" bold>input&gt; </Text>
+                        ) : (
+                            <Text color="cyan">agent-chatter&gt; </Text>
+                        )}
+                        <TextInput
+                            value={input}
+                            onChange={setInput}
+                            onSubmit={handleInputSubmit}
+                            placeholder=" "
+                        />
+                    </Box>
+                    {/* 下横线 */}
+                    <Text color={mode === 'conversation' ? 'green' : 'cyan'}>
+                        {'─'.repeat(terminalWidth - 4)}
+                    </Text>
                 </Box>
             )}
 
@@ -1983,8 +2054,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
 export function startReplInk(registryPath?: string) {
     render(<App registryPath={registryPath} />, {
-        // Enable incremental rendering to prevent content from being pushed up
-        // when input wraps to multiple lines. Trade-off: prompt may repeat on wrap.
+        // Use alternate buffer mode (like vim, less, top) for cleaner UI:
+        // - Prevents long input lines from causing duplicate prompts
+        // - Preserves shell history when exiting
+        // - Gives Ink full control over screen rendering
+        alternateBuffer: true,
+        // Enable incremental rendering for smooth updates within alternate buffer
         incrementalRendering: true
     });
 }
