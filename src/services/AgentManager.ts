@@ -239,6 +239,11 @@ export class AgentManager {
           // Skip 'assistant-message' (streaming chunks) and 'reasoning' (internal thoughts) to avoid duplicates
           if (event.type === 'text' && event.text) {
             const category = event.category;
+            // For Claude, ignore category-less text (typically fallback raw JSON) to avoid leaking raw JSON
+            const isClaude = event.agentType === 'claude-code';
+            if (isClaude && category === undefined) {
+              continue;
+            }
             // Claude: use 'result' (final complete response from result event)
             // Codex/Gemini: use 'message' or undefined (their text events are final)
             if (category === 'result' || category === 'message' || category === undefined) {

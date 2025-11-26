@@ -157,7 +157,9 @@ export class ClaudeCodeParser implements StreamParser {
       agentType: this.agentType,
       teamMetadata: this.teamContext,
       timestamp: Date.now(),
-      text
+      text,
+      // Mark as result-like so downstream UI/accumulator can safely ignore/skip
+      category: 'result'
     };
   }
 

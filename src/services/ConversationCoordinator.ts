@@ -513,9 +513,7 @@ export class ConversationCoordinator {
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.error(`[Debug][Send] to ${member.name} (${member.id}):\n${prompt.prompt}`);
-        if (prompt.systemFlag) {
-          console.error(`[Debug][Send] systemFlag (for ${member.name}):\n${prompt.systemFlag}`);
-        }
+        // Note: systemFlag is not logged separately as it duplicates content already in prompt
       }
 
       const teamContext = {

@@ -821,8 +821,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     // Handle input submission (Enter key)
     const handleInputSubmit = (value: string) => {
         if (mode === 'conversation') {
-            handleConversationInput(value.trim());
-            setInput('');
+            const success = handleConversationInput(value.trim());
+            // Only clear input if message was successfully processed
+            // If validation failed, keep the input so user can edit and retry
+            if (success) {
+                setInput('');
+            }
         } else if (mode === 'wizard') {
             handleWizardInput(value.trim());
             setInput('');
@@ -1046,8 +1050,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         };
     }, []); // Empty dependency array: setup once on mount
 
-    const handleConversationInput = (message: string) => {
-        if (!message) return;
+    /**
+     * Handle conversation input. Returns true if message was processed successfully,
+     * false if validation failed and the input should be preserved for user to edit.
+     */
+    const handleConversationInput = (message: string): boolean => {
+        if (!message) return true; // Empty message is "successful" (nothing to do)
 
         // 检查是否是退出对话命令
         if (message === '/end' || message === '/exit' || message === '/quit') {
@@ -1065,12 +1073,30 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     <Text color="green">{'─'.repeat(60)}</Text>
                 </Box>
             ]);
-            return;
+            return true;
         }
 
         // 通过coordinator继续对话
         // 检查是否有role在等待输入
         if (activeCoordinator && activeTeam) {
+            // Validate [TEAM_TASK] format if present
+            // Correct format: [TEAM_TASK:description] - must have colon and closing bracket
+            // MECE: if message contains "TEAM_TASK", it must match the correct pattern exactly
+            const hasTeamTaskKeyword = /\bTEAM_TASK\b/i.test(message);
+            if (hasTeamTaskKeyword) {
+                const correctFormat = /\[TEAM_TASK:\s*[^\]]+\]/i;
+                if (!correctFormat.test(message)) {
+                    setOutput(prev => [...prev,
+                        <Box key={`task-hint-${getNextKey()}`} flexDirection="column" marginY={1}>
+                            <Text color="red">✗ Invalid [TEAM_TASK] format. Message not sent.</Text>
+                            <Text dimColor>Correct format: <Text color="green">[TEAM_TASK:your task description]</Text></Text>
+                            <Text dimColor>Example: [TEAM_TASK:Review the PRD document] [NEXT:max]</Text>
+                        </Box>
+                    ]);
+                    return false; // Validation failed - preserve input for user to edit
+                }
+            }
+
             const waitingRoleId = activeCoordinator.getWaitingForRoleId();
 
             // Check if single human - allow sending without explicit waitingRoleId
@@ -1092,6 +1118,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 activeCoordinator.sendMessage(message).catch(err => {
                     setOutput(prev => [...prev, <Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>]);
                 });
+                return true;
             } else {
                 // Check if message has [FROM:xxx] to allow buzzing in
                 if (message.match(/\[FROM:/i)) {
@@ -1099,13 +1126,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                      activeCoordinator.sendMessage(message).catch(err => {
                         setOutput(prev => [...prev, <Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>]);
                     });
+                    return true;
                 } else {
                     setOutput(prev => [...prev,
                         <Text key={`no-waiting-${getNextKey()}`} color="yellow">No team member is waiting for input right now. Wait for the coordinator to prompt you, or use [FROM:Name] to buzz in.</Text>
                     ]);
+                    return false; // Keep input so user can add [FROM:xxx]
                 }
             }
         }
+        return true;
     };
 
     const handleCommand = async (cmd: string) => {
