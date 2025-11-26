@@ -1796,11 +1796,6 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
-            // 将欢迎屏幕作为首批输出（若尚未输出过）
-            if (output.length === 0 && (mode === 'normal' || mode === 'conversation')) {
-                appendOutput(<WelcomeScreen />);
-            }
-
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
                 onMessage: (message: ConversationMessage) => {
                     // AI 文本已经通过流式事件显示，这里不再重复；人类/系统消息仍保留
@@ -1868,7 +1863,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     return (
         <Box flexDirection="column">
-            {/* 输出历史（含欢迎屏幕作为首批输出，随内容上推） */}
+            {/* 欢迎屏幕（保持在顶部渲染，不随输出推移） */}
+            {(mode === 'normal' || mode === 'conversation') && <WelcomeScreen />}
+
+            {/* 输出历史（滑窗，随内容上推） */}
             {output.map((item, idx) => (
                 <Box key={`output-${idx}`}>{item}</Box>
             ))}
