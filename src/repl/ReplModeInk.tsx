@@ -2054,12 +2054,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
 export function startReplInk(registryPath?: string) {
     render(<App registryPath={registryPath} />, {
-        // Use alternate buffer mode (like vim, less, top) for cleaner UI:
-        // - Prevents long input lines from causing duplicate prompts
-        // - Preserves shell history when exiting
-        // - Gives Ink full control over screen rendering
-        alternateBuffer: true,
-        // Enable incremental rendering for smooth updates within alternate buffer
+        // Don't use alternateBuffer - it prevents scrolling for long agent outputs
+        // Trade-off: long input lines may cause duplicate prompts, but scrolling works
         incrementalRendering: true
     });
 }
