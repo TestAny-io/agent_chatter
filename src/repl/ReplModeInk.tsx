@@ -684,6 +684,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [activeTeam, setActiveTeam] = useState<Team | null>(null);
     const [executingAgent, setExecutingAgent] = useState<Member | null>(null);
     const [activeTodoList, setActiveTodoList] = useState<ActiveTodoList | null>(null);
+    const [isExiting, setIsExiting] = useState(false);
 
     // Streaming event handling
     const pendingEventsRef = useRef<AgentEvent[]>([]);
@@ -1280,6 +1281,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             case '/exit':
             case '/quit':
+                setIsExiting(true);
                 appendOutput(<Text color="cyan" key="goodbye">Goodbye! 👋</Text>);
                 setTimeout(() => exit(), 100);
                 break;
@@ -1933,8 +1935,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 />
             )}
 
-            {/* 当前输入行 */}
-            {(mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
+            {/* 当前输入行 - hide when exiting to prevent render artifacts */}
+            {!isExiting && (mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
                 <Box marginTop={1}>
                     {mode === 'conversation' ? (
                         <Text color="green" bold>
@@ -1973,16 +1975,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 </Box>
             )}
 
-            {/* 命令提示（只在normal模式下显示） */}
-            {mode === 'normal' && <CommandHints input={input} selectedIndex={selectedIndex} />}
+            {/* 命令提示（只在normal模式下显示，退出时隐藏） */}
+            {!isExiting && mode === 'normal' && <CommandHints input={input} selectedIndex={selectedIndex} />}
         </Box>
     );
 }
 
 export function startReplInk(registryPath?: string) {
     render(<App registryPath={registryPath} />, {
-        // Enable incremental rendering to only update changed lines
-        // This reduces flickering when input text wraps to multiple lines
+        // Enable incremental rendering to prevent content from being pushed up
+        // when input wraps to multiple lines. Trade-off: prompt may repeat on wrap.
         incrementalRendering: true
     });
 }
