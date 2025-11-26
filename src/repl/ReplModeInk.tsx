@@ -68,11 +68,9 @@ const agentsCommands = [
 function WelcomeScreen() {
     return (
         <Box flexDirection="column" marginBottom={1}>
-            <Box borderStyle="round" borderColor="cyan" padding={1}>
-                <Box flexDirection="column">
-                    <Text bold color="cyan">                    AGENT CHATTER</Text>
-                    <Text dimColor>          Multi-AI Conversation Orchestrator</Text>
-                </Box>
+            <Box borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} flexDirection="column" alignItems="center">
+                <Text bold color="cyan">AGENT CHATTER</Text>
+                <Text dimColor>Multi-AI Conversation Orchestrator</Text>
             </Box>
             <Text dimColor>  Version {VERSION} • TestAny.io</Text>
             <Text dimColor>  Type <Text color="green">/help</Text> for available commands</Text>
@@ -675,7 +673,8 @@ interface FormState {
 // 主应用组件
 function App({ registryPath }: { registryPath?: string } = {}) {
     const [input, setInput] = useState('');
-    const [output, setOutput] = useState<React.ReactNode[]>([]);
+    // Initialize output with WelcomeScreen as first item - it will be rendered once via Static
+    const [output, setOutput] = useState<React.ReactNode[]>([<WelcomeScreen key="welcome" />]);
     const [currentConfig, setCurrentConfig] = useState<CLIConfig | null>(null);
     const [currentConfigPath, setCurrentConfigPath] = useState<string | null>(null);
     const [keyCounter, setKeyCounter] = useState(0);
@@ -1798,15 +1797,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
                 onMessage: (message: ConversationMessage) => {
-                    // AI 文本已经通过流式事件显示，这里不再重复；人类/系统消息仍保留
-                    if (message.speaker.type === 'ai' || message.speaker.type === 'system') {
+                    // AI 文本已经通过流式事件显示，这里不再重复
+                    // Human 消息已经在 handleConversationInput 中显示，这里也不再重复
+                    // 只保留 system 消息（如果有的话）
+                    if (message.speaker.type === 'ai' || message.speaker.type === 'human') {
                         return;
                     }
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
-                    const nameColor = message.speaker.type === 'human' ? 'green' : 'yellow';
                     appendOutput(
                         <Box key={`msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
-                            <Text color={nameColor}>[{timestamp}] {message.speaker.roleTitle}:</Text>
+                            <Text color="yellow">[{timestamp}] {message.speaker.roleTitle}:</Text>
                             <Text>{message.content}</Text>
                             <Text dimColor>{'─'.repeat(60)}</Text>
                         </Box>
@@ -1863,13 +1863,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
     return (
         <Box flexDirection="column">
-            {/* 欢迎屏幕（保持在顶部渲染，不随输出推移） */}
-            {(mode === 'normal' || mode === 'conversation') && <WelcomeScreen />}
-
-            {/* 输出历史（滑窗，随内容上推） */}
-            {output.map((item, idx) => (
-                <Box key={`output-${idx}`}>{item}</Box>
-            ))}
+            {/* 输出历史（使用 Static 确保内容只渲染一次，不会随状态变化重绘） */}
+            {/* WelcomeScreen 作为 output 的第一个元素，也只渲染一次 */}
+            <Static items={output}>
+                {(item, idx) => <Box key={`output-${idx}`}>{item}</Box>}
+            </Static>
 
             {/* TodoListView - Dynamic in-place todo list display */}
             {mode === 'conversation' && activeTodoList && (
