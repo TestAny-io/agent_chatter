@@ -1,7 +1,7 @@
 {
   "name": "@testany/agent-chatter",
   "description": "Multi-agent conversation orchestration CLI for AI assistants",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "type": "module",
   "main": "./out/cli.js",
   "bin": {
