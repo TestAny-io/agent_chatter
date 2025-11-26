@@ -2,8 +2,8 @@
  * ReplModeInk - 基于 Ink + React 的交互式 REPL
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { render, Box, Text, useInput, useApp } from 'ink';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { render, Box, Text, useInput, useApp, Static } from 'ink';
 import TextInput from 'ink-text-input';
 import * as fs from 'fs';
 import { watch } from 'fs';
@@ -633,6 +633,7 @@ interface FormState {
 // 主应用组件
 function App({ registryPath }: { registryPath?: string } = {}) {
     const [input, setInput] = useState('');
+    // Historical output: render via <Static> to avoid re-render storms when typing.
     const [output, setOutput] = useState<React.ReactNode[]>([]);
     const [currentConfig, setCurrentConfig] = useState<CLIConfig | null>(null);
     const [currentConfigPath, setCurrentConfigPath] = useState<string | null>(null);
@@ -704,6 +705,21 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const truncate = (val?: string, max = 100) => {
         if (!val) return '';
         return val.length > max ? `${val.slice(0, max)}…` : val;
+    };
+
+    /**
+     * Append a new line to output, with optional sliding window to keep render fast.
+     * Static render means old items won't re-render; we still cap length to prevent memory bloat.
+     */
+    const appendOutput = (node: React.ReactNode, maxItems = 500) => {
+        setOutput(prev => {
+            const next = [...prev, node];
+            if (next.length > maxItems) {
+                // drop oldest
+                return next.slice(next.length - maxItems);
+            }
+            return next;
+        });
     };
 
     const renderEvent = (ev: AgentEvent): React.ReactNode | null => {
@@ -780,7 +796,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             .map(renderEvent)
             .filter((n): n is React.ReactNode => Boolean(n));
         if (nodes.length > 0) {
-            setOutput(prev => [...prev, ...nodes]);
+            appendOutput(nodes);
         }
     };
 
@@ -796,7 +812,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 .map(renderEvent)
                 .filter((n): n is React.ReactNode => Boolean(n));
             if (nodes.length > 0) {
-                setOutput(prev => [...prev, ...nodes]);
+                appendOutput(nodes);
             }
         }, 16);
     };
@@ -863,7 +879,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 const allowEscCancel = currentConfig.conversation?.allowEscCancel ?? true;
                 if (allowEscCancel) {
                     activeCoordinator.handleUserCancellation();
-                    setOutput(prev => [...prev, <Text key={`agent-cancelled-${getNextKey()}`} color="yellow">Agent execution cancelled by user (ESC)</Text>]);
+                    appendOutput(<Text key={`agent-cancelled-${getNextKey()}`} color="yellow">Agent execution cancelled by user (ESC)</Text>);
                     return;
                 }
             }
@@ -877,14 +893,14 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 setMode('normal');
                 setActiveCoordinator(null);
                 setActiveTeam(null);
-                setOutput(prev => [...prev, <Text key={`conv-stopped-${getNextKey()}`} color="yellow">Conversation stopped.</Text>]);
+                appendOutput(<Text key={`conv-stopped-${getNextKey()}`} color="yellow">Conversation stopped.</Text>);
                 setInput('');
                 return;
             } else if (mode === 'wizard') {
                 // 取消向导
                 setMode('normal');
                 setWizardState(null);
-                setOutput(prev => [...prev, <Text key={`wizard-cancelled-${getNextKey()}`} color="yellow">Wizard cancelled.</Text>]);
+                appendOutput(<Text key={`wizard-cancelled-${getNextKey()}`} color="yellow">Wizard cancelled.</Text>);
                 setInput('');
                 return;
             } else if (mode === 'menu') {
@@ -892,25 +908,25 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 setMode('normal');
                 setMenuState(null);
                 setMenuItems([]);
-                setOutput(prev => [...prev, <Text key={`menu-cancelled-${getNextKey()}`} color="yellow">Menu editor closed.</Text>]);
+                appendOutput(<Text key={`menu-cancelled-${getNextKey()}`} color="yellow">Menu editor closed.</Text>);
                 setInput('');
                 return;
             } else if (mode === 'form') {
                 // 取消表单
                 setMode('normal');
                 setFormState(null);
-                setOutput(prev => [...prev, <Text key={`form-cancelled-${getNextKey()}`} color="yellow">Form cancelled.</Text>]);
+                appendOutput(<Text key={`form-cancelled-${getNextKey()}`} color="yellow">Form cancelled.</Text>);
                 setInput('');
                 return;
             } else if (mode === 'select') {
                 // 取消选择
                 setMode('normal');
                 setSelectState(null);
-                setOutput(prev => [...prev, <Text key={`select-cancelled-${getNextKey()}`} color="yellow">Selection cancelled.</Text>]);
+                appendOutput(<Text key={`select-cancelled-${getNextKey()}`} color="yellow">Selection cancelled.</Text>);
                 setInput('');
                 return;
             } else {
-                setOutput(prev => [...prev, <Text color="cyan" key="goodbye">Goodbye! 👋</Text>]);
+                appendOutput(<Text color="cyan" key="goodbye">Goodbye! 👋</Text>);
                 setTimeout(() => exit(), 100);
                 return;
             }
@@ -1036,11 +1052,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         const watcher = watch(configDir, { recursive: false }, (eventType, filename) => {
             if (filename && filename.endsWith('.json')) {
                 // Show notification when config files change
-                setOutput(prev => [...prev,
+                appendOutput(
                     <Text key={`file-change-${Date.now()}`} color="cyan" dimColor>
                         Team config changed. Type /team list to refresh.
                     </Text>
-                ]);
+                );
             }
         });
 
@@ -1065,14 +1081,14 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setMode('normal');
             setActiveCoordinator(null);
             setActiveTeam(null);
-            setOutput(prev => [...prev,
+            appendOutput(
                 <Box key={`conv-end-${getNextKey()}`} flexDirection="column" marginTop={1}>
                     <Text color="green">{'─'.repeat(60)}</Text>
                     <Text bold color="green">Conversation Ended</Text>
                     <Text dimColor>You are back in normal mode. Type /help for commands.</Text>
                     <Text color="green">{'─'.repeat(60)}</Text>
                 </Box>
-            ]);
+            );
             return true;
         }
 
@@ -1086,13 +1102,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             if (hasTeamTaskKeyword) {
                 const correctFormat = /\[TEAM_TASK:\s*[^\]]+\]/i;
                 if (!correctFormat.test(message)) {
-                    setOutput(prev => [...prev,
+                    appendOutput(
                         <Box key={`task-hint-${getNextKey()}`} flexDirection="column" marginY={1}>
                             <Text color="red">✗ Invalid [TEAM_TASK] format. Message not sent.</Text>
                             <Text dimColor>Correct format: <Text color="green">[TEAM_TASK:your task description]</Text></Text>
                             <Text dimColor>Example: [TEAM_TASK:Review the PRD document] [NEXT:max]</Text>
                         </Box>
-                    ]);
+                    );
                     return false; // Validation failed - preserve input for user to edit
                 }
             }
@@ -1107,16 +1123,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 const displayRole = waitingRoleId
                     ? activeTeam.members.find(r => r.id === waitingRoleId)
                     : humans[0];
-                setOutput(prev => [...prev,
+                appendOutput(
                     <Box key={`user-msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
                         <Text color="green">[{displayRole?.displayName || 'You'}]:</Text>
                         <Text>{message}</Text>
                         <Text dimColor>{'─'.repeat(60)}</Text>
                     </Box>
-                ]);
+                );
                 // Use new sendMessage API
                 activeCoordinator.sendMessage(message).catch(err => {
-                    setOutput(prev => [...prev, <Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>]);
+                    appendOutput(<Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>);
                 });
                 return true;
             } else {
@@ -1124,13 +1140,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 if (message.match(/\[FROM:/i)) {
                      // Allow buzzing in even if not waiting
                      activeCoordinator.sendMessage(message).catch(err => {
-                        setOutput(prev => [...prev, <Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>]);
+                        appendOutput(<Text key={`send-err-${getNextKey()}`} color="red">{String(err)}</Text>);
                     });
                     return true;
                 } else {
-                    setOutput(prev => [...prev,
+                    appendOutput(
                         <Text key={`no-waiting-${getNextKey()}`} color="yellow">No team member is waiting for input right now. Wait for the coordinator to prompt you, or use [FROM:Name] to buzz in.</Text>
-                    ]);
+                    );
                     return false; // Keep input so user can add [FROM:xxx]
                 }
             }
@@ -1146,22 +1162,22 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         const args = parts.slice(1);
 
         // 添加用户输入到输出
-        setOutput(prev => [...prev, <Text key={`input-${getNextKey()}`} color="cyan">agent-chatter&gt; {cmd}</Text>]);
+        appendOutput(<Text key={`input-${getNextKey()}`} color="cyan">agent-chatter&gt; {cmd}</Text>);
 
         switch (command) {
             case '/help':
-                setOutput(prev => [...prev, <HelpMessage key={`help-${getNextKey()}`} />]);
+                appendOutput(<HelpMessage key={`help-${getNextKey()}`} />);
                 break;
 
             case '/status':
-                setOutput(prev => [...prev, <Text key={`status-msg-${getNextKey()}`} dimColor>Detecting AI CLI tools...</Text>]);
+                appendOutput(<Text key={`status-msg-${getNextKey()}`} dimColor>Detecting AI CLI tools...</Text>);
                 const tools = await detectAllTools();
-                setOutput(prev => [...prev, <StatusDisplay key={`status-${getNextKey()}`} tools={tools} />]);
+                appendOutput(<StatusDisplay key={`status-${getNextKey()}`} tools={tools} />);
                 break;
 
             case '/list':
-                setOutput(prev => [...prev, <Text key={`list-msg-${getNextKey()}`} dimColor>Looking for configuration files...</Text>]);
-                setOutput(prev => [...prev, <ConfigList key={`list-${getNextKey()}`} currentConfigPath={currentConfigPath} />]);
+                appendOutput(<Text key={`list-msg-${getNextKey()}`} dimColor>Looking for configuration files...</Text>);
+                appendOutput(<ConfigList key={`list-${getNextKey()}`} currentConfigPath={currentConfigPath} />);
                 break;
 
             case '/team':
@@ -1178,14 +1194,14 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             case '/exit':
             case '/quit':
-                setOutput(prev => [...prev, <Text color="cyan" key="goodbye">Goodbye! 👋</Text>]);
+                appendOutput(<Text color="cyan" key="goodbye">Goodbye! 👋</Text>);
                 setTimeout(() => exit(), 100);
                 break;
 
             default:
                 // Check if this looks like a conversation message (not starting with /)
                 if (!command.startsWith('/')) {
-                    setOutput(prev => [...prev,
+                    appendOutput(
                         <Box key={`not-deployed-${getNextKey()}`} flexDirection="column" marginY={1}>
                             <Text color="yellow">⚠ You are not in conversation mode.</Text>
                             <Text dimColor>To start a conversation:</Text>
@@ -1193,17 +1209,17 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                             <Text dimColor>  2. Use <Text color="green">/team deploy &lt;filename&gt;</Text> to deploy a team</Text>
                             <Text dimColor>  3. Then type your message to start talking</Text>
                         </Box>
-                    ]);
+                    );
                 } else {
-                    setOutput(prev => [...prev, <Text key={`unknown-${getNextKey()}`} color="yellow">Unknown command: {command}</Text>]);
-                    setOutput(prev => [...prev, <Text key={`help-hint-${getNextKey()}`} dimColor>Type /help for available commands.</Text>]);
+                    appendOutput(<Text key={`unknown-${getNextKey()}`} color="yellow">Unknown command: {command}</Text>);
+                    appendOutput(<Text key={`help-hint-${getNextKey()}`} dimColor>Type /help for available commands.</Text>);
                 }
         }
     };
 
     const handleTeamCommand = (args: string[]) => {
         if (args.length === 0) {
-            setOutput(prev => [...prev, <TeamMenuHelp key={`team-help-${getNextKey()}`} />]);
+            appendOutput(<TeamMenuHelp key={`team-help-${getNextKey()}`} />);
             return;
         }
 
@@ -1216,13 +1232,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 break;
 
             case 'list':
-                setOutput(prev => [...prev, <TeamList key={`team-list-${getNextKey()}`} />]);
+                appendOutput(<TeamList key={`team-list-${getNextKey()}`} />);
                 break;
 
             case 'deploy':
                 if (subargs.length === 0) {
-                    setOutput(prev => [...prev, <Text key={`team-deploy-usage-${getNextKey()}`} color="yellow">Usage: /team deploy &lt;filename&gt;</Text>]);
-                    setOutput(prev => [...prev, <Text key={`team-deploy-hint-${getNextKey()}`} dimColor>Use /team list to see available configurations</Text>]);
+                    appendOutput(<Text key={`team-deploy-usage-${getNextKey()}`} color="yellow">Usage: /team deploy &lt;filename&gt;</Text>);
+                    appendOutput(<Text key={`team-deploy-hint-${getNextKey()}`} dimColor>Use /team list to see available configurations</Text>);
                 } else {
                     const config = loadConfig(subargs[0]);
                     if (config) {
@@ -1233,7 +1249,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             case 'edit':
                 if (subargs.length === 0) {
-                    setOutput(prev => [...prev, <Text key={`team-edit-usage-${getNextKey()}`} color="yellow">Usage: /team edit &lt;filename&gt;</Text>]);
+                    appendOutput(<Text key={`team-edit-usage-${getNextKey()}`} color="yellow">Usage: /team edit &lt;filename&gt;</Text>);
                 } else {
                     startTeamEditMenu(subargs[0]);
                 }
@@ -1241,17 +1257,15 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
             case 'delete':
                 if (subargs.length === 0) {
-                    setOutput(prev => [...prev, <Text key={`team-delete-usage-${getNextKey()}`} color="yellow">Usage: /team delete &lt;filename&gt;</Text>]);
+                    appendOutput(<Text key={`team-delete-usage-${getNextKey()}`} color="yellow">Usage: /team delete &lt;filename&gt;</Text>);
                 } else {
                     deleteTeamConfiguration(subargs[0]);
                 }
                 break;
 
             default:
-                setOutput(prev => [...prev,
-                    <Text key={`team-unknown-${getNextKey()}`} color="yellow">Unknown team subcommand: {subcommand}</Text>,
-                    <Text key={`team-hint-${getNextKey()}`} dimColor>Type /team for available commands.</Text>
-                ]);
+                appendOutput(<Text key={`team-unknown-${getNextKey()}`} color="yellow">Unknown team subcommand: {subcommand}</Text>);
+                appendOutput(<Text key={`team-hint-${getNextKey()}`} dimColor>Type /team for available commands.</Text>);
         }
     };
 
@@ -1267,12 +1281,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         const subcommand = args[0].toLowerCase();
 
         // If user provides a subcommand, suggest using CLI
-        setOutput(prev => [...prev,
+        appendOutput(
             <Box key={`agents-cli-hint-${getNextKey()}`} flexDirection="column" marginY={1}>
                 <Text color="yellow">Tip: Type /agents to enter interactive menu</Text>
                 <Text dimColor>Or use the CLI: agent-chatter agents {subcommand} {args.slice(1).join(' ')}</Text>
             </Box>
-        ]);
+        );
     };
 
     // ============================================================================
@@ -1288,13 +1302,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             handleWizardStep1Input(value);
         } else if (step === 2) {
             // Step 2: Detect Agents (在 Phase 2 实现)
-            setOutput(prev => [...prev, <Text key={`wizard-step2-${getNextKey()}`} color="yellow">Step 2 interaction not yet implemented</Text>]);
+            appendOutput(<Text key={`wizard-step2-${getNextKey()}`} color="yellow">Step 2 interaction not yet implemented</Text>);
         } else if (step === 3) {
             // Step 3: Configure Members (在 Phase 2 实现)
-            setOutput(prev => [...prev, <Text key={`wizard-step3-${getNextKey()}`} color="yellow">Step 3 interaction not yet implemented</Text>]);
+            appendOutput(<Text key={`wizard-step3-${getNextKey()}`} color="yellow">Step 3 interaction not yet implemented</Text>);
         } else if (step === 4) {
             // Step 4: Team Settings (在 Phase 2 实现)
-            setOutput(prev => [...prev, <Text key={`wizard-step4-${getNextKey()}`} color="yellow">Step 4 interaction not yet implemented</Text>]);
+            appendOutput(<Text key={`wizard-step4-${getNextKey()}`} color="yellow">Step 4 interaction not yet implemented</Text>);
         }
     };
 
@@ -1331,7 +1345,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             .filter(Boolean) as React.ReactNode[];
 
         if (nodes.length > 0) {
-            setOutput(prev => [...prev, ...nodes]);
+            nodes.forEach(node => appendOutput(node));
         }
     };
 
@@ -1367,7 +1381,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             } : null);
         } else {
             // 表单完成
-            setOutput(prev => [...prev, <Text key={`form-complete-${getNextKey()}`} color="green">Form completed!</Text>]);
+            appendOutput(<Text key={`form-complete-${getNextKey()}`} color="green">Form completed!</Text>);
             setMode('normal');
             setFormState(null);
         }
@@ -1398,7 +1412,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         switch (selected.value) {
             case 'save':
                 // 保存并退出
-                setOutput(prev => [...prev, <Text key={`menu-save-${getNextKey()}`} color="green">Changes saved!</Text>]);
+                appendOutput(<Text key={`menu-save-${getNextKey()}`} color="green">Changes saved!</Text>);
                 setMode('normal');
                 setMenuState(null);
                 setMenuItems([]);
@@ -1406,25 +1420,23 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 
             case 'cancel':
                 // 取消并退出
-                setOutput(prev => [...prev, <Text key={`menu-cancel-${getNextKey()}`} color="yellow">Changes discarded</Text>]);
+                appendOutput(<Text key={`menu-cancel-${getNextKey()}`} color="yellow">Changes discarded</Text>);
                 setMode('normal');
                 setMenuState(null);
                 setMenuItems([]);
                 break;
                 
             default:
-                setOutput(prev => [...prev, <Text key={`menu-todo-${getNextKey()}`} color="yellow">Menu item "{selected.label}" not yet implemented</Text>]);
+                appendOutput(<Text key={`menu-todo-${getNextKey()}`} color="yellow">Menu item "{selected.label}" not yet implemented</Text>);
         }
     };
 
     const startTeamCreationWizard = () => {
-        setOutput(prev => [...prev, 
-            <Text key={`wizard-start-${getNextKey()}`} color="cyan">{'═'.repeat(60)}</Text>,
-            <Text key={`wizard-title-${getNextKey()}`} bold color="cyan">Team Creation Wizard</Text>,
-            <Text key={`wizard-subtitle-${getNextKey()}`} dimColor>Step 1/4: Team Structure</Text>,
-            <Text key={`wizard-divider-${getNextKey()}`} color="cyan">{'─'.repeat(60)}</Text>,
-            <Text key={`wizard-prompt-name-${getNextKey()}`} color="cyan">Enter team name:</Text>
-        ]);
+        appendOutput(<Text key={`wizard-start-${getNextKey()}`} color="cyan">{'═'.repeat(60)}</Text>);
+        appendOutput(<Text key={`wizard-title-${getNextKey()}`} bold color="cyan">Team Creation Wizard</Text>);
+        appendOutput(<Text key={`wizard-subtitle-${getNextKey()}`} dimColor>Step 1/4: Team Structure</Text>);
+        appendOutput(<Text key={`wizard-divider-${getNextKey()}`} color="cyan">{'─'.repeat(60)}</Text>);
+        appendOutput(<Text key={`wizard-prompt-name-${getNextKey()}`} color="cyan">Enter team name:</Text>);
         
         // 初始化向导状态 - 从第一个字段开始
         setWizardState({
@@ -1441,17 +1453,17 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             const resolution = resolveTeamConfigPath(filename);
             if (!resolution.exists) {
-                setOutput(prev => [...prev, <Text key={`edit-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>]);
+                appendOutput(<Text key={`edit-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>);
                 return;
             }
             if (resolution.warning) {
-                setOutput(prev => [...prev, <Text key={`edit-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+                appendOutput(<Text key={`edit-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>);
             }
 
             const content = fs.readFileSync(resolution.path, 'utf-8');
             const config = JSON.parse(content);
 
-            setOutput(prev => [...prev, <Text key={`edit-start-${getNextKey()}`} color="cyan">Opening team editor for: {filename}</Text>]);
+            appendOutput(<Text key={`edit-start-${getNextKey()}`} color="cyan">Opening team editor for: {filename}</Text>);
 
             // 初始化菜单状态
             setMenuState({
@@ -1479,7 +1491,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setInput('');
             setSelectedIndex(0);
         } catch (error) {
-            setOutput(prev => [...prev, <Text key={`edit-err-${getNextKey()}`} color="red">Error: Failed to load configuration: {String(error)}</Text>]);
+            appendOutput(<Text key={`edit-err-${getNextKey()}`} color="red">Error: Failed to load configuration: {String(error)}</Text>);
         }
     };
 
@@ -1488,7 +1500,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
         // Check if directory exists, if not create it
         if (!fs.existsSync(configDir)) {
-            setOutput(prev => [...prev, <Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found</Text>]);
+            appendOutput(<Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found</Text>);
             return;
         }
 
@@ -1497,11 +1509,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         );
 
         if (files.length === 0) {
-            setOutput(prev => [...prev, <Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found</Text>]);
+            appendOutput(<Text key={`list-empty-${getNextKey()}`} color="yellow">No team configuration files found</Text>);
             return;
         }
 
-        setOutput(prev => [...prev,
+        appendOutput(
             <Box key={`list-${getNextKey()}`} flexDirection="column" marginY={1}>
                 <Text bold>Available Team Configurations:</Text>
                 {files.map(file => {
@@ -1534,29 +1546,29 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     }
                 })}
             </Box>
-        ]);
+        );
     };
 
     const showTeamConfiguration = (filename: string) => {
         try {
             const resolution = resolveTeamConfigPath(filename);
             if (!resolution.exists) {
-                setOutput(prev => [...prev, <Text key={`show-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>]);
+                appendOutput(<Text key={`show-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>);
                 return;
             }
             if (resolution.warning) {
-                setOutput(prev => [...prev, <Text key={`show-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+                appendOutput(<Text key={`show-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>);
             }
 
             const content = fs.readFileSync(resolution.path, 'utf-8');
             const config = JSON.parse(content);
 
-            setOutput(prev => [...prev,
+            appendOutput(
                 <Box key={`show-${getNextKey()}`} flexDirection="column" marginY={1}>
                     <Text bold color="cyan">Team: {config.team?.displayName || config.team?.name || 'Unknown'}</Text>
                     <Text dimColor>File: {filename}</Text>
                     <Text dimColor>{'─'.repeat(60)}</Text>
-                    
+
                     <Box marginTop={1} flexDirection="column">
                         <Text>Description: {config.team?.description || 'N/A'}</Text>
                         {config.team?.instructionFile && (
@@ -1592,35 +1604,35 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                         </Box>
                     )}
                 </Box>
-            ]);
+            );
         } catch (error) {
-            setOutput(prev => [...prev, <Text key={`show-err-${getNextKey()}`} color="red">Error: Failed to read configuration: {String(error)}</Text>]);
+            appendOutput(<Text key={`show-err-${getNextKey()}`} color="red">Error: Failed to read configuration: {String(error)}</Text>);
         }
     };
 
     const deleteTeamConfiguration = (filename: string) => {
         // 安全检查
         if (currentConfigPath && filename === path.basename(currentConfigPath)) {
-            setOutput(prev => [...prev, <Text key={`delete-active-${getNextKey()}`} color="red">Error: Cannot delete currently loaded configuration</Text>]);
+            appendOutput(<Text key={`delete-active-${getNextKey()}`} color="red">Error: Cannot delete currently loaded configuration</Text>);
             return;
         }
 
         if (mode === 'conversation') {
-            setOutput(prev => [...prev, <Text key={`delete-conv-${getNextKey()}`} color="red">Error: Cannot delete configuration with active conversation</Text>]);
+            appendOutput(<Text key={`delete-conv-${getNextKey()}`} color="red">Error: Cannot delete configuration with active conversation</Text>);
             return;
         }
 
         const resolution = resolveTeamConfigPath(filename);
         if (!resolution.exists) {
-            setOutput(prev => [...prev, <Text key={`delete-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>]);
+            appendOutput(<Text key={`delete-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filename, resolution)}</Text>);
             return;
         }
         if (resolution.warning) {
-            setOutput(prev => [...prev, <Text key={`delete-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+            appendOutput(<Text key={`delete-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>);
         }
 
         // 显示确认对话框
-        setOutput(prev => [...prev,
+        appendOutput(
             <Box key={`delete-confirm-${getNextKey()}`} flexDirection="column" marginY={1}>
                 <Text color="yellow">⚠  Delete Team Configuration</Text>
                 <Text dimColor>{'─'.repeat(60)}</Text>
@@ -1630,20 +1642,20 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 <Text dimColor>{'─'.repeat(60)}</Text>
                 <Text>Confirm deletion? [y/N]</Text>
             </Box>
-        ]);
+        );
 
         setConfirmState({
             message: `Delete ${filename}?`,
             onConfirm: () => {
                 try {
                     fs.unlinkSync(resolution.path);
-                    setOutput(prev => [...prev, <Text key={`delete-success-${getNextKey()}`} color="green">✓ Team configuration deleted: {filename}</Text>]);
+                    appendOutput(<Text key={`delete-success-${getNextKey()}`} color="green">✓ Team configuration deleted: {filename}</Text>);
                 } catch (error) {
-                    setOutput(prev => [...prev, <Text key={`delete-err-${getNextKey()}`} color="red">Error: Failed to delete configuration: {String(error)}</Text>]);
+                    appendOutput(<Text key={`delete-err-${getNextKey()}`} color="red">Error: Failed to delete configuration: {String(error)}</Text>);
                 }
             },
             onCancel: () => {
-                setOutput(prev => [...prev, <Text key={`delete-cancel-${getNextKey()}`} color="yellow">Deletion cancelled</Text>]);
+                appendOutput(<Text key={`delete-cancel-${getNextKey()}`} color="yellow">Deletion cancelled</Text>);
             }
         });
     };
@@ -1652,11 +1664,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             const resolution = resolveTeamConfigPath(filePath);
             if (!resolution.exists) {
-                setOutput(prev => [...prev, <Text key={`config-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filePath, resolution)}</Text>]);
+                appendOutput(<Text key={`config-notfound-${getNextKey()}`} color="red">{formatMissingConfigError(filePath, resolution)}</Text>);
                 return null;
             }
             if (resolution.warning) {
-                setOutput(prev => [...prev, <Text key={`config-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>]);
+                appendOutput(<Text key={`config-warning-${getNextKey()}`} color="yellow">{resolution.warning}</Text>);
             }
 
             const content = fs.readFileSync(resolution.path, 'utf-8');
@@ -1679,23 +1691,23 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setCurrentConfig(config);
             setCurrentConfigPath(filePath);
 
-            setOutput(prev => [...prev,
+            appendOutput(
                 <Box key={`config-loaded-${getNextKey()}`} flexDirection="column">
                     <Text color="green">✓ Configuration loaded: <Text bold>{filePath}</Text></Text>
                     <Text dimColor>  Team: {config.team?.name || 'Unknown'}</Text>
                     <Text dimColor>  Agents: {config.agents?.length || 0}</Text>
                 </Box>
-            ]);
+            );
             return config;
         } catch (error) {
-            setOutput(prev => [...prev, <Text key={`config-err-${getNextKey()}`} color="red">Error: Failed to load configuration: {String(error)}</Text>]);
+            appendOutput(<Text key={`config-err-${getNextKey()}`} color="red">Error: Failed to load configuration: {String(error)}</Text>);
             return null;
         }
     };
 
     const initializeAndDeployTeam = async (config: CLIConfig): Promise<ConversationCoordinator | null> => {
         try {
-            setOutput(prev => [...prev, <Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>]);
+            appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
                 onMessage: (message: ConversationMessage) => {
@@ -1705,27 +1717,27 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     }
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
                     const nameColor = message.speaker.type === 'human' ? 'green' : 'yellow';
-                    setOutput(prev => [...prev,
+                    appendOutput(
                         <Box key={`msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
                             <Text color={nameColor}>[{timestamp}] {message.speaker.roleTitle}:</Text>
                             <Text>{message.content}</Text>
                             <Text dimColor>{'─'.repeat(60)}</Text>
                         </Box>
-                    ]);
+                    );
                 },
                 onStatusChange: (status) => {
-                    setOutput(prev => [...prev, <Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>]);
+                    appendOutput(<Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>);
                 },
                 onAgentStarted: (member: Member) => {
                     flushPendingNow();
                     const color = member.themeColor ?? 'white';
-                    setOutput(prev => [...prev, <Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>]);
+                    appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
                     flushPendingNow();
                     const color = member.themeColor ?? 'cyan';
-                    setOutput(prev => [...prev, <Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>]);
+                    appendOutput(<Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>);
                     setExecutingAgent(null);
                 }
             });
@@ -1748,15 +1760,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 coordinator.setWaitingForRoleId(humans[0].id);
             }
 
-            setOutput(prev => [...prev,
-                <Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>,
-                <Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>
-            ]);
+                appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
+                appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>);
 
             return coordinator;
 
         } catch (error) {
-            setOutput(prev => [...prev, <Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>]);
+            appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
             return null;
         }
     };
@@ -1766,10 +1776,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             {/* 欢迎屏幕（只在normal和conversation模式下显示） */}
             {(mode === 'normal' || mode === 'conversation') && <WelcomeScreen />}
 
-            {/* 输出历史 */}
-            {output.map((item, idx) => (
-                <Box key={idx}>{item}</Box>
-            ))}
+            {/* 输出历史：使用 Static 渲染，避免随着输入重渲染整段日志 */}
+            <Static items={output}>
+                {(item, idx) => <Box key={`output-${idx}`}>{item}</Box>}
+            </Static>
 
             {/* ThinkingIndicator - Show when agent is executing */}
             {mode === 'conversation' && executingAgent && currentConfig &&
@@ -1820,12 +1830,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                         setInput('');
                     }}
                     onShowMessage={(message, color) => {
-                        setOutput(prev => [
-                            ...prev,
+                        appendOutput(
                             <Text key={`agents-msg-${keyCounter}`} color={color || 'white'}>
                                 {message}
                             </Text>
-                        ]);
+                        );
                         setKeyCounter(prev => prev + 1);
                     }}
                 />
