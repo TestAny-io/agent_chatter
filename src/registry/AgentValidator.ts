@@ -227,7 +227,7 @@ export class AgentValidator {
       const testPrompt = "Say 'OK' and nothing else";
       try {
         const { stdout, stderr } = await execAsync(
-          `echo "${testPrompt}" | "${command}" --append-system-prompt "Reply only: OK"`,
+          `echo "${testPrompt}" | "${command}" -p --append-system-prompt "Reply only: OK"`,
           { timeout: 15000 }
         );
 
