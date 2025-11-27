@@ -205,20 +205,27 @@ export class AgentValidator {
         };
       }
 
-      // 方法1：检查配置文件
-      const configPath = path.join(os.homedir(), '.claude', 'config.json');
-      if (fs.existsSync(configPath)) {
+      // 方法1：检查配置文件（新老路径）
+      const possibleConfigPaths = [
+        path.join(os.homedir(), '.claude', 'config.json'),
+        path.join(os.homedir(), '.config', 'claude', 'config.json')
+      ];
+
+      for (const configPath of possibleConfigPaths) {
+        if (!fs.existsSync(configPath)) continue;
+
         try {
           const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-          if (config.apiKey || config.sessionToken || config.session) {
+          // Claude CLI 不同版本字段可能不同，尽量兼容
+          if (config.apiKey || config.sessionToken || config.session || config.accessToken) {
             return {
               name: 'Authentication Check',
               passed: true,
-              message: 'Authenticated (config file found)'
+              message: `Authenticated (config file: ${configPath})`
             };
           }
-        } catch (error) {
-          // 配置文件解析失败，尝试方法2
+        } catch {
+          // 配置文件解析失败，继续尝试后续路径或命令校验
         }
       }
 
