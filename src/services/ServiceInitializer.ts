@@ -292,7 +292,7 @@ export async function initializeServices(
   // Load and merge agents from global registry with team config
   const registryPath = options?.registryPath;
   const agentDefinitionMap = await loadAndMergeAgents(config.agents, registryPath);
-  const teamMembers: Array<Omit<Member, 'id'>> = [];
+  const teamMembers: Array<Omit<Member, 'id'> & { id?: string }> = [];
 
   // Shared registry instance and verification cache to avoid redundant verifications
   const registry = new AgentRegistry(registryPath);
@@ -364,6 +364,7 @@ export async function initializeServices(
     }
 
     teamMembers.push({
+      id: member.name, // stable member ID derived from config name
       displayName: member.displayName,
       name: member.name,
       displayRole: member.displayRole ?? member.role,
@@ -382,6 +383,7 @@ export async function initializeServices(
   }
 
   const team = await teamManager.createTeam({
+    id: config.team.name, // stable team ID derived from team name
     name: config.team.name,
     description: config.team.description,
     displayName: config.team.displayName,

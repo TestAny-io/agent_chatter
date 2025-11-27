@@ -11,12 +11,13 @@ import type { Team, Member, RoleDefinition } from '../models/Team.js';
 import { TeamUtils } from '../models/Team.js';
 
 export interface CreateTeamInput {
+  id?: string;
   name: string;
   description: string;
   displayName?: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
-  members: Array<Omit<Member, 'id'>>;
+  members: Array<Omit<Member, 'id'> & { id?: string }>;
 }
 
 export interface UpdateTeamInput {
@@ -39,8 +40,12 @@ export class TeamManager {
    * 创建新团队
    */
   async createTeam(input: CreateTeamInput): Promise<Team> {
-    // 生成成员 ID
-    const membersWithIds = input.members.map(member => TeamUtils.createMember(member));
+    // 生成成员 ID（若提供则尊重，否则生成）
+    const membersWithIds: Member[] = input.members.map(member =>
+      member.id
+        ? { ...member } as Member
+        : TeamUtils.createMember(member)
+    );
 
     // 创建团队对象
     const team = TeamUtils.createTeam(
@@ -51,6 +56,10 @@ export class TeamManager {
       input.roleDefinitions
     );
     team.displayName = input.displayName;
+    // 如果提供了固定的 teamId，则使用之以保证跨进程稳定
+    if (input.id) {
+      team.id = input.id;
+    }
 
     // 验证
     const validation = TeamUtils.validateTeam(team);
