@@ -81,18 +81,21 @@ describe('Verification Cache Integration', () => {
   });
 
   it('caches verification results when multiple members use the same agent', async () => {
-    // Create directories for 3 members all using claude
+    // Create directories for 3 AI members all using claude + 1 human member
     const member1Dir = path.join(tempDir, 'member1');
     const member2Dir = path.join(tempDir, 'member2');
     const member3Dir = path.join(tempDir, 'member3');
+    const humanDir = path.join(tempDir, 'human');
 
     fs.mkdirSync(member1Dir, { recursive: true });
     fs.mkdirSync(member2Dir, { recursive: true });
     fs.mkdirSync(member3Dir, { recursive: true });
+    fs.mkdirSync(humanDir, { recursive: true });
 
     fs.writeFileSync(path.join(member1Dir, 'AGENTS.md'), 'Member 1 instructions');
     fs.writeFileSync(path.join(member2Dir, 'AGENTS.md'), 'Member 2 instructions');
     fs.writeFileSync(path.join(member3Dir, 'AGENTS.md'), 'Member 3 instructions');
+    fs.writeFileSync(path.join(humanDir, 'README.md'), 'Human instructions');
 
     const config: CLIConfig = {
       schemaVersion: '1.1',
@@ -102,7 +105,7 @@ describe('Verification Cache Integration', () => {
       ],
       team: {
         name: 'cache-test',
-        description: 'Team with 3 members using same agent',
+        description: 'Team with 3 AI members using same agent + 1 human',
         members: [
           {
             displayName: 'Member 1',
@@ -130,6 +133,13 @@ describe('Verification Cache Integration', () => {
             agentType: 'claude',
             baseDir: member3Dir,
             instructionFile: path.join(member3Dir, 'AGENTS.md')
+          },
+          {
+            displayName: 'Human Observer',
+            name: 'human-observer',
+            type: 'human',
+            role: 'observer',
+            baseDir: humanDir
           }
         ]
       }
@@ -139,8 +149,8 @@ describe('Verification Cache Integration', () => {
     const { team } = await initializeServices(config, { registryPath: tempRegistryPath });
     const endTime = Date.now();
 
-    // All 3 members should be initialized
-    expect(team.members).toHaveLength(3);
+    // All 4 members should be initialized (3 AI + 1 Human)
+    expect(team.members).toHaveLength(4);
 
     // Test should complete reasonably fast due to caching
     // (Without caching, 3 verifications would take ~15 seconds; with caching, ~5 seconds)

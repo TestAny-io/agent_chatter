@@ -22,6 +22,7 @@ import type { AgentDefinition as RegistryAgentDefinition } from '../registry/Reg
 import { EventEmitter } from 'events';
 import type { IOutput } from '../outputs/IOutput.js';
 import { SilentOutput } from '../outputs/IOutput.js';
+import type { QueueUpdateEvent } from '../models/QueueEvent.js';
 
 interface NormalizedAgent {
   name: string;
@@ -44,6 +45,8 @@ export interface InitializeServicesOptions {
   onAgentStarted?: (member: Member) => void;  // Callback when agent starts thinking (REPL UI)
   onAgentCompleted?: (member: Member) => void;  // Callback when agent completes (REPL UI)
   output?: IOutput;
+  onQueueUpdate?: (event: QueueUpdateEvent) => void;  // Callback for queue visibility updates
+  onPartialResolveFailure?: (skipped: string[], availableMembers: string[]) => void;  // Callback for partial resolve failure
 }
 
 /**
@@ -409,7 +412,9 @@ export async function initializeServices(
       onUnresolvedAddressees: options?.onUnresolvedAddressees,
       conversationConfig: config.conversation,
       onAgentStarted: options?.onAgentStarted,
-      onAgentCompleted: options?.onAgentCompleted
+      onAgentCompleted: options?.onAgentCompleted,
+      onQueueUpdate: options?.onQueueUpdate,
+      onPartialResolveFailure: options?.onPartialResolveFailure
     }
   );
 

@@ -82,6 +82,15 @@ describe('TeamUtils', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('rejects team with no human members', () => {
+    const aiA = buildRole({ id: 'ai1', name: 'ai1', type: 'ai', agentConfigId: 'claude', order: 0 });
+    const aiB = buildRole({ id: 'ai2', name: 'ai2', type: 'ai', agentConfigId: 'codex', order: 1 });
+    const result = TeamUtils.validateTeam(buildTeam([aiA, aiB]));
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.some(e => e.includes('至少需要 1 个 Human 成员'))).toBe(true);
+  });
+
   describe('New Member fields validation', () => {
     it('validates additionalArgs must be an array', () => {
       const roleA = buildRole({ additionalArgs: 'not-an-array' as any, order: 0 });
@@ -103,7 +112,7 @@ describe('TeamUtils', () => {
 
     it('accepts valid additionalArgs', () => {
       const roleA = buildRole({ additionalArgs: ['--flag', '--option=value'], order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
@@ -156,7 +165,7 @@ describe('TeamUtils', () => {
 
     it('accepts valid env', () => {
       const roleA = buildRole({ env: { FOO: 'bar', BAZ: 'qux' }, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
@@ -173,7 +182,7 @@ describe('TeamUtils', () => {
 
     it('accepts valid member names with alphanumeric, underscore, and hyphen', () => {
       const roleA = buildRole({ name: 'valid_name-123', order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'another-valid-name_456', order: 1 });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
@@ -194,7 +203,7 @@ describe('TeamUtils', () => {
         env: { DEBUG: 'true', LOG_LEVEL: 'info' },
         order: 0
       });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);

@@ -33,6 +33,8 @@ import {
 import { SessionStorageService } from '../infrastructure/SessionStorageService.js';
 import type { SessionSummary } from '../models/SessionSnapshot.js';
 import { RestorePrompt } from './components/RestorePrompt.js';
+import { QueueDisplay } from './components/QueueDisplay.js';
+import type { QueueUpdateEvent } from '../models/QueueEvent.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -71,7 +73,7 @@ const agentsCommands = [
 function WelcomeScreen() {
     return (
         <Box flexDirection="column" marginBottom={1}>
-            <Box borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} flexDirection="column" alignItems="center">
+            <Box borderStyle="single" borderColor="cyan" paddingX={2} paddingY={1} flexDirection="column" alignItems="center">
                 <Text bold color="cyan">AGENT CHATTER</Text>
                 <Text dimColor>Multi-AI Conversation Orchestrator</Text>
             </Box>
@@ -384,7 +386,7 @@ function WizardView({ wizardState }: WizardViewProps) {
 
     return (
         <Box flexDirection="column" marginY={1}>
-            <Box borderStyle="round" borderColor="cyan" padding={1}>
+            <Box borderStyle="single" borderColor="gray" padding={1}>
                 <Box flexDirection="column">
                     <Text bold color="cyan">Team Creation Wizard</Text>
                     <Text dimColor>Step {step}/{totalSteps}</Text>
@@ -505,7 +507,7 @@ interface MenuViewProps {
 function MenuView({ menuState, menuItems, selectedIndex }: MenuViewProps) {
     return (
         <Box flexDirection="column" marginY={1}>
-            <Box borderStyle="round" borderColor="cyan" padding={1}>
+            <Box borderStyle="single" borderColor="gray" padding={1}>
                 <Text bold color="cyan">Team Configuration Editor</Text>
             </Box>
 
@@ -516,7 +518,7 @@ function MenuView({ menuState, menuItems, selectedIndex }: MenuViewProps) {
 
             <Box marginTop={1} flexDirection="column">
                 <Text bold>Main Menu</Text>
-                <Text dimColor>{'─'.repeat(60)}</Text>
+                <Text dimColor>{'─'.repeat(40)}</Text>
                 {menuItems.map((item, idx) => (
                     <Box key={idx}>
                         <Text color={idx === selectedIndex ? 'green' : 'gray'} bold={idx === selectedIndex}>
@@ -553,7 +555,7 @@ function FormView({ formState }: FormViewProps) {
 
     return (
         <Box flexDirection="column" marginY={1}>
-            <Box borderStyle="round" borderColor="cyan" padding={1}>
+            <Box borderStyle="single" borderColor="gray" padding={1}>
                 <Text bold color="cyan">Input Form</Text>
             </Box>
 
@@ -600,7 +602,7 @@ interface SelectViewProps {
 function SelectView({ title, options, selectedIndex, multiSelect, selectedItems }: SelectViewProps) {
     return (
         <Box flexDirection="column" marginY={1}>
-            <Box borderStyle="round" borderColor="cyan" padding={1}>
+            <Box borderStyle="single" borderColor="gray" padding={1}>
                 <Text bold color="cyan">{title}</Text>
             </Box>
 
@@ -743,6 +745,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [executingAgent, setExecutingAgent] = useState<Member | null>(null);
     const [activeTodoList, setActiveTodoList] = useState<ActiveTodoList | null>(null);
     const [isExiting, setIsExiting] = useState(false);
+    const [queueState, setQueueState] = useState<QueueUpdateEvent | null>(null);
 
     // Streaming event handling
     const pendingEventsRef = useRef<AgentEvent[]>([]);
@@ -1082,6 +1085,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     // Errors already logged in method
                 });
                 clearTodoList(); // Clear todo list on exit
+                setQueueState(null); // Clear queue display on exit
                 setMode('normal');
                 setActiveCoordinator(null);
                 setActiveTeam(null);
@@ -1276,12 +1280,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setMode('normal');
             setActiveCoordinator(null);
             setActiveTeam(null);
+            setQueueState(null); // Clear queue display on exit
             appendOutput(
                 <Box key={`conv-end-${getNextKey()}`} flexDirection="column" marginTop={1}>
-                    <Text color="green">{'─'.repeat(60)}</Text>
+                    <Text color="green" dimColor>{'─'.repeat(40)}</Text>
                     <Text bold color="green">Conversation Ended</Text>
                     <Text dimColor>You are back in normal mode. Type /help for commands.</Text>
-                    <Text color="green">{'─'.repeat(60)}</Text>
+                    <Text color="green" dimColor>{'─'.repeat(40)}</Text>
                 </Box>
             );
             return true;
@@ -1322,7 +1327,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     <Box key={`user-msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
                         <Text color="green">[{displayRole?.displayName || 'You'}]:</Text>
                         <Text>{message}</Text>
-                        <Text dimColor>{'─'.repeat(60)}</Text>
+                        <Text dimColor>{'─'.repeat(40)}</Text>
                     </Box>
                 );
                 // Use new sendMessage API
@@ -1518,7 +1523,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             case 'error':
                 return <Text key={`wizard-error-${key}`} color="red">{event.message}</Text>;
             case 'divider':
-                return <Text key={`wizard-divider-${key}`} color="green">{(event.char || '─').repeat(60)}</Text>;
+                return <Text key={`wizard-divider-${key}`} color="green" dimColor>{(event.char || '─').repeat(40)}</Text>;
             default:
                 return null;
         }
@@ -1629,10 +1634,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     };
 
     const startTeamCreationWizard = () => {
-        appendOutput(<Text key={`wizard-start-${getNextKey()}`} color="cyan">{'═'.repeat(60)}</Text>);
+        appendOutput(<Text key={`wizard-start-${getNextKey()}`} color="cyan" dimColor>{'═'.repeat(40)}</Text>);
         appendOutput(<Text key={`wizard-title-${getNextKey()}`} bold color="cyan">Team Creation Wizard</Text>);
         appendOutput(<Text key={`wizard-subtitle-${getNextKey()}`} dimColor>Step 1/4: Team Structure</Text>);
-        appendOutput(<Text key={`wizard-divider-${getNextKey()}`} color="cyan">{'─'.repeat(60)}</Text>);
+        appendOutput(<Text key={`wizard-divider-${getNextKey()}`} color="cyan" dimColor>{'─'.repeat(40)}</Text>);
         appendOutput(<Text key={`wizard-prompt-name-${getNextKey()}`} color="cyan">Enter team name:</Text>);
         
         // 初始化向导状态 - 从第一个字段开始
@@ -1764,7 +1769,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 <Box key={`show-${getNextKey()}`} flexDirection="column" marginY={1}>
                     <Text bold color="cyan">Team: {config.team?.displayName || config.team?.name || 'Unknown'}</Text>
                     <Text dimColor>File: {filename}</Text>
-                    <Text dimColor>{'─'.repeat(60)}</Text>
+                    <Text dimColor>{'─'.repeat(40)}</Text>
 
                     <Box marginTop={1} flexDirection="column">
                         <Text>Description: {config.team?.description || 'N/A'}</Text>
@@ -1832,11 +1837,11 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         appendOutput(
             <Box key={`delete-confirm-${getNextKey()}`} flexDirection="column" marginY={1}>
                 <Text color="yellow">⚠  Delete Team Configuration</Text>
-                <Text dimColor>{'─'.repeat(60)}</Text>
+                <Text dimColor>{'─'.repeat(40)}</Text>
                 <Text>File: {filename}</Text>
                 <Text color="red">This will permanently delete this configuration file.</Text>
                 <Text color="red">This action cannot be undone.</Text>
-                <Text dimColor>{'─'.repeat(60)}</Text>
+                <Text dimColor>{'─'.repeat(40)}</Text>
                 <Text>Confirm deletion? [y/N]</Text>
             </Box>
         );
@@ -1930,16 +1935,43 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     flushPendingNow();
                     clearTodoList(); // Clear previous agent's todo list on agent switch
                     const color = member.themeColor ?? 'white';
-                    appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>);
+                    const displayLabel = member.displayRole
+                        ? `${member.displayName} (${member.displayRole})`
+                        : member.displayName;
+                    appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {displayLabel} started...</Text>);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
                     flushPendingNow();
                     // NOTE: Do NOT clearTodoList here - per design, todo list stays visible
                     // after turn completes until next agent starts or new todo arrives
-                    const color = member.themeColor ?? 'cyan';
-                    appendOutput(<Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>);
+                    const color = member.themeColor ?? 'white';
+                    const displayLabel = member.displayRole
+                        ? `${member.displayName} (${member.displayRole})`
+                        : member.displayName;
+                    appendOutput(<Text key={`agent-done-${getNextKey()}`} backgroundColor={color} color="black">✓ {displayLabel} completed</Text>);
+                    appendOutput(<Text key={`agent-done-spacer-${getNextKey()}`}>{' '}</Text>);
                     setExecutingAgent(null);
+                },
+                onQueueUpdate: (event: QueueUpdateEvent) => {
+                    setQueueState(event);
+                },
+                onPartialResolveFailure: (skipped: string[], available: string[]) => {
+                    appendOutput(
+                        <Text key={`partial-fail-${getNextKey()}`} color="yellow">
+                            ⚠️ Skipped unknown members: {skipped.join(', ')}
+                            {'\n'}   Available: {available.join(', ')}
+                        </Text>
+                    );
+                },
+                onUnresolvedAddressees: (addressees: string[], _message: ConversationMessage) => {
+                    const availableNames = team.members.map(m => m.name);
+                    appendOutput(
+                        <Text key={`unresolved-${getNextKey()}`} color="red">
+                            ❌ Cannot resolve: {addressees.join(', ')}
+                            {'\n'}   Available: {availableNames.join(', ')}
+                        </Text>
+                    );
                 }
             });
             attachEventEmitter(eventEmitter);
@@ -1962,7 +1994,20 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             }
 
             appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
-            appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>);
+            appendOutput(
+                <Box key={`team-info-${getNextKey()}`} flexDirection="column" marginLeft={2}>
+                    <Text>Team Name: {team.displayName ?? team.name}</Text>
+                    {team.description && <Text>Team Description: {team.description}</Text>}
+                    <Text>Members:</Text>
+                    {team.members.map((m, idx) => {
+                        const bgColor = m.themeColor ?? 'white';
+                        return (
+                            <Text key={`member-${idx}`}>  <Text backgroundColor={bgColor} color="black">{m.displayName}{m.displayRole ? ` (${m.displayRole})` : ''}</Text></Text>
+                        );
+                    })}
+                </Box>
+            );
+            appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your message below to continue. Use [NEXT:member_name] to assign the next speaker, use [TEAM_TASK: your task] to post your task to the team.</Text>);
 
             // Force a re-render after Static updates in alternateBuffer mode
             // This ensures the input prompt is visible after deploy
@@ -2004,14 +2049,41 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     flushPendingNow();
                     clearTodoList();
                     const color = member.themeColor ?? 'white';
-                    appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>);
+                    const displayLabel = member.displayRole
+                        ? `${member.displayName} (${member.displayRole})`
+                        : member.displayName;
+                    appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {displayLabel} started...</Text>);
                     setExecutingAgent(member);
                 },
                 onAgentCompleted: (member: Member) => {
                     flushPendingNow();
-                    const color = member.themeColor ?? 'cyan';
-                    appendOutput(<Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>);
+                    const color = member.themeColor ?? 'white';
+                    const displayLabel = member.displayRole
+                        ? `${member.displayName} (${member.displayRole})`
+                        : member.displayName;
+                    appendOutput(<Text key={`agent-done-${getNextKey()}`} backgroundColor={color} color="black">✓ {displayLabel} completed</Text>);
+                    appendOutput(<Text key={`agent-done-spacer-${getNextKey()}`}>{' '}</Text>);
                     setExecutingAgent(null);
+                },
+                onQueueUpdate: (event: QueueUpdateEvent) => {
+                    setQueueState(event);
+                },
+                onPartialResolveFailure: (skipped: string[], available: string[]) => {
+                    appendOutput(
+                        <Text key={`partial-fail-${getNextKey()}`} color="yellow">
+                            ⚠️ Skipped unknown members: {skipped.join(', ')}
+                            {'\n'}   Available: {available.join(', ')}
+                        </Text>
+                    );
+                },
+                onUnresolvedAddressees: (addressees: string[], _message: ConversationMessage) => {
+                    const availableNames = team.members.map(m => m.name);
+                    appendOutput(
+                        <Text key={`unresolved-${getNextKey()}`} color="red">
+                            ❌ Cannot resolve: {addressees.join(', ')}
+                            {'\n'}   Available: {availableNames.join(', ')}
+                        </Text>
+                    );
                 }
             });
 
@@ -2057,7 +2129,20 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 }
 
                 appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
-                appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>);
+                appendOutput(
+                    <Box key={`team-info-${getNextKey()}`} flexDirection="column" marginLeft={2}>
+                        <Text>Team Name: {team.displayName ?? team.name}</Text>
+                        {team.description && <Text>Team Description: {team.description}</Text>}
+                        <Text>Members:</Text>
+                        {team.members.map((m, idx) => {
+                            const bgColor = m.themeColor ?? 'white';
+                            return (
+                                <Text key={`member-${idx}`}>  <Text backgroundColor={bgColor} color="black">{m.displayName}{m.displayRole ? ` (${m.displayRole})` : ''}</Text></Text>
+                            );
+                        })}
+                    </Box>
+                );
+                appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your message below to continue. Use [NEXT:member_name] to assign the next speaker, use [TEAM_TASK: your task] to post your task to the team.</Text>);
                 setTimeout(() => setInput(prev => prev), 50);
             }
         } catch (error) {
@@ -2087,6 +2172,19 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 // Start new session
                 await coordinator.setTeam(team);
                 appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
+                appendOutput(
+                    <Box key={`team-info-${getNextKey()}`} flexDirection="column" marginLeft={2}>
+                        <Text>Team Name: {team.displayName ?? team.name}</Text>
+                        {team.description && <Text>Team Description: {team.description}</Text>}
+                        <Text>Members:</Text>
+                        {team.members.map((m, idx) => {
+                            const bgColor = m.themeColor ?? 'white';
+                            return (
+                                <Text key={`member-${idx}`}>  <Text backgroundColor={bgColor} color="black">{m.displayName}{m.displayRole ? ` (${m.displayRole})` : ''}</Text></Text>
+                            );
+                        })}
+                    </Box>
+                );
             }
 
             const humans = team.members.filter(m => m.type === 'human');
@@ -2094,7 +2192,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 coordinator.setWaitingForMemberId(humans[0].id);
             }
 
-            appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your message to continue...</Text>);
+            appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your message below to continue. Use [NEXT:member_name] to assign the next speaker, use [TEAM_TASK: your task] to post your task to the team.</Text>);
             setTimeout(() => setInput(prev => prev), 50);
         } catch (error) {
             appendOutput(<Text key={`restore-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
@@ -2111,6 +2209,15 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             <Static items={output}>
                 {(item, idx) => <Box key={`output-${idx}`}>{item}</Box>}
             </Static>
+
+            {/* QueueDisplay - Show routing queue status */}
+            {mode === 'conversation' && queueState && !queueState.isEmpty && (
+                <QueueDisplay
+                    items={queueState.items}
+                    executing={queueState.executing}
+                    visible={true}
+                />
+            )}
 
             {/* TodoListView - Dynamic in-place todo list display */}
             {mode === 'conversation' && activeTodoList && (
@@ -2187,8 +2294,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             {/* 输入区域 - 使用上下横线确保在 alternateBuffer 模式下始终可见 */}
             {!isExiting && (mode === 'normal' || mode === 'conversation' || mode === 'wizard' || mode === 'form') && (
                 <Box flexDirection="column" marginTop={1}>
-                    {/* 上横线 */}
-                    <Text color={mode === 'conversation' ? 'green' : 'cyan'}>
+                    {/* 上横线 - 使用 dimColor 降低饱和度 */}
+                    <Text color={mode === 'conversation' ? 'green' : 'cyan'} dimColor>
                         {'─'.repeat(terminalWidth - 4)}
                     </Text>
                     {/* 输入行 */}
@@ -2229,8 +2336,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                             placeholder=" "
                         />
                     </Box>
-                    {/* 下横线 */}
-                    <Text color={mode === 'conversation' ? 'green' : 'cyan'}>
+                    {/* 下横线 - 使用 dimColor 降低饱和度 */}
+                    <Text color={mode === 'conversation' ? 'green' : 'cyan'} dimColor>
                         {'─'.repeat(terminalWidth - 4)}
                     </Text>
                 </Box>

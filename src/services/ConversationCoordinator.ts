@@ -32,8 +32,19 @@ import { createSessionSnapshot, type SessionSnapshot, type PersistedMessage } fr
 import type { IOutput } from '../outputs/IOutput.js';
 import type { SpeakerInfo } from '../models/SpeakerInfo.js';
 import { isNewSpeaker, getSpeakerId, type SpeakerInfoInput, migrateMessageSpeaker } from '../utils/speakerMigration.js';
+import type { QueueUpdateEvent } from '../models/QueueEvent.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
+
+/**
+ * 地址解析结果
+ */
+export interface ResolveResult {
+  /** 成功解析的成员 */
+  resolved: Member[];
+  /** 未能解析的原始地址字符串 */
+  unresolved: string[];
+}
 
 /**
  * Options for setTeam method
@@ -77,6 +88,25 @@ export interface ConversationCoordinatorOptions {
    * UI layer can use this to show friendly notifications
    */
   onMemberConsistencyWarning?: (missingMembers: MissingMember[]) => void;
+  /**
+   * 部分地址解析失败时的回调
+   * 用于通知 UI 显示跳过提示
+   *
+   * 仅在 resolved 非空 且 unresolved 非空时触发
+   * resolved 为空时走 onUnresolvedAddressees
+   *
+   * @param skipped - 被跳过的地址列表
+   * @param availableMembers - 当前可用的成员名称列表
+   */
+  onPartialResolveFailure?: (
+    skipped: string[],
+    availableMembers: string[]
+  ) => void;
+  /**
+   * 队列状态更新时的回调
+   * 用于 UI 显示队列可见性
+   */
+  onQueueUpdate?: (event: QueueUpdateEvent) => void;
 }
 
 function normalizeAgentType(type?: string): string {
@@ -105,6 +135,9 @@ export class ConversationCoordinator {
   private sessionStorage: ISessionStorage;
   /**
    * 获取下一个轮到的成员（循环轮询）
+   *
+   * @deprecated 不再用于路由逻辑。Routing v2.0 移除了 round-robin，
+   *             统一使用"首个 Human"作为 fallback。保留此方法以防其他功能使用。
    */
   private getNextSpeaker(currentId: string): Member | null {
     if (!this.team || !this.team.members || this.team.members.length === 0) {
@@ -420,23 +453,54 @@ export class ConversationCoordinator {
       }
     } else {
       // 解析接收者
-      resolvedMembers = this.resolveAddressees(addressees);
+      const resolveResult = this.resolveAddressees(addressees);
+      resolvedMembers = resolveResult.resolved;
+
+      // 部分解析失败通知（resolved 非空 且 unresolved 非空）
+      // 注意：resolved 为空时走 onUnresolvedAddressees，不要混用这两个回调
+      if (resolveResult.unresolved.length > 0 && resolveResult.resolved.length > 0) {
+        this.notifyPartialResolveFailure(resolveResult.unresolved);
+      }
     }
 
-    // 检查是否有无法解析的地址
-      if (resolvedMembers.length === 0) {
-        // 所有地址都无法解析，暂停对话并通知
-        this.status = 'paused';
-        this.notifyStatusChange();
-        if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.error('[Debug][Routing] Unable to resolve addressees; pausing conversation');
-        }
+    // 检查是否有无法解析的地址（全部失败）
+    if (resolvedMembers.length === 0 && addressees.length > 0) {
+      // 所有地址都无法解析
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('[Debug][Routing] Unable to resolve addressees; determining fallback');
+      }
 
-        if (this.options.onUnresolvedAddressees) {
-          this.options.onUnresolvedAddressees(addressees, message);
+      // 通知 UI
+      if (this.options.onUnresolvedAddressees) {
+        this.options.onUnresolvedAddressees(addressees, message);
+      }
+
+      // 根据消息来源决定 fallback 行为
+      const speakerType = message.speaker.type;
+      if (speakerType === 'human') {
+        // Human 发送的消息全部解析失败 → 等待该 Human 重新输入
+        this.status = 'paused';
+        this.waitingForMemberId = message.speaker.id;
+        this.notifyStatusChange();
+      } else {
+        // AI 发送的消息全部解析失败 → fallback 到首个 Human（按 order）
+        const firstHuman = this.team!.members
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .find(m => m.type === 'human');
+
+        if (firstHuman) {
+          this.status = 'paused';
+          this.waitingForMemberId = firstHuman.id;
+          this.notifyStatusChange();
         }
-        return;
+      }
+
+      // AUTO-SAVE on pause（暂停时必须保存）
+      this.saveCurrentSession().catch(() => {});
+
+      return;
     }
 
     // 更新消息的 resolvedAddressees
@@ -469,6 +533,10 @@ export class ConversationCoordinator {
       }
       this.routingQueue.push({ member });
     }
+
+    // 通知队列更新（入队完成）
+    this.notifyQueueUpdate();
+
     await this.processRoutingQueue();
   }
 
@@ -490,6 +558,9 @@ export class ConversationCoordinator {
     while (this.routingQueue.length > 0) {
       const { member } = this.routingQueue.shift()!;
 
+      // 通知队列更新（member 已从 routingQueue 移除，作为 executing 传入）
+      this.notifyQueueUpdate(member);
+
       // 动态获取最新消息作为 [MESSAGE]
       const latestMessage = this.session?.messages[this.session.messages.length - 1];
       const messageContent = latestMessage?.content ?? '';
@@ -509,6 +580,9 @@ export class ConversationCoordinator {
       this.status = 'paused';
       this.notifyStatusChange();
 
+      // 通知队列更新（Human 暂停，无 executing）
+      this.notifyQueueUpdate();
+
       // AUTO-SAVE on turn completion (fire-and-forget)
       this.saveCurrentSession().catch(() => {
         // Error already logged in saveCurrentSession
@@ -525,6 +599,10 @@ export class ConversationCoordinator {
       // eslint-disable-next-line no-console
       console.error('[Debug][ProcessQueue] Finished processing queue');
     }
+
+    // 通知队列清空（无 executing）
+    this.notifyQueueUpdate();
+
     this.routingInProgress = false;
   }
 
@@ -620,17 +698,23 @@ export class ConversationCoordinator {
         return;
       }
 
-      // fallback: round-robin
-      const nextMember = this.getNextSpeaker(member.id);
-      if (nextMember && nextMember.type === 'human') {
+      // Fallback: 路由到首个 Human（替换 round-robin）
+      // 按 order 排序找到第一个 human
+      const firstHuman = this.team!.members
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .find(m => m.type === 'human');
+
+      if (firstHuman) {
         this.status = 'paused';
-        this.waitingForMemberId = nextMember.id;
-        return;
+        this.waitingForMemberId = firstHuman.id;
+        this.notifyStatusChange();
+
+        // AUTO-SAVE on turn completion
+        this.saveCurrentSession().catch(() => {});
       }
-      if (nextMember && nextMember.type === 'ai') {
-        await this.sendToAgent(nextMember, message);
-        return;
-      }
+      // 注意：由于 TeamUtils.validateTeam() 已强制校验至少 1 个 Human，
+      // firstHuman 必定存在，无需 else 分支
     } catch (error) {
       // Notify that agent has completed (even on error)
       if (this.options.onAgentCompleted) {
@@ -661,13 +745,20 @@ export class ConversationCoordinator {
    * - 支持 member.name 和 member.displayName 模糊匹配
    * - 大小写不敏感
    * - 忽略空格和连字符
+   *
+   * @returns ResolveResult 包含 resolved 和 unresolved 两个数组
    */
-  private resolveAddressees(addressees: string[]): Member[] {
-    if (!this.team) {
-      return [];
-    }
+  private resolveAddressees(addressees: string[]): ResolveResult {
+    const result: ResolveResult = {
+      resolved: [],
+      unresolved: []
+    };
 
-    const members: Member[] = [];
+    if (!this.team) {
+      // 无团队时，所有地址都无法解析
+      result.unresolved = [...addressees];
+      return result;
+    }
 
     for (const addressee of addressees) {
       // 规范化：转小写，移除空格和连字符
@@ -688,11 +779,13 @@ export class ConversationCoordinator {
       });
 
       if (member) {
-        members.push(member);
+        result.resolved.push(member);
+      } else {
+        result.unresolved.push(addressee);
       }
     }
 
-    return members;
+    return result;
   }
 
   /**
@@ -757,6 +850,54 @@ export class ConversationCoordinator {
     if (this.options.onStatusChange) {
       this.options.onStatusChange(this.status);
     }
+  }
+
+  /**
+   * 通知部分解析失败
+   *
+   * @param unresolved - 未能解析的地址列表
+   */
+  private notifyPartialResolveFailure(unresolved: string[]): void {
+    if (!this.team || unresolved.length === 0) {
+      return;
+    }
+
+    // 获取可用成员名称列表
+    const availableMembers = this.team.members.map(m => m.name);
+
+    // Debug 日志
+    if (process.env.DEBUG) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[Debug][Routing] Partial resolve failure: ${unresolved.join(', ')} not found. ` +
+        `Available: ${availableMembers.join(', ')}`
+      );
+    }
+
+    // 通知 UI
+    if (this.options.onPartialResolveFailure) {
+      this.options.onPartialResolveFailure(unresolved, availableMembers);
+    }
+  }
+
+  /**
+   * 通知队列状态更新
+   *
+   * @param executing - 当前正在执行的成员（可选）
+   */
+  private notifyQueueUpdate(executing?: Member): void {
+    if (!this.options.onQueueUpdate) {
+      return;
+    }
+
+    // items 是待处理队列（不含 executing）
+    const items = this.routingQueue.map(item => item.member);
+
+    this.options.onQueueUpdate({
+      items,
+      executing,
+      isEmpty: items.length === 0 && !executing
+    });
   }
 
   /**

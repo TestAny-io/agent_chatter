@@ -75,6 +75,12 @@ export class TeamUtils {
       errors.push('团队至少需要 2 个成员');
     }
 
+    // 检查至少有一个 Human 成员（路由规则依赖）
+    const humanMembers = team.members?.filter(m => m.type === 'human') || [];
+    if (humanMembers.length === 0) {
+      errors.push('团队至少需要 1 个 Human 成员');
+    }
+
     const names = team.members.map(r => r.name);
     const uniqueNames = new Set(names);
     if (names.length !== uniqueNames.size) {
