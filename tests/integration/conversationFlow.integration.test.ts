@@ -68,6 +68,6 @@ describe('Conversation flow integration', () => {
 
     // After beta (AI) completes, conversation continues to human and pauses
     expect(coordinator.getStatus()).toBe('paused');
-    expect(coordinator.getWaitingForRoleId()).toBe('human-id');
+    expect(coordinator.getWaitingForMemberId()).toBe('human-id');
   });
 });

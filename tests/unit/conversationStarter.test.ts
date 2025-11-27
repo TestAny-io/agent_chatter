@@ -21,7 +21,7 @@ function createMember(partial: Partial<TeamMemberConfig> = {}): TeamMemberConfig
   role: 'role',
   type: 'ai',
   agentType: partial.agentType ?? 'codex',
-  roleDir: partial.roleDir ?? tempDir,
+  baseDir: partial.baseDir ?? tempDir,
   instructionFile: partial.instructionFile,
   env: partial.env,
   themeColor: partial.themeColor,
@@ -50,12 +50,12 @@ describe('ServiceInitializer helpers', () => {
   });
 
   it('resolveInstructionFile respects defaults and relative paths', () => {
-    const roleDir = path.join(tempDir, 'role');
-    fs.mkdirSync(roleDir, { recursive: true });
-    const member = createMember({ agentType: 'gemini', roleDir });
-    const resolved = resolveInstructionFile(member, roleDir);
+    const baseDir = path.join(tempDir, 'role');
+    fs.mkdirSync(baseDir, { recursive: true });
+    const member = createMember({ agentType: 'gemini', baseDir });
+    const resolved = resolveInstructionFile(member, baseDir);
 
-    expect(resolved).toBe(path.join(roleDir, 'GEMINI.md'));
+    expect(resolved).toBe(path.join(baseDir, 'GEMINI.md'));
   });
 
   it('resolveInstructionFile keeps absolute paths untouched', () => {
@@ -66,14 +66,14 @@ describe('ServiceInitializer helpers', () => {
     expect(resolved).toBe(absolute);
   });
 
-  it('normalizeMemberPaths creates missing roleDir and resolves instruction file', () => {
-    const roleDir = path.join(tempDir, 'roles', 'alpha');
-    const member = createMember({ roleDir, instructionFile: 'AGENTS.md' });
+  it('normalizeMemberPaths creates missing baseDir and resolves instruction file', () => {
+    const baseDir = path.join(tempDir, 'roles', 'alpha');
+    const member = createMember({ baseDir, instructionFile: 'AGENTS.md' });
     const normalized = normalizeMemberPaths(member);
 
-    expect(normalized.roleDir).toBe(path.resolve(roleDir));
-    expect(fs.existsSync(normalized.roleDir)).toBe(true);
-    expect(normalized.instructionFile).toBe(path.join(normalized.roleDir, 'AGENTS.md'));
+    expect(normalized.baseDir).toBe(path.resolve(baseDir));
+    expect(fs.existsSync(normalized.baseDir)).toBe(true);
+    expect(normalized.instructionFile).toBe(path.join(normalized.baseDir, 'AGENTS.md'));
   });
 
   it('loadInstructionContent returns file content or undefined', () => {

@@ -150,8 +150,8 @@ export class ContextManager implements IContextProvider {
     if (!msg.speaker) {
       throw new TypeError('Message speaker is required');
     }
-    if (!msg.speaker.roleId) {
-      throw new TypeError('Message speaker.roleId is required');
+    if (!msg.speaker.id) {
+      throw new TypeError('Message speaker.id is required');
     }
 
     // Generate ID and create full message
@@ -243,7 +243,7 @@ export class ContextManager implements IContextProvider {
 
     // Convert to internal format with marker stripping
     const internalContext: InternalContextMessage[] = contextMessages.map(msg => ({
-      from: msg.speaker.roleName,
+      from: msg.speaker.name,
       to: this.formatAddressees(msg.routing?.resolvedAddressees?.map(a => a.identifier)),
       content: stripAllMarkers(msg.content),
       messageId: msg.id,
@@ -312,7 +312,7 @@ export class ContextManager implements IContextProvider {
 
     // Fallback: match by speaker + content
     const currentContent = stripAllMarkers(currentMessage.content);
-    if (last.from === currentMessage.speaker.roleName && last.content === currentContent) {
+    if (last.from === currentMessage.speaker.name && last.content === currentContent) {
       return contextMessages.slice(0, -1);
     }
 

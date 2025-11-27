@@ -1,0 +1,200 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://testany.io/schemas/cli-config-v1.2.json",
+  "title": "Agent Chatter CLI Configuration",
+  "description": "Configuration schema for agent-chatter team configuration files (v1.2)",
+  "type": "object",
+  "required": ["schemaVersion", "team"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["1.1", "1.2"],
+      "description": "Schema version. Must be '1.1' or '1.2'"
+    },
+    "agents": {
+      "type": "array",
+      "description": "Optional agent definitions. In schema 1.1+, agents are typically loaded from global registry",
+      "items": {
+        "$ref": "#/definitions/AgentDefinition"
+      }
+    },
+    "team": {
+      "$ref": "#/definitions/TeamConfig"
+    },
+    "maxRounds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Maximum number of conversation rounds (0 means unlimited)"
+    },
+    "conversation": {
+      "$ref": "#/definitions/ConversationConfig"
+    }
+  },
+  "definitions": {
+    "AgentDefinition": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Agent name (must match registered agent in global registry)"
+        },
+        "command": {
+          "type": "string",
+          "description": "Optional command path. In schema 1.1+, command is loaded from registry"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional command line arguments"
+        },
+        "usePty": {
+          "type": "boolean",
+          "description": "Whether to use PTY for this agent"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RoleDefinitionConfig": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Role identifier"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Human-readable role name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Role description"
+        }
+      },
+      "additionalProperties": false
+    },
+    "TeamMemberConfig": {
+      "type": "object",
+      "required": ["displayName", "name", "role", "type", "baseDir", "systemInstruction"],
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name shown in UI"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "description": "Member identifier (letters, numbers, underscores, hyphens only)"
+        },
+        "displayRole": {
+          "type": "string",
+          "description": "Human-readable role title, reference to RoleDefinition displayName"
+        },
+        "role": {
+          "type": "string",
+          "description": "Reference to RoleDefinition name"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["ai", "human"],
+          "description": "Member type: AI agent or human participant"
+        },
+        "agentType": {
+          "type": "string",
+          "description": "Agent type for AI members, reference to AgentDefinition name"
+        },
+        "themeColor": {
+          "type": "string",
+          "description": "Theme color for UI display"
+        },
+        "baseDir": {
+          "type": "string",
+          "description": "Base directory for this member's files"
+        },
+        "instructionFile": {
+          "type": "string",
+          "description": "Path to instruction file (relative to baseDir)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Environment variables for this member"
+        },
+        "systemInstruction": {
+          "type": "string",
+          "description": "System instruction text (schema 1.2+)"
+        }
+      },
+      "additionalProperties": true,
+      "if": {
+        "properties": { "type": { "const": "ai" } }
+      },
+      "then": {
+        "required": ["agentType"]
+      }
+    },
+    "TeamConfig": {
+      "type": "object",
+      "required": ["name", "description", "members"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Team name identifier"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Human-readable team name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Team description"
+        },
+        "instructionFile": {
+          "type": "string",
+          "description": "Path to team-level instruction file"
+        },
+        "roleDefinitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RoleDefinitionConfig"
+          },
+          "description": "Role definitions for this team"
+        },
+        "members": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "$ref": "#/definitions/TeamMemberConfig"
+          },
+          "description": "Team members (minimum 2 required)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConversationConfig": {
+      "type": "object",
+      "properties": {
+        "maxAgentResponseTime": {
+          "type": "integer",
+          "minimum": 1000,
+          "description": "Maximum timeout for agent response in milliseconds (default: 1800000 = 30 minutes)"
+        },
+        "showThinkingTimer": {
+          "type": "boolean",
+          "description": "Show timer when agent is thinking in REPL (default: true)"
+        },
+        "allowEscCancel": {
+          "type": "boolean",
+          "description": "Allow ESC key to cancel agent execution in REPL (default: true)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

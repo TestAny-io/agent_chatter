@@ -25,7 +25,7 @@ export interface TeamMemberConfig {
   type: 'ai' | 'human';
   agentType?: string;
   themeColor?: string;
-  roleDir: string;
+  baseDir: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string; // Schema 1.2+

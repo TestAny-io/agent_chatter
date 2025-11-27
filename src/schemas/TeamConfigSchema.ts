@@ -123,9 +123,9 @@ export const TeamConfigSchema = {
                 type: "string",
                 description: "Theme color for UI display"
               },
-              roleDir: {
+              baseDir: {
                 type: "string",
-                description: "Role-specific directory path"
+                description: "Base directory for member's files"
               },
               instructionFile: {
                 type: "string",

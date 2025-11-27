@@ -30,6 +30,9 @@ import {
     type ConfigResolution,
     type TeamConfigInfo
 } from '../utils/TeamConfigPaths.js';
+import { SessionStorageService } from '../infrastructure/SessionStorageService.js';
+import type { SessionSummary } from '../models/SessionSnapshot.js';
+import { RestorePrompt } from './components/RestorePrompt.js';
 
 // Read version from package.json
 const __filename = fileURLToPath(import.meta.url);
@@ -636,7 +639,7 @@ function SelectView({ title, options, selectedIndex, multiSelect, selectedItems 
 }
 
 // 应用模式
-type AppMode = 'normal' | 'conversation' | 'wizard' | 'menu' | 'form' | 'select' | 'agentsMenu';
+type AppMode = 'normal' | 'conversation' | 'wizard' | 'menu' | 'form' | 'select' | 'agentsMenu' | 'restore-prompt';
 
 // ============================================================================
 // Wizard State Types
@@ -653,7 +656,7 @@ interface MemberConfig {
     assignedRole: string;
     displayName: string;
     themeColor: string;
-    roleDir: string;
+    baseDir: string;
     instructionFile?: string;
     env?: Record<string, string>;
     agentType?: string;
@@ -759,6 +762,16 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     // Menu state
     const [menuState, setMenuState] = useState<MenuState | null>(null);
     const [menuItems, setMenuItems] = useState<{ label: string; value: string }[]>([]);
+
+    // Session restore state
+    const [sessionStorage] = useState(() => new SessionStorageService());
+    const [pendingRestore, setPendingRestore] = useState<{
+        team: Team;
+        config: CLIConfig;
+        session: SessionSummary;
+        coordinator: ConversationCoordinator;
+        eventEmitter: EventEmitter;
+    } | null>(null);
 
     // Form state
     const [formState, setFormState] = useState<FormState | null>(null);
@@ -1012,13 +1025,47 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             return;
         }
 
+        // Handle restore-prompt mode (R/N key selection)
+        if (mode === 'restore-prompt' && pendingRestore) {
+            const choice = inputChar.toLowerCase();
+
+            if (choice === 'r') {
+                // Resume session
+                handleRestoreChoice(true);
+                return;
+            }
+
+            if (choice === 'n') {
+                // Start new session
+                handleRestoreChoice(false);
+                return;
+            }
+
+            // ESC to cancel and return to normal mode
+            if (key.escape) {
+                setPendingRestore(null);
+                setMode('normal');
+                appendOutput(<Text key={`restore-cancel-${getNextKey()}`} color="yellow">Session restore cancelled</Text>);
+                return;
+            }
+
+            // Invalid input - show hint
+            if (inputChar && !key.ctrl) {
+                appendOutput(<Text key={`restore-hint-${getNextKey()}`} dimColor>Press R to resume or N to start new</Text>);
+            }
+            return;
+        }
+
         // ESC key - Cancel agent execution in conversation mode
         if (key.escape) {
             if (mode === 'conversation' && activeCoordinator && executingAgent && currentConfig) {
                 // Check if ESC cancellation is allowed
                 const allowEscCancel = currentConfig.conversation?.allowEscCancel ?? true;
                 if (allowEscCancel) {
-                    activeCoordinator.handleUserCancellation();
+                    // handleUserCancellation is async, fire-and-forget for UI responsiveness
+                    activeCoordinator.handleUserCancellation().catch(() => {
+                        // Errors already logged in method
+                    });
                     clearTodoList(); // Clear todo list on cancel
                     appendOutput(<Text key={`agent-cancelled-${getNextKey()}`} color="yellow">Agent execution cancelled by user (ESC)</Text>);
                     return;
@@ -1030,7 +1077,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         if (key.ctrl && inputChar === 'c') {
             if (mode === 'conversation' && activeCoordinator) {
                 // 退出对话模式
-                activeCoordinator.stop();
+                // stop() is async, fire-and-forget for UI responsiveness
+                activeCoordinator.stop().catch(() => {
+                    // Errors already logged in method
+                });
                 clearTodoList(); // Clear todo list on exit
                 setMode('normal');
                 setActiveCoordinator(null);
@@ -1218,7 +1268,10 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         // 检查是否是退出对话命令
         if (message === '/end' || message === '/exit' || message === '/quit') {
             if (activeCoordinator) {
-                activeCoordinator.stop();
+                // stop() is async, fire-and-forget for UI responsiveness
+                activeCoordinator.stop().catch(() => {
+                    // Errors already logged in method
+                });
             }
             setMode('normal');
             setActiveCoordinator(null);
@@ -1255,7 +1308,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 }
             }
 
-            const waitingRoleId = activeCoordinator.getWaitingForRoleId();
+            const waitingRoleId = activeCoordinator.getWaitingForMemberId();
 
             // Check if single human - allow sending without explicit waitingRoleId
             const humans = activeTeam.members.filter(m => m.type === 'human');
@@ -1385,7 +1438,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 } else {
                     const config = loadConfig(subargs[0]);
                     if (config) {
-                        initializeAndDeployTeam(config);
+                        // Check for existing session and prompt for restore
+                        checkAndPromptRestore(config);
                     }
                 }
                 break;
@@ -1737,9 +1791,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                             {config.team.members.map((member: any, idx: number) => (
                                 <Box key={idx} flexDirection="column" marginLeft={2} marginTop={1}>
                                     <Text>{idx + 1}. <Text bold>{member.displayName}</Text> ({member.type}) - Role: {member.role}</Text>
-                                    {member.roleDir && (
+                                    {member.baseDir && (
                                         <Box marginLeft={2}>
-                                            <Text dimColor>Role Dir: {member.roleDir}</Text>
+                                            <Text dimColor>Base Dir: {member.baseDir}</Text>
                                         </Box>
                                     )}
                                 </Box>
@@ -1863,7 +1917,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     const timestamp = new Date(message.timestamp).toLocaleTimeString();
                     appendOutput(
                         <Box key={`msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
-                            <Text color="yellow">[{timestamp}] {message.speaker.roleTitle}:</Text>
+                            <Text color="yellow">[{timestamp}] {message.speaker.displayName}:</Text>
                             <Text>{message.content}</Text>
                             <Text dimColor>{'─'.repeat(60)}</Text>
                         </Box>
@@ -1898,13 +1952,13 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             setActiveTeam(team);
             setMode('conversation');
 
-            // NEW: Set team without starting session
-            coordinator.setTeam(team);
+            // Set team (async for potential session restore in the future)
+            await coordinator.setTeam(team);
 
             // If only one human member, auto-set as waiting
             const humans = team.members.filter(m => m.type === 'human');
             if (humans.length === 1) {
-                coordinator.setWaitingForRoleId(humans[0].id);
+                coordinator.setWaitingForMemberId(humans[0].id);
             }
 
             appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
@@ -1919,6 +1973,134 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         } catch (error) {
             appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
             return null;
+        }
+    };
+
+    /**
+     * Check for existing session and show restore prompt if found
+     */
+    const checkAndPromptRestore = async (config: CLIConfig): Promise<void> => {
+        try {
+            appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
+
+            const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
+                onMessage: (message: ConversationMessage) => {
+                    if (message.speaker.type === 'ai' || message.speaker.type === 'human') {
+                        return;
+                    }
+                    const timestamp = new Date(message.timestamp).toLocaleTimeString();
+                    appendOutput(
+                        <Box key={`msg-${getNextKey()}`} flexDirection="column" marginTop={1}>
+                            <Text color="yellow">[{timestamp}] {message.speaker.displayName}:</Text>
+                            <Text>{message.content}</Text>
+                            <Text dimColor>{'─'.repeat(60)}</Text>
+                        </Box>
+                    );
+                },
+                onStatusChange: (status) => {
+                    appendOutput(<Text key={`status-${getNextKey()}`} dimColor>[Status] {status}</Text>);
+                },
+                onAgentStarted: (member: Member) => {
+                    flushPendingNow();
+                    clearTodoList();
+                    const color = member.themeColor ?? 'white';
+                    appendOutput(<Text key={`agent-start-${getNextKey()}`} backgroundColor={color} color="black">→ {member.displayName} 开始执行...</Text>);
+                    setExecutingAgent(member);
+                },
+                onAgentCompleted: (member: Member) => {
+                    flushPendingNow();
+                    const color = member.themeColor ?? 'cyan';
+                    appendOutput(<Text key={`agent-done-${getNextKey()}`} color={color}>✓ {member.displayName} 完成</Text>);
+                    setExecutingAgent(null);
+                }
+            });
+
+            if (!team.members.length) {
+                throw new Error('Team has no members configured. Please update the configuration file.');
+            }
+
+            // Check for existing sessions
+            const latestSession = await sessionStorage.getLatestSession(team.id);
+
+            if (latestSession) {
+                // Show restore prompt
+                const summary: SessionSummary = {
+                    sessionId: latestSession.sessionId,
+                    createdAt: latestSession.createdAt,
+                    updatedAt: latestSession.updatedAt,
+                    messageCount: latestSession.metadata.messageCount,
+                    summary: latestSession.metadata.summary,
+                };
+
+                setPendingRestore({
+                    team,
+                    config,
+                    session: summary,
+                    coordinator,
+                    eventEmitter,
+                });
+                setMode('restore-prompt');
+                setCurrentConfig(config);
+            } else {
+                // No existing session, start fresh
+                attachEventEmitter(eventEmitter);
+                setActiveCoordinator(coordinator);
+                setActiveTeam(team);
+                setCurrentConfig(config);
+                setMode('conversation');
+
+                await coordinator.setTeam(team);
+
+                const humans = team.members.filter(m => m.type === 'human');
+                if (humans.length === 1) {
+                    coordinator.setWaitingForMemberId(humans[0].id);
+                }
+
+                appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
+                appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your first message to begin conversation...</Text>);
+                setTimeout(() => setInput(prev => prev), 50);
+            }
+        } catch (error) {
+            appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
+        }
+    };
+
+    /**
+     * Handle user's restore choice (R or N)
+     */
+    const handleRestoreChoice = async (resume: boolean): Promise<void> => {
+        if (!pendingRestore) return;
+
+        const { team, config, session, coordinator, eventEmitter } = pendingRestore;
+
+        try {
+            attachEventEmitter(eventEmitter);
+            setActiveCoordinator(coordinator);
+            setActiveTeam(team);
+            setMode('conversation');
+
+            if (resume) {
+                // Resume session
+                await coordinator.setTeam(team, { resumeSessionId: session.sessionId });
+                appendOutput(<Text key={`restore-success-${getNextKey()}`} color="green">✓ Restored session with {session.messageCount} messages</Text>);
+            } else {
+                // Start new session
+                await coordinator.setTeam(team);
+                appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
+            }
+
+            const humans = team.members.filter(m => m.type === 'human');
+            if (humans.length === 1) {
+                coordinator.setWaitingForMemberId(humans[0].id);
+            }
+
+            appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your message to continue...</Text>);
+            setTimeout(() => setInput(prev => prev), 50);
+        } catch (error) {
+            appendOutput(<Text key={`restore-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
+            setMode('normal');
+        } finally {
+            setPendingRestore(null);
         }
     };
 
@@ -1975,6 +2157,14 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 />
             )}
 
+            {/* Restore Prompt UI */}
+            {mode === 'restore-prompt' && pendingRestore && (
+                <RestorePrompt
+                    session={pendingRestore.session}
+                    teamName={pendingRestore.team.name}
+                />
+            )}
+
             {/* Agents Menu */}
             {mode === 'agentsMenu' && (
                 <AgentsMenu
@@ -2008,7 +2198,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                                 {(() => {
                                     // Get waiting member's display name for the prompt
                                     if (activeCoordinator && activeTeam) {
-                                        const waitingRoleId = activeCoordinator.getWaitingForRoleId();
+                                        const waitingRoleId = activeCoordinator.getWaitingForMemberId();
                                         if (waitingRoleId) {
                                             const waitingMember = activeTeam.members.find(m => m.id === waitingRoleId);
                                             if (waitingMember) {

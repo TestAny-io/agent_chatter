@@ -1,95 +1,142 @@
 /**
- * ConversationMessage - 对话消息（已修正）
+ * ConversationMessage - Conversation message model
  *
- * 重要：此模型已修复"消息归属错误"问题
- * - speaker 是结构化对象
- * - content 已剥离 [NEXT:] 标记
- * - routing 包含解析后的路由信息
+ * Speaker fields use new format aligned with Team.Member:
+ * - id: Speaker identifier (maps to Member.id)
+ * - name: Speaker name (maps to Member.name)
+ * - displayName: Display name for UI (maps to Member.displayName)
+ * - type: 'ai' | 'human' | 'system'
+ */
+
+import type { SpeakerInfo } from './SpeakerInfo.js';
+
+/**
+ * Conversation message with speaker info
  */
 export interface ConversationMessage {
   id: string;
   timestamp: Date;
 
-  // 发言者信息（结构化）
-  speaker: {
-    roleId: string;
-    roleName: string;
-    roleTitle: string;
-    type: 'ai' | 'human' | 'system';
-  };
+  /**
+   * Speaker information (new format)
+   * Uses id/name/displayName aligned with Team.Member
+   */
+  speaker: SpeakerInfo;
 
-  // 消息内容（已剥离 [NEXT:] 标记）
+  /**
+   * Message content (NEXT markers stripped)
+   */
   content: string;
 
-  // 路由信息（从内容中解析出来）
-  routing?: {
-    rawNextMarkers: string[];  // 原始 [NEXT: ...] 内容
-    resolvedAddressees: Array<{
-      identifier: string;      // 用户指定的标识
-      roleId: string | null;   // 解析到的角色 ID
-      roleName: string | null;
-    }>;
-  };
+  /**
+   * Routing information (parsed from content)
+   */
+  routing?: MessageRouting;
 }
 
 /**
- * MessageDelivery - 内部消息传递对象
+ * Routing information parsed from message content
+ */
+export interface MessageRouting {
+  /** Original [NEXT: ...] markers */
+  rawNextMarkers: string[];
+
+  /** Resolved addressees */
+  resolvedAddressees: ResolvedAddressee[];
+}
+
+/**
+ * Resolved addressee from NEXT marker
+ */
+export interface ResolvedAddressee {
+  /** User-specified identifier from [NEXT: xxx] */
+  identifier: string;
+
+  /** Resolved member ID (null if not resolved) */
+  memberId: string | null;
+
+  /** Resolved member name (null if not resolved) */
+  memberName: string | null;
+}
+
+/**
+ * MessageDelivery - Internal message delivery object
  *
- * 用于在 sendMessageToRole 中传递消息
- * 不是历史记录！
+ * Used in sendMessageToRole for message passing.
+ * Not stored in history!
  */
 export interface MessageDelivery {
-  // 这条消息要发给谁
+  /** Recipient info */
   recipient: {
-    roleId: string;
-    roleName: string;
+    id: string;
+    name: string;
   };
 
-  // 消息内容（已剥离标记 + 添加了上下文）
+  /** Message content (markers stripped + context added) */
   content: string;
 
-  // 上下文（最近 N 条历史消息）
+  /** Context (recent N history messages) */
   context?: ConversationMessage[];
 }
 
 /**
- * ParseResult - 消息解析结果
+ * ParseResult - Message parsing result
  *
- * MessageRouter.parseMessage() 的返回值
+ * Return value of MessageRouter.parseMessage()
  */
 export interface ParseResult {
-  // 解析出的接收者标识
+  /** Parsed addressee identifiers */
   addressees: string[];
 
-  // 剥离标记后的干净内容
+  /** Clean content with markers stripped */
   cleanContent: string;
 }
 
 /**
- * ConversationMessage 工具函数
+ * ConversationMessage utility functions
  */
 export class MessageUtils {
   static generateId(): string {
     return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   }
 
+  /**
+   * Create a message with new speaker format
+   */
   static createMessage(
-    speakerRoleId: string,
-    speakerRoleName: string,
-    speakerRoleTitle: string,
+    speakerId: string,
+    speakerName: string,
+    speakerDisplayName: string,
     speakerType: 'ai' | 'human' | 'system',
     content: string,
-    routing?: ConversationMessage['routing']
+    routing?: MessageRouting
   ): ConversationMessage {
     return {
       id: this.generateId(),
       timestamp: new Date(),
       speaker: {
-        roleId: speakerRoleId,
-        roleName: speakerRoleName,
-        roleTitle: speakerRoleTitle,
+        id: speakerId,
+        name: speakerName,
+        displayName: speakerDisplayName,
         type: speakerType
       },
+      content,
+      routing
+    };
+  }
+
+  /**
+   * Create a message from a SpeakerInfo object
+   */
+  static createMessageFromSpeaker(
+    speaker: SpeakerInfo,
+    content: string,
+    routing?: MessageRouting
+  ): ConversationMessage {
+    return {
+      id: this.generateId(),
+      timestamp: new Date(),
+      speaker,
       content,
       routing
     };
@@ -98,7 +145,7 @@ export class MessageUtils {
   static createSystemMessage(content: string): ConversationMessage {
     return this.createMessage(
       'system',
-      'System',
+      'system',
       'System',
       'system',
       content

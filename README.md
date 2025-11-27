@@ -114,7 +114,7 @@ Create `my-team.json`:
         "role": "reviewer",
         "agentType": "claude",
         "themeColor": "cyan",
-        "roleDir": "./teams/my-ai-team/reviewer/claude-reviewer",
+        "baseDir": "./teams/my-ai-team/reviewer/claude-reviewer",
         "workDir": "./teams/my-ai-team/reviewer/claude-reviewer/work",
         "instructionFile": "./teams/my-ai-team/reviewer/claude-reviewer/AGENTS.md"
       },
@@ -125,7 +125,7 @@ Create `my-team.json`:
         "type": "human",
         "role": "observer",
         "themeColor": "green",
-        "roleDir": "./teams/my-ai-team/observer/human-observer",
+        "baseDir": "./teams/my-ai-team/observer/human-observer",
         "workDir": "./teams/my-ai-team/observer/human-observer/work",
         "instructionFile": "./teams/my-ai-team/observer/human-observer/README.md"
       }
@@ -209,14 +209,14 @@ Each participant entry in `team.members` must define directories and the instruc
   "type": "ai",
   "role": "reviewer",
   "agentType": "claude",
-  "roleDir": "./teams/team-name/reviewer/claude-reviewer",
+  "baseDir": "./teams/team-name/reviewer/claude-reviewer",
   "workDir": "./teams/team-name/reviewer/claude-reviewer/work",
   "instructionFile": "./teams/team-name/reviewer/claude-reviewer/AGENTS.md"
 }
 ```
 
 - `agentType`: References an entry in the top-level `agents` array (e.g., `claude`, `codex`, `gemini`).
-- `roleDir`: Anchor directory for this member. The instruction file and work directory typically live under this tree.
+- `baseDir`: Anchor directory for this member. The instruction file and work directory typically live under this tree.
 - `workDir`: Directory the process should treat as its working directory (symlink it to your actual project if needed).
 - `instructionFile`: Path to the Markdown instructions that define this member's role-specific persona.
 - `env`: Optional extra environment variables merged into the spawned CLI. Note: All CLI agents (Claude Code, Codex, Gemini) use the system HOME directory for credentials.

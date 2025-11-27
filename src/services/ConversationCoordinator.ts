@@ -26,8 +26,33 @@ import type { ConversationConfig } from '../models/CLIConfig.js';
 import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
 import { ContextManager } from '../context/ContextManager.js';
 import type { AgentType } from '../context/types.js';
+import type { ISessionStorage } from '../infrastructure/ISessionStorage.js';
+import { SessionStorageService } from '../infrastructure/SessionStorageService.js';
+import { createSessionSnapshot, type SessionSnapshot, type PersistedMessage } from '../models/SessionSnapshot.js';
+import type { IOutput } from '../outputs/IOutput.js';
+import type { SpeakerInfo } from '../models/SpeakerInfo.js';
+import { isNewSpeaker, getSpeakerId, type SpeakerInfoInput, migrateMessageSpeaker } from '../utils/speakerMigration.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
+
+/**
+ * Options for setTeam method
+ */
+export interface SetTeamOptions {
+  /**
+   * Session ID to restore
+   * If provided, will attempt to restore from saved snapshot
+   */
+  resumeSessionId?: string;
+}
+
+/**
+ * Missing member info for consistency warnings
+ */
+export interface MissingMember {
+  id: string;
+  name: string;
+}
 
 export interface ConversationCoordinatorOptions {
   contextMessageCount?: number;  // 包含在上下文中的最近消息数量
@@ -37,6 +62,21 @@ export interface ConversationCoordinatorOptions {
   conversationConfig?: ConversationConfig;  // Conversation configuration (timeout, UI behavior)
   onAgentStarted?: (member: Member) => void;  // Called when an agent starts executing
   onAgentCompleted?: (member: Member) => void;  // Called when an agent completes execution
+  /**
+   * Session storage implementation
+   * Default: SessionStorageService (file-based)
+   */
+  sessionStorage?: ISessionStorage;
+  /**
+   * Output interface for user-visible warnings
+   * Used for member consistency warnings
+   */
+  output?: IOutput;
+  /**
+   * Callback when member consistency issues detected
+   * UI layer can use this to show friendly notifications
+   */
+  onMemberConsistencyWarning?: (missingMembers: MissingMember[]) => void;
 }
 
 function normalizeAgentType(type?: string): string {
@@ -57,11 +97,12 @@ export class ConversationCoordinator {
   private team: Team | null = null;
   private status: ConversationStatus = 'active';
   private contextMessageCount: number;
-  private waitingForRoleId: string | null = null;  // 等待哪个角色的输入
+  private waitingForMemberId: string | null = null;  // 等待哪个成员的输入
   private currentExecutingMember: Member | null = null;  // Currently executing agent (for cancellation)
   private routingQueue: Array<{ member: Member }> = [];
   private routingInProgress = false;
   private contextManager: ContextManager;
+  private sessionStorage: ISessionStorage;
   /**
    * 获取下一个轮到的成员（循环轮询）
    */
@@ -89,17 +130,32 @@ export class ConversationCoordinator {
     this.contextManager = new ContextManager({
       contextWindowSize: this.contextMessageCount,
     });
+
+    // Initialize session storage (default: file-based)
+    this.sessionStorage = options.sessionStorage ?? new SessionStorageService();
   }
 
   /**
-   * Set team without starting conversation
+   * Set team with optional session restore
+   *
+   * ⚠️ ASYNC - Callers must await
+   *
+   * @param team - Team configuration
+   * @param options - Optional settings including resumeSessionId
    */
-  setTeam(team: Team): void {
+  async setTeam(team: Team, options?: SetTeamOptions): Promise<void> {
+    // 1. Reset state
     this.team = team;
     this.session = null;
-    this.waitingForRoleId = null;
+    this.waitingForMemberId = null;
     this.routingQueue = [];
+    this.status = 'active';
     this.contextManager.clear();
+
+    // 2. Attempt restore if requested
+    if (options?.resumeSessionId) {
+      await this.restoreSession(options.resumeSessionId);
+    }
   }
 
   hasActiveSession(): boolean {
@@ -153,8 +209,8 @@ export class ConversationCoordinator {
     this.storeMessage(message);
     this.notifyMessage(message);
 
-    // Clear waitingForRoleId (if user buzzed in or responded)
-    this.waitingForRoleId = null;
+    // Clear waitingForMemberId (if user buzzed in or responded)
+    this.waitingForMemberId = null;
 
     // Route to next member(s)
     await this.routeToNext(message);
@@ -198,9 +254,9 @@ export class ConversationCoordinator {
       return member;
     }
 
-    // PRIORITY 3: waitingForRoleId (system set from previous routing)
-    if (this.waitingForRoleId) {
-      const member = this.team.members.find(m => m.id === this.waitingForRoleId);
+    // PRIORITY 3: waitingForMemberId (system set from previous routing)
+    if (this.waitingForMemberId) {
+      const member = this.team.members.find(m => m.id === this.waitingForMemberId);
       if (member && member.type === 'human') {
         return member;
       }
@@ -301,7 +357,7 @@ export class ConversationCoordinator {
     }
 
     // 清除等待状态
-    this.waitingForRoleId = null;
+    this.waitingForMemberId = null;
 
     // 解析消息
     const parsed = this.messageRouter.parseMessage(content);
@@ -345,7 +401,7 @@ export class ConversationCoordinator {
     if (process.env.DEBUG) {
       // eslint-disable-next-line no-console
       console.error(
-        `[Debug][Routing] From ${message.speaker.roleName} addressees=${JSON.stringify(addressees)}`
+        `[Debug][Routing] From ${message.speaker.name} addressees=${JSON.stringify(addressees)}`
       );
     }
     let resolvedMembers: Member[] = [];
@@ -387,8 +443,8 @@ export class ConversationCoordinator {
     if (message.routing) {
       message.routing.resolvedAddressees = resolvedMembers.map(member => ({
         identifier: member.name,
-        roleId: member.id,
-        roleName: member.name
+        memberId: member.id,
+        memberName: member.name
       }));
     }
 
@@ -440,7 +496,7 @@ export class ConversationCoordinator {
 
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
-        console.error(`[Debug][ProcessQueue] Processing ${member.name} (${member.type}), latest message from: ${latestMessage?.speaker.roleName}`);
+        console.error(`[Debug][ProcessQueue] Processing ${member.name} (${member.type}), latest message from: ${latestMessage?.speaker.name}`);
       }
 
       if (member.type === 'ai') {
@@ -449,9 +505,15 @@ export class ConversationCoordinator {
       }
 
       // human: 暂停并等待输入，保留队列顺序
-      this.waitingForRoleId = member.id;
+      this.waitingForMemberId = member.id;
       this.status = 'paused';
       this.notifyStatusChange();
+
+      // AUTO-SAVE on turn completion (fire-and-forget)
+      this.saveCurrentSession().catch(() => {
+        // Error already logged in saveCurrentSession
+      });
+
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
         console.error(`[Debug][ProcessQueue] Paused for human ${member.name}`);
@@ -562,7 +624,7 @@ export class ConversationCoordinator {
       const nextMember = this.getNextSpeaker(member.id);
       if (nextMember && nextMember.type === 'human') {
         this.status = 'paused';
-        this.waitingForRoleId = nextMember.id;
+        this.waitingForMemberId = nextMember.id;
         return;
       }
       if (nextMember && nextMember.type === 'ai') {
@@ -579,7 +641,7 @@ export class ConversationCoordinator {
       if (error instanceof Error && error.message === '[CANCELLED_BY_USER]') {
         // User cancelled via ESC - don't rethrow
         // The cancellation flow is already handled by handleUserCancellation()
-        // which set status to paused and waitingForRoleId
+        // which set status to paused and waitingForMemberId
         return;
       }
 
@@ -652,7 +714,7 @@ export class ConversationCoordinator {
 
     this.session = SessionUtils.updateSessionStatus(this.session, 'completed');
     this.status = 'completed';
-    this.waitingForRoleId = null;  // 清除等待状态，防止接受完成后的输入
+    this.waitingForMemberId = null;  // 清除等待状态，防止接受完成后的输入
     this.notifyStatusChange();
 
     // 停止所有 Agent
@@ -712,17 +774,17 @@ export class ConversationCoordinator {
   }
 
   /**
-   * 获取等待输入的角色 ID
+   * 获取等待输入的成员 ID
    */
-  getWaitingForRoleId(): string | null {
-    return this.waitingForRoleId;
+  getWaitingForMemberId(): string | null {
+    return this.waitingForMemberId;
   }
 
   /**
    * 设置等待输入的角色 ID
    */
-  setWaitingForRoleId(roleId: string | null): void {
-    this.waitingForRoleId = roleId;
+  setWaitingForMemberId(memberId: string | null): void {
+    this.waitingForMemberId = memberId;
   }
 
   /**
@@ -746,7 +808,10 @@ export class ConversationCoordinator {
   /**
    * 停止对话
    */
-  stop(): void {
+  async stop(): Promise<void> {
+    // AUTO-SAVE before cleanup
+    await this.saveCurrentSession();
+
     this.handleConversationComplete();
   }
 
@@ -754,7 +819,7 @@ export class ConversationCoordinator {
    * Handle user cancellation (ESC key)
    * Cancels the currently executing agent and pauses the conversation
    */
-  handleUserCancellation(): void {
+  async handleUserCancellation(): Promise<void> {
     if (this.currentExecutingMember) {
       // Notify that agent has completed (even though it was cancelled)
       if (this.options.onAgentCompleted) {
@@ -770,12 +835,251 @@ export class ConversationCoordinator {
     if (this.team) {
       const humanMember = this.team.members.find(m => m.type === 'human');
       if (humanMember) {
-        this.waitingForRoleId = humanMember.id;
+        this.waitingForMemberId = humanMember.id;
       }
     }
 
     // Pause the conversation
     this.status = 'paused';
     this.notifyStatusChange();
+
+    // AUTO-SAVE on cancellation
+    await this.saveCurrentSession();
+  }
+
+  // --------------------------------------------------------------------------
+  // Session Persistence Methods
+  // --------------------------------------------------------------------------
+
+  /**
+   * Restore a previous session from storage
+   *
+   * @param sessionId - Session ID to restore
+   * @throws Error if session not found or teamId mismatch
+   */
+  private async restoreSession(sessionId: string): Promise<void> {
+    // 1. Validate team exists
+    if (!this.team) {
+      throw new Error('Team must be set before restoring session');
+    }
+
+    // 2. Load snapshot
+    const snapshot = await this.sessionStorage.loadSession(this.team.id, sessionId);
+    if (!snapshot) {
+      throw new Error(
+        `Session '${sessionId}' not found for team '${this.team.id}'.\n` +
+        `Use --resume without ID to restore the latest session, or start a new session.`
+      );
+    }
+
+    // 3. Validate teamId match
+    if (snapshot.teamId !== this.team.id) {
+      throw new Error(
+        `Session teamId mismatch: snapshot is for team '${snapshot.teamId}', ` +
+        `but current team is '${this.team.id}'.\n` +
+        `Please use the correct team configuration.`
+      );
+    }
+
+    // 4. Check member consistency (warn, don't block)
+    this.checkMemberConsistency(snapshot);
+
+    // 5. Migrate speaker fields if legacy format
+    const migratedMessages = this.migrateMessagesIfNeeded(snapshot.context.messages);
+
+    // 6. Import context
+    this.contextManager.importSnapshot({
+      messages: migratedMessages,
+      teamTask: snapshot.context.teamTask,
+      timestamp: Date.now(),
+      version: 1,
+    });
+
+    // 7. Rebuild ConversationSession
+    this.session = this.rebuildSession(snapshot, migratedMessages);
+
+    // 8. Reset execution state (Ready-Idle principle)
+    this.routingQueue = [];
+    this.currentExecutingMember = null;
+    this.status = 'paused';
+    this.waitingForMemberId = this.getFirstHumanMemberId();
+
+    // 9. Notify
+    this.notifyStatusChange();
+  }
+
+  /**
+   * Check if historical speakers still exist in current team
+   * Warns if mismatch, but does not block restore
+   *
+   * @param snapshot - Session snapshot to check
+   */
+  private checkMemberConsistency(snapshot: SessionSnapshot): void {
+    const currentMemberIds = new Set(this.team!.members.map(m => m.id));
+
+    // Collect unique speakers from history
+    const speakerMap = new Map<string, string>(); // id -> name
+    for (const msg of snapshot.context.messages) {
+      const speaker = msg.speaker as SpeakerInfoInput;
+      // Use getSpeakerId to handle both new and legacy formats
+      const speakerId = getSpeakerId(speaker);
+      // Get display name from either format
+      const speakerName = isNewSpeaker(speaker)
+        ? speaker.displayName
+        : speakerId;
+
+      if (speakerId && speakerId !== 'system') {
+        speakerMap.set(speakerId, speakerName ?? speakerId);
+      }
+    }
+
+    // Find missing members
+    const missingMembers: MissingMember[] = [];
+    for (const [id, name] of speakerMap) {
+      if (!currentMemberIds.has(id)) {
+        missingMembers.push({ id, name });
+      }
+    }
+
+    if (missingMembers.length > 0) {
+      const names = missingMembers.map(m => m.name).join(', ');
+
+      // User-visible warning via output interface
+      this.options.output?.warn(
+        `⚠️  Some speakers in history are not in current team: ${names}\n` +
+        `   Their messages will be displayed with original names.`
+      );
+
+      // Callback for UI layer
+      this.options.onMemberConsistencyWarning?.(missingMembers);
+    }
+  }
+
+  /**
+   * Migrate messages from persisted format to ConversationMessage format
+   *
+   * Persisted format uses new speaker fields (id/name/displayName).
+   * ConversationMessage also uses new format (id/name/displayName).
+   * This method ensures consistent format regardless of persisted format version.
+   *
+   * @param messages - Persisted messages (may have either speaker format for backward compat)
+   * @returns ConversationMessage array with new speaker format
+   */
+  private migrateMessagesIfNeeded(messages: PersistedMessage[]): ConversationMessage[] {
+    return messages.map(msg => {
+      // Use migrateMessageSpeaker utility for consistent speaker migration
+      const migratedSpeaker = migrateMessageSpeaker(msg.speaker as SpeakerInfoInput);
+
+      // Convert routing resolvedAddressees if present (legacy may have roleId/roleName)
+      let routing = msg.routing;
+      if (routing) {
+        routing = {
+          rawNextMarkers: routing.rawNextMarkers,
+          resolvedAddressees: routing.resolvedAddressees.map(addr => ({
+            identifier: addr.identifier,
+            memberId: (addr as any).memberId ?? (addr as any).roleId ?? null,
+            memberName: (addr as any).memberName ?? (addr as any).roleName ?? null,
+          })),
+        };
+      }
+
+      return {
+        id: msg.id,
+        timestamp: new Date(msg.timestamp),
+        speaker: migratedSpeaker,
+        content: msg.content,
+        routing,
+      };
+    });
+  }
+
+  /**
+   * Rebuild ConversationSession from snapshot
+   *
+   * @param snapshot - Source snapshot
+   * @param messages - Migrated messages
+   * @returns Rebuilt session object
+   */
+  private rebuildSession(
+    snapshot: SessionSnapshot,
+    messages: ConversationMessage[]
+  ): ConversationSession {
+    return {
+      id: snapshot.sessionId,
+      teamId: snapshot.teamId,
+      teamName: this.team!.name,
+      title: this.generateRestoredTitle(snapshot),
+      createdAt: new Date(snapshot.createdAt),
+      updatedAt: new Date(snapshot.updatedAt),
+      status: 'paused', // Always start paused
+      teamTask: snapshot.context.teamTask,
+      messages: [...messages],
+      stats: {
+        totalMessages: messages.length,
+        messagesByRole: this.calculateMessagesByRole(messages),
+        duration: Date.now() - new Date(snapshot.createdAt).getTime(),
+      },
+    };
+  }
+
+  /**
+   * Generate title for restored session
+   */
+  private generateRestoredTitle(snapshot: SessionSnapshot): string {
+    const date = new Date(snapshot.updatedAt);
+    const formatted = date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return `Restored - ${formatted}`;
+  }
+
+  /**
+   * Calculate message count by member
+   */
+  private calculateMessagesByRole(messages: ConversationMessage[]): Record<string, number> {
+    const result: Record<string, number> = {};
+    for (const msg of messages) {
+      const memberId = msg.speaker.id;
+      result[memberId] = (result[memberId] ?? 0) + 1;
+    }
+    return result;
+  }
+
+  /**
+   * Get first human member's ID
+   * Used to set waitingForMemberId after restore
+   *
+   * @returns Human member ID, or null if no human members
+   */
+  private getFirstHumanMemberId(): string | null {
+    const human = this.team?.members.find(m => m.type === 'human');
+    return human?.id ?? null;
+  }
+
+  /**
+   * Save current session to storage
+   * Called automatically at save trigger points
+   *
+   * Non-blocking: errors are logged but don't interrupt flow
+   */
+  async saveCurrentSession(): Promise<void> {
+    if (!this.session || !this.team) {
+      return; // Nothing to save
+    }
+
+    try {
+      const contextSnapshot = this.contextManager.exportSnapshot();
+
+      const snapshot = createSessionSnapshot(this.session, contextSnapshot);
+
+      await this.sessionStorage.saveSession(this.team.id, snapshot);
+    } catch (err) {
+      // Log error but don't throw - save failure shouldn't crash the app
+      // eslint-disable-next-line no-console
+      console.error(`❌  Failed to save session: ${(err as Error).message}`);
+    }
   }
 }

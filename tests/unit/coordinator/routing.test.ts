@@ -56,14 +56,14 @@ describe('ConversationCoordinator Routing', () => {
     coordinator.setTeam(team);
     await coordinator.sendMessage('Start review [NEXT: ai-alpha]', 'human-1');
 
-    expect(coordinator.getWaitingForRoleId()).toBe('human-1');
+    expect(coordinator.getWaitingForMemberId()).toBe('human-1');
     expect(coordinator.getStatus()).toBe('paused');
 
     await coordinator.injectMessage('human-1', 'Handing off to next reviewer');
 
     expect(stub.startCalls.length).toBeGreaterThan(0);
     expect(stub.sendCalls).toHaveLength(1);
-    expect(coordinator.getWaitingForRoleId()).toBe('human-1');
+    expect(coordinator.getWaitingForMemberId()).toBe('human-1');
     expect(receivedMessages.some(msg => msg.content.includes('Handing off'))).toBe(true);
   });
 
@@ -142,7 +142,7 @@ describe('ConversationCoordinator Routing', () => {
     const message: ConversationMessage = {
       id: 'm-no-next',
       content: 'no next markers',
-      speaker: { roleId: ai1.id, roleName: ai1.name, roleTitle: ai1.displayName, type: 'ai' },
+      speaker: { id: ai1.id, name: ai1.name, displayName: ai1.displayName, type: 'ai' },
       routing: { rawNextMarkers: [], resolvedAddressees: [] }
     } as any;
 
@@ -155,7 +155,7 @@ describe('ConversationCoordinator Routing', () => {
     // Content is now dynamically retrieved from latest message
     expect(sendSpy).toHaveBeenNthCalledWith(1, ai2, 'no next markers');
     expect(sendSpy).toHaveBeenNthCalledWith(2, ai3, 'no next markers');
-    expect((coordinator as any).waitingForRoleId).toBeNull();
+    expect((coordinator as any).waitingForMemberId).toBeNull();
   });
 
   it('AI completion continues round-robin and pauses on next human', async () => {
@@ -182,7 +182,7 @@ describe('ConversationCoordinator Routing', () => {
     await coordinator.sendMessage('Start task [NEXT: ai-alpha]', 'human-bob');
 
     expect(coordinator.getStatus()).toBe('paused');
-    expect(coordinator.getWaitingForRoleId()).toBe('human-bob');
+    expect(coordinator.getWaitingForMemberId()).toBe('human-bob');
     expect(stub.startCalls.length).toBe(1);
     expect(stub.startCalls[0].roleId).toBe('ai-alpha');
     expect(receivedMessages.length).toBeGreaterThan(0);

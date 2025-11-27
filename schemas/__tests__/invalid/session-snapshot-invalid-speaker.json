@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "1.0",
+  "teamId": "test-team",
+  "sessionId": "session-123",
+  "createdAt": "2025-11-27T10:00:00.000Z",
+  "updatedAt": "2025-11-27T14:30:00.000Z",
+  "context": {
+    "messages": [
+      {
+        "id": "msg-001",
+        "timestamp": "2025-11-27T10:00:00.000Z",
+        "speaker": {
+          "type": "ai"
+        },
+        "content": "Hello!"
+      }
+    ],
+    "teamTask": null,
+    "timestamp": 1732706400000,
+    "version": 1
+  },
+  "metadata": {
+    "messageCount": 1
+  }
+}

@@ -134,7 +134,7 @@ describe.sequential('ServiceInitializer integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            roleDir: aiRoleDir,
+            baseDir: aiRoleDir,
             instructionFile: path.join(aiRoleDir, 'AGENTS.md'),
             env: { CUSTOM: '1' }
           },
@@ -144,7 +144,7 @@ describe.sequential('ServiceInitializer integration', () => {
             name: 'human-bob',
             type: 'human',
             role: 'reviewer',
-            roleDir: humanRoleDir,
+            baseDir: humanRoleDir,
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]
@@ -171,7 +171,7 @@ describe.sequential('ServiceInitializer integration', () => {
     // Instead, it continues to the next member (human) via round-robin.
     // The conversation is now paused, waiting for the human member's input.
     expect(coordinator.getStatus()).toBe('paused');
-    expect(coordinator.getWaitingForRoleId()).toBe(team.members[1].id); // Waiting for human
+    expect(coordinator.getWaitingForMemberId()).toBe(team.members[1].id); // Waiting for human
   }, 30000); // Increased timeout for real-time verification
 
   it('initializes members even when instruction file is missing', async () => {
@@ -195,7 +195,7 @@ describe.sequential('ServiceInitializer integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            roleDir: aiRoleDir,
+            baseDir: aiRoleDir,
             instructionFile: path.join(aiRoleDir, 'AGENTS.md')
           },
           {
@@ -203,7 +203,7 @@ describe.sequential('ServiceInitializer integration', () => {
             name: 'obs',
             type: 'human',
             role: 'observer',
-            roleDir: humanRoleDir,
+            baseDir: humanRoleDir,
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]
@@ -234,14 +234,14 @@ describe.sequential('ServiceInitializer integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            roleDir: aiRoleDir
+            baseDir: aiRoleDir
           },
           {
             displayName: 'Observer',
             name: 'obs',
             type: 'human',
             role: 'observer',
-            roleDir: observerDir
+            baseDir: observerDir
           }
         ]
       }

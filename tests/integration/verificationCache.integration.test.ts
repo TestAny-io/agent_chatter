@@ -110,7 +110,7 @@ describe('Verification Cache Integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            roleDir: member1Dir,
+            baseDir: member1Dir,
             instructionFile: path.join(member1Dir, 'AGENTS.md')
           },
           {
@@ -119,7 +119,7 @@ describe('Verification Cache Integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            roleDir: member2Dir,
+            baseDir: member2Dir,
             instructionFile: path.join(member2Dir, 'AGENTS.md')
           },
           {
@@ -128,7 +128,7 @@ describe('Verification Cache Integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            roleDir: member3Dir,
+            baseDir: member3Dir,
             instructionFile: path.join(member3Dir, 'AGENTS.md')
           }
         ]

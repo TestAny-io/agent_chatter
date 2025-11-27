@@ -84,6 +84,6 @@ export interface ContextSnapshot {
 /**
  * Constants
  */
-export const DEFAULT_CONTEXT_WINDOW_SIZE = 5;
+export const DEFAULT_CONTEXT_WINDOW_SIZE = 10;
 export const DEFAULT_MAX_BYTES = 768 * 1024; // 768KB
 export const MAX_TEAM_TASK_BYTES = 5 * 1024; // 5KB

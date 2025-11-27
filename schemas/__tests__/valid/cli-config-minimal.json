@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.2",
+  "team": {
+    "name": "test-team",
+    "description": "A minimal test team configuration",
+    "members": [
+      {
+        "displayName": "Claude",
+        "name": "claude",
+        "role": "developer",
+        "type": "ai",
+        "agentType": "claude-code",
+        "baseDir": "./roles/claude",
+        "systemInstruction": "You are Claude, write code."
+      },
+      {
+        "displayName": "Human",
+        "name": "human",
+        "role": "reviewer",
+        "type": "human",
+        "baseDir": "./roles/human",
+        "systemInstruction": "You are the human reviewer."
+      }
+    ]
+  }
+}

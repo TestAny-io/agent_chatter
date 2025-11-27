@@ -49,7 +49,7 @@ describe('ConversationCoordinator User Cancellation (ESC key)', () => {
 
     coordinator.handleUserCancellation();
 
-    expect(coordinator.getWaitingForRoleId()).toBe('human-bob');
+    expect(coordinator.getWaitingForMemberId()).toBe('human-bob');
   });
 
   it('handleUserCancellation pauses conversation', () => {

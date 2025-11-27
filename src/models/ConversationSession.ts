@@ -69,8 +69,8 @@ export class SessionUtils {
     updated.messages = [...session.messages, message];
     updated.stats.totalMessages++;
 
-    const roleId = message.speaker.roleId;
-    updated.stats.messagesByRole[roleId] = (updated.stats.messagesByRole[roleId] || 0) + 1;
+    const memberId = message.speaker.id;
+    updated.stats.messagesByRole[memberId] = (updated.stats.messagesByRole[memberId] || 0) + 1;
 
     updated.stats.duration = Date.now() - session.createdAt.getTime();
     updated.updatedAt = new Date();

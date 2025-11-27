@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "2.0",
+  "agents": {
+    "claude": {
+      "name": "claude",
+      "displayName": "Claude Code",
+      "command": "claude",
+      "args": [],
+      "usePty": true,
+      "installedAt": "2025-11-25T10:00:00.000Z"
+    }
+  }
+}

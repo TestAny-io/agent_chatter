@@ -25,9 +25,9 @@ function createTestMessage(
   return {
     timestamp: new Date(),
     speaker: {
-      roleId: 'test-role',
-      roleName: 'TestUser',
-      roleTitle: 'Test User',
+      id: 'test-role',
+      name: 'TestUser',
+      displayName: 'Test User',
       type: 'human',
     },
     content: 'Test message',
@@ -53,7 +53,7 @@ describe('ContextManager', () => {
 
       expect(result.id).toMatch(/^msg-\d+$/);
       expect(result.content).toBe('Hello');
-      expect(result.speaker.roleName).toBe('TestUser');
+      expect(result.speaker.name).toBe('TestUser');
     });
 
     it('addMessage throws on null message', () => {
@@ -70,10 +70,10 @@ describe('ContextManager', () => {
       expect(() => manager.addMessage(msg)).toThrow('Message speaker is required');
     });
 
-    it('addMessage throws on missing speaker.roleId', () => {
+    it('addMessage throws on missing speaker.id', () => {
       const msg = createTestMessage();
-      (msg.speaker as any).roleId = undefined;
-      expect(() => manager.addMessage(msg)).toThrow('Message speaker.roleId is required');
+      (msg.speaker as any).id = undefined;
+      expect(() => manager.addMessage(msg)).toThrow('Message speaker.id is required');
     });
 
     it('addMessage calls onMessageAdded hook', () => {
@@ -245,13 +245,13 @@ describe('ContextManager', () => {
       // User message
       manager.addMessage(createTestMessage({
         content: 'User question',
-        speaker: { roleId: 'user', roleName: 'User', roleTitle: 'User', type: 'human' },
+        speaker: { id: 'user', name: 'User', displayName: 'User', type: 'human' },
       }));
 
       // AI response that will be forwarded
       const aiMsg = manager.addMessage(createTestMessage({
         content: 'AI response',
-        speaker: { roleId: 'ai-1', roleName: 'Max', roleTitle: 'Max', type: 'ai' },
+        speaker: { id: 'ai-1', name: 'Max', displayName: 'Max', type: 'ai' },
       }));
 
       // When preparing context for next AI with the AI message as current
@@ -268,11 +268,11 @@ describe('ContextManager', () => {
     it('does NOT deduplicate human messages', () => {
       manager.addMessage(createTestMessage({
         content: 'First',
-        speaker: { roleId: 'user', roleName: 'User', roleTitle: 'User', type: 'human' },
+        speaker: { id: 'user', name: 'User', displayName: 'User', type: 'human' },
       }));
       manager.addMessage(createTestMessage({
         content: 'Second',
-        speaker: { roleId: 'user', roleName: 'User', roleTitle: 'User', type: 'human' },
+        speaker: { id: 'user', name: 'User', displayName: 'User', type: 'human' },
       }));
 
       const input = manager.getContextForAgent('agent-1', 'claude-code');

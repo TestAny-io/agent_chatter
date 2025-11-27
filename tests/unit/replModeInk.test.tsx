@@ -296,7 +296,7 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         assignedRole: string;
         displayName: string;
         themeColor: string;
-        roleDir: string;
+        baseDir: string;
         instructionFile?: string;
         env?: Record<string, string>;
         agentType?: string;
@@ -308,7 +308,7 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         assignedRole: 'reviewer',
         displayName: 'Claude Reviewer',
         themeColor: 'cyan',
-        roleDir: '/teams/test/reviewer',
+        baseDir: '/teams/test/reviewer',
         instructionFile: 'AGENTS.md',
         agentType: 'claude',
         env: { CUSTOM_VAR: 'value' }
@@ -326,7 +326,7 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         assignedRole: string;
         displayName: string;
         themeColor: string;
-        roleDir: string;
+        baseDir: string;
         instructionFile?: string;
         env?: Record<string, string>;
         agentType?: string;
@@ -338,7 +338,7 @@ describe('ReplModeInk - Phase 1 Tests', () => {
         assignedRole: 'observer',
         displayName: 'Human Observer',
         themeColor: 'green',
-        roleDir: '/teams/test/observer'
+        baseDir: '/teams/test/observer'
       };
 
       expect(humanMember.type).toBe('human');

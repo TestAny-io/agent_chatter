@@ -34,7 +34,7 @@ export interface Member {
   agentType?: string;
   agentConfigId?: string;
   themeColor?: string;
-  roleDir?: string;
+  baseDir?: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string;

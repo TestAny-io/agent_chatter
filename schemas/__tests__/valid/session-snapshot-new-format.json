@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "teamId": "test-team",
+  "sessionId": "session-456",
+  "createdAt": "2025-11-27T12:00:00.000Z",
+  "updatedAt": "2025-11-27T15:00:00.000Z",
+  "context": {
+    "messages": [
+      {
+        "id": "msg-001",
+        "timestamp": "2025-11-27T12:00:00.000Z",
+        "speaker": {
+          "id": "claude",
+          "name": "claude",
+          "displayName": "Claude Code",
+          "type": "ai"
+        },
+        "content": "I'll help you with that task.",
+        "routing": {
+          "rawNextMarkers": ["[NEXT:human]"],
+          "resolvedAddressees": [
+            {
+              "identifier": "human",
+              "memberId": "human",
+              "memberName": "human"
+            }
+          ]
+        }
+      },
+      {
+        "id": "msg-002",
+        "timestamp": "2025-11-27T12:05:00.000Z",
+        "speaker": {
+          "id": "human",
+          "name": "human",
+          "displayName": "Project Manager",
+          "type": "human"
+        },
+        "content": "Great, please proceed."
+      }
+    ],
+    "teamTask": "Feature development",
+    "timestamp": 1732712400000,
+    "version": 1
+  },
+  "metadata": {
+    "lastSpeakerId": "human",
+    "messageCount": 2
+  }
+}

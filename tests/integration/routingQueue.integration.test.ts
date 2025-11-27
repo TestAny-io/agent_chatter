@@ -13,7 +13,7 @@ function makeMember(id: string, type: 'ai' | 'human', order: number): Member {
     displayRole: id,
     role: id,
     type,
-    roleDir: '',
+    baseDir: '',
     order
   };
 }
@@ -59,7 +59,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
     const message: ConversationMessage = {
       id: 'm1',
       content: 'task',
-      speaker: { roleId: aiA.id, roleName: aiA.name, roleTitle: aiA.displayName, type: 'ai' },
+      speaker: { id: aiA.id, name: aiA.name, displayName: aiA.displayName, type: 'ai' },
       routing: { rawNextMarkers: ['ai-b', 'ai-c'], resolvedAddressees: [] }
     } as any;
 
@@ -81,7 +81,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
     const message: ConversationMessage = {
       id: 'm2',
       content: 'hello',
-      speaker: { roleId: aiA.id, roleName: aiA.name, roleTitle: aiA.displayName, type: 'ai' },
+      speaker: { id: aiA.id, name: aiA.name, displayName: aiA.displayName, type: 'ai' },
       routing: { rawNextMarkers: [], resolvedAddressees: [] }
     } as any;
 
@@ -90,7 +90,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
 
     await (coordinator as any).routeToNext(message);
 
-    expect((coordinator as any).waitingForRoleId).toBe(human.id);
+    expect((coordinator as any).waitingForMemberId).toBe(human.id);
     expect(sendToAgent).not.toHaveBeenCalled();
   });
 
@@ -102,7 +102,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
     const message: ConversationMessage = {
       id: 'm3',
       content: 'mix',
-      speaker: { roleId: aiA.id, roleName: aiA.name, roleTitle: aiA.displayName, type: 'ai' },
+      speaker: { id: aiA.id, name: aiA.name, displayName: aiA.displayName, type: 'ai' },
       routing: { rawNextMarkers: ['ai-b', 'ai-c,d'], resolvedAddressees: [] }
     } as any;
 
@@ -124,7 +124,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
       const agentResponse: ConversationMessage = {
         id: `agent-resp-${callCount}`,
         content: `Response from ${member.name}`,
-        speaker: { roleId: member.id, roleName: member.name, roleTitle: member.displayName, type: 'ai' },
+        speaker: { id: member.id, name: member.name, displayName: member.displayName, type: 'ai' },
         routing: { rawNextMarkers: [], resolvedAddressees: [] }
       } as any;
       (coordinator as any).session.messages.push(agentResponse);
@@ -135,7 +135,7 @@ describe('Routing Queue Integration (no round-robin, FIFO NEXT)', () => {
     const initialMessage: ConversationMessage = {
       id: 'm-initial',
       content: 'user question',
-      speaker: { roleId: human.id, roleName: human.name, roleTitle: human.displayName, type: 'human' },
+      speaker: { id: human.id, name: human.name, displayName: human.displayName, type: 'human' },
       routing: { rawNextMarkers: ['ai-a', 'ai-b', 'ai-c'], resolvedAddressees: [] }
     } as any;
 

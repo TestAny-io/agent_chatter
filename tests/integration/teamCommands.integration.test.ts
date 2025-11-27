@@ -155,7 +155,7 @@ describe('Team Commands Integration Tests', () => {
               role: 'reviewer',
               agentType: 'claude',
               themeColor: 'cyan',
-              roleDir: './teams/test/reviewer',
+              baseDir: './teams/test/reviewer',
               instructionFile: './teams/test/reviewer/AGENTS.md'
             },
             {
@@ -164,7 +164,7 @@ describe('Team Commands Integration Tests', () => {
               type: 'human',
               role: 'observer',
               themeColor: 'green',
-              roleDir: './teams/test/observer'
+              baseDir: './teams/test/observer'
             }
           ]
         },
@@ -460,7 +460,7 @@ describe('Team Commands Integration Tests', () => {
         type: 'ai',
         role: 'reviewer',
         agentType: 'claude',
-        roleDir: './teams/test'
+        baseDir: './teams/test'
       };
       expect(validateMember(validAIMember).valid).toBe(true);
 
@@ -470,7 +470,7 @@ describe('Team Commands Integration Tests', () => {
         name: 'human-1',
         type: 'human',
         role: 'observer',
-        roleDir: './teams/test'
+        baseDir: './teams/test'
       };
       expect(validateMember(validHumanMember).valid).toBe(true);
 

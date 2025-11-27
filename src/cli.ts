@@ -176,7 +176,7 @@ program
                         role: 'reviewer',
                         agentType: 'claude',
                         themeColor: 'cyan',
-                        roleDir: './teams/claude-code-test/reviewer/claude-reviewer',
+                        baseDir: './teams/claude-code-test/reviewer/claude-reviewer',
                         instructionFile: './teams/claude-code-test/reviewer/claude-reviewer/AGENTS.md'
                     },
                     {
@@ -186,7 +186,7 @@ program
                         type: 'human',
                         role: 'observer',
                         themeColor: 'green',
-                        roleDir: './teams/claude-code-test/observer/human-observer',
+                        baseDir: './teams/claude-code-test/observer/human-observer',
                         instructionFile: './teams/claude-code-test/observer/human-observer/README.md'
                     }
                 ]

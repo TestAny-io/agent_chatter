@@ -31,7 +31,7 @@ interface NormalizedAgent {
 }
 
 interface NormalizedPaths {
-  roleDir: string;
+  baseDir: string;
   instructionFile?: string;
 }
 
@@ -96,7 +96,7 @@ export function withBypassArgs(agentType: string, baseArgs: string[]): string[] 
 /**
  * Resolve instruction file path for a team member
  */
-export function resolveInstructionFile(member: TeamMemberConfig, roleDir: string): string | undefined {
+export function resolveInstructionFile(member: TeamMemberConfig, baseDir: string): string | undefined {
   const defaultFileName = member.agentType
     ? member.agentType.toLowerCase().includes('gemini')
       ? 'GEMINI.md'
@@ -113,7 +113,7 @@ export function resolveInstructionFile(member: TeamMemberConfig, roleDir: string
   if (path.isAbsolute(target)) {
     return target;
   }
-  return path.resolve(roleDir, target);
+  return path.resolve(baseDir, target);
 }
 
 function ensureDir(targetPath: string, label: string): void {
@@ -125,15 +125,15 @@ function ensureDir(targetPath: string, label: string): void {
 }
 
 /**
- * Normalize member paths (roleDir and instructionFile)
+ * Normalize member paths (baseDir and instructionFile)
  */
 export function normalizeMemberPaths(member: TeamMemberConfig): NormalizedPaths {
-  const roleDir = path.resolve(member.roleDir);
-  const instructionFile = resolveInstructionFile(member, roleDir);
+  const baseDir = path.resolve(member.baseDir);
+  const instructionFile = resolveInstructionFile(member, baseDir);
 
-  ensureDir(roleDir, 'roleDir');
+  ensureDir(baseDir, 'baseDir');
 
-  return { roleDir, instructionFile };
+  return { baseDir, instructionFile };
 }
 
 /**
@@ -372,7 +372,7 @@ export async function initializeServices(
       agentType: member.agentType,
       agentConfigId,
       themeColor: member.themeColor,
-      roleDir: normalizedPaths.roleDir,
+      baseDir: normalizedPaths.baseDir,
       instructionFile: normalizedPaths.instructionFile,
       instructionFileText: loadInstructionContent(normalizedPaths.instructionFile),
       env,
@@ -398,7 +398,7 @@ export async function initializeServices(
       onMessage: options?.onMessage ?? ((message: ConversationMessage) => {
         const speaker = message.speaker;
         const timestamp = new Date(message.timestamp).toLocaleTimeString();
-        output.info(`[${timestamp}] ${speaker.roleTitle}: ${message.content}`);
+        output.info(`[${timestamp}] ${speaker.displayName}: ${message.content}`);
         output.separator();
       }),
       onStatusChange: options?.onStatusChange ?? ((status: ConversationStatus) => {

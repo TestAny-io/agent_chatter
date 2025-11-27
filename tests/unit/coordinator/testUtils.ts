@@ -95,3 +95,60 @@ export class StubAgentManager {
 export function createStubAsAgentManager(stub: StubAgentManager): AgentManager {
   return stub as unknown as AgentManager;
 }
+
+// Import ConversationCoordinator for session tests
+import { ConversationCoordinator, type ConversationCoordinatorOptions, type MissingMember } from '../../../src/services/ConversationCoordinator.js';
+import { MessageRouter } from '../../../src/services/MessageRouter.js';
+import type { ISessionStorage } from '../../../src/infrastructure/ISessionStorage.js';
+
+export interface CreateTestCoordinatorOptions {
+  sessionStorage?: ISessionStorage;
+  onMemberConsistencyWarning?: (missingMembers: MissingMember[]) => void;
+}
+
+/**
+ * Create a test coordinator with mocked dependencies
+ */
+export function createTestCoordinator(options: CreateTestCoordinatorOptions = {}): {
+  coordinator: ConversationCoordinator;
+  agentManager: StubAgentManager;
+  messageRouter: MessageRouter;
+} {
+  const agentManager = new StubAgentManager();
+  const messageRouter = new MessageRouter();
+
+  const coordinatorOptions: ConversationCoordinatorOptions = {
+    sessionStorage: options.sessionStorage,
+    onMemberConsistencyWarning: options.onMemberConsistencyWarning,
+  };
+
+  const coordinator = new ConversationCoordinator(
+    createStubAsAgentManager(agentManager),
+    messageRouter,
+    coordinatorOptions
+  );
+
+  return { coordinator, agentManager, messageRouter };
+}
+
+/**
+ * Create a test team with human and AI members
+ */
+export function createTestTeam(): Team {
+  return buildTeam([
+    createMember({
+      id: 'human-1',
+      name: 'human-member',
+      displayName: 'Human',
+      type: 'human',
+      order: 0,
+    }),
+    createMember({
+      id: 'ai-1',
+      name: 'ai-member',
+      displayName: 'AI Assistant',
+      type: 'ai',
+      order: 1,
+    }),
+  ]);
+}
