@@ -158,12 +158,22 @@ describe('AgentValidation Integration', () => {
     });
 
     it('should detect gemini OAuth credentials', async () => {
-      // Create OAuth credentials file
+      // Create settings file with oauth-personal type and tokens file
       const geminiDir = path.join(tempDir, '.gemini');
       fs.mkdirSync(geminiDir, { recursive: true });
       fs.writeFileSync(
-        path.join(geminiDir, 'oauth_creds.json'),
-        JSON.stringify({ access_token: 'gemini-oauth-token' })
+        path.join(geminiDir, 'settings.json'),
+        JSON.stringify({
+          security: {
+            auth: {
+              selectedType: 'oauth-personal',
+            },
+          },
+        })
+      );
+      fs.writeFileSync(
+        path.join(geminiDir, 'mcp-oauth-tokens-v2.json'),
+        JSON.stringify({ encrypted: 'data' })
       );
 
       const validator = new AgentValidator({
@@ -177,7 +187,7 @@ describe('AgentValidation Integration', () => {
       const result = await validator.validateAgent('gemini');
 
       expect(result.status).toBe('verified');
-      expect(result.authMethod).toBe('OAuth credentials');
+      expect(result.authMethod).toBe('Google OAuth');
     });
   });
 

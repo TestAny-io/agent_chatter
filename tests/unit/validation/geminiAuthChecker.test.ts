@@ -117,13 +117,21 @@ describe('GeminiAuthChecker', () => {
       });
     });
 
-    describe('OAuth Credentials File', () => {
-      it('should pass when OAuth credentials file exists with access_token', async () => {
+    describe('Settings File Auth', () => {
+      it('should pass when settings file has gemini-api-key type with token file', async () => {
         vi.mocked(fs.existsSync).mockImplementation((path) => {
-          return path === '/home/test/.gemini/oauth_creds.json';
+          if (path === '/home/test/.gemini/settings.json') return true;
+          if (path === '/home/test/.gemini/mcp-oauth-tokens-v2.json') return true;
+          return false;
         });
         vi.mocked(fs.readFileSync).mockReturnValue(
-          JSON.stringify({ access_token: 'token123' })
+          JSON.stringify({
+            security: {
+              auth: {
+                selectedType: 'gemini-api-key',
+              },
+            },
+          })
         );
 
         const checker = new GeminiAuthChecker({
@@ -134,15 +142,23 @@ describe('GeminiAuthChecker', () => {
 
         const result = await checker.checkAuth();
         expect(result.passed).toBe(true);
-        expect(result.method).toBe('OAuth credentials');
+        expect(result.method).toBe('API Key (Keychain)');
       });
 
-      it('should pass when OAuth credentials file exists with refresh_token', async () => {
+      it('should pass when settings file has oauth-personal type with tokens', async () => {
         vi.mocked(fs.existsSync).mockImplementation((path) => {
-          return path === '/home/test/.gemini/oauth_creds.json';
+          if (path === '/home/test/.gemini/settings.json') return true;
+          if (path === '/home/test/.gemini/mcp-oauth-tokens-v2.json') return true;
+          return false;
         });
         vi.mocked(fs.readFileSync).mockReturnValue(
-          JSON.stringify({ refresh_token: 'refresh123' })
+          JSON.stringify({
+            security: {
+              auth: {
+                selectedType: 'oauth-personal',
+              },
+            },
+          })
         );
 
         const checker = new GeminiAuthChecker({
@@ -153,36 +169,21 @@ describe('GeminiAuthChecker', () => {
 
         const result = await checker.checkAuth();
         expect(result.passed).toBe(true);
-        expect(result.method).toBe('OAuth credentials');
-      });
-    });
-
-    describe('Config File with API Key', () => {
-      it('should pass when config file has apiKey', async () => {
-        vi.mocked(fs.existsSync).mockImplementation((path) => {
-          return path === '/home/test/.gemini/config.json';
-        });
-        vi.mocked(fs.readFileSync).mockReturnValue(
-          JSON.stringify({ apiKey: 'AIza...' })
-        );
-
-        const checker = new GeminiAuthChecker({
-          env: {},
-          homeDir: '/home/test',
-          skipStatusCommand: true,
-        });
-
-        const result = await checker.checkAuth();
-        expect(result.passed).toBe(true);
-        expect(result.method).toBe('Config file API key');
+        expect(result.method).toBe('Google OAuth');
       });
 
-      it('should pass when config file has api_key (snake_case)', async () => {
+      it('should pass when settings file has compute-default-credentials type', async () => {
         vi.mocked(fs.existsSync).mockImplementation((path) => {
-          return path === '/home/test/.gemini/config.json';
+          return path === '/home/test/.gemini/settings.json';
         });
         vi.mocked(fs.readFileSync).mockReturnValue(
-          JSON.stringify({ api_key: 'AIza...' })
+          JSON.stringify({
+            security: {
+              auth: {
+                selectedType: 'compute-default-credentials',
+              },
+            },
+          })
         );
 
         const checker = new GeminiAuthChecker({
@@ -193,15 +194,22 @@ describe('GeminiAuthChecker', () => {
 
         const result = await checker.checkAuth();
         expect(result.passed).toBe(true);
-        expect(result.method).toBe('Config file API key');
+        expect(result.method).toBe('Compute ADC');
       });
 
-      it('should check alternative config path', async () => {
+      it('should warn when API key mode has no token file', async () => {
         vi.mocked(fs.existsSync).mockImplementation((path) => {
-          return path === '/home/test/.config/gemini/config.json';
+          // Only settings file exists, no token file
+          return path === '/home/test/.gemini/settings.json';
         });
         vi.mocked(fs.readFileSync).mockReturnValue(
-          JSON.stringify({ apiKey: 'AIza...' })
+          JSON.stringify({
+            security: {
+              auth: {
+                selectedType: 'gemini-api-key',
+              },
+            },
+          })
         );
 
         const checker = new GeminiAuthChecker({
@@ -212,7 +220,7 @@ describe('GeminiAuthChecker', () => {
 
         const result = await checker.checkAuth();
         expect(result.passed).toBe(true);
-        expect(result.method).toBe('Config file API key');
+        expect(result.warning).toContain('API key stored in system keychain');
       });
     });
 
