@@ -766,7 +766,7 @@ export class AgentValidator {
 
     const commands: Record<string, string> = {
       // Claude: use print mode to avoid interactive behavior
-      claude: `claude --print --output-format stream-json "${testPrompt}"`,
+      claude: `claude --print --output-format stream-json --verbose "${testPrompt}"`,
       // Codex: simple exec
       codex: `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json "${testPrompt}"`,
       // Gemini: yolo mode
