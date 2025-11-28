@@ -21,7 +21,8 @@ import {
   getTeamConfigDir,
   ensureTeamConfigDir,
   resolveTeamConfigPath,
-  formatMissingConfigError
+  formatMissingConfigError,
+  discoverTeamConfigs
 } from './utils/TeamConfigPaths.js';
 import { colorize } from './utils/colors.js';
 
@@ -223,6 +224,48 @@ program
 
 // 添加 agents 命令
 program.addCommand(createAgentsCommand());
+
+// 添加 team 命令
+const teamCommand = new Command('team')
+    .description('Team management commands');
+
+teamCommand
+    .command('list')
+    .description('List all team configurations')
+    .action(() => {
+        console.log(colorize('\n=== Team Configurations ===\n', 'bright'));
+        const configs = discoverTeamConfigs();
+        if (configs.length === 0) {
+            console.log(colorize('No team configurations found.', 'yellow'));
+            console.log(colorize(`\nCreate config files in: ${getTeamConfigDir()}`, 'dim'));
+        } else {
+            configs.forEach(config => {
+                console.log(`${colorize('●', 'cyan')} ${config.displayName}`);
+                console.log(colorize(`  File: ${config.filename}`, 'dim'));
+                if (config.teamName) {
+                    console.log(colorize(`  Team: ${config.teamName}`, 'dim'));
+                }
+                console.log(colorize(`  Members: ${config.memberCount}`, 'dim'));
+                console.log();
+            });
+            console.log(colorize(`Total: ${configs.length} configurations`, 'cyan'));
+        }
+    });
+
+teamCommand
+    .command('deploy')
+    .argument('<config>', 'Team configuration file name')
+    .description('Deploy a team - launches REPL and auto-deploys the team')
+    .action((config: string) => {
+        console.log(colorize('\n=== Team Deploy ===\n', 'bright'));
+        console.log(`To deploy team "${config}", please:`);
+        console.log(colorize('\n  1. Run: agent-chatter', 'cyan'));
+        console.log(colorize(`  2. In REPL, type: /team deploy ${config}`, 'cyan'));
+        console.log(colorize('\nNote: Team deployment requires interactive REPL mode.', 'dim'));
+        console.log();
+    });
+
+program.addCommand(teamCommand);
 
 program.exitOverride();
 

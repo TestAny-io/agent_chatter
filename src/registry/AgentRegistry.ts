@@ -17,9 +17,10 @@ import type { AgentType } from '../utils/AgentDefaults.js';
  */
 export interface VerificationResult {
   name: string;
-  status: 'verified' | 'failed';
+  status: 'verified' | 'verified_with_warnings' | 'failed';
   error?: string;
   checks?: CheckResult[];
+  warnings?: string[];
 }
 
 /**
@@ -29,6 +30,7 @@ export interface CheckResult {
   name: string;
   passed: boolean;
   message: string;
+  warning?: string;
 }
 
 /**

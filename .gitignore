@@ -30,3 +30,6 @@ user-guide/
 
 # Temp files
 temp.md
+
+# npm pack output
+*.tgz

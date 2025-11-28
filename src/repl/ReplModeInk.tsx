@@ -2016,7 +2016,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             return coordinator;
 
         } catch (error) {
-            appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">✗ {errMsg}</Text>);
             return null;
         }
     };
@@ -2146,7 +2147,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 setTimeout(() => setInput(prev => prev), 50);
             }
         } catch (error) {
-            appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            appendOutput(<Text key={`deploy-err-${getNextKey()}`} color="red">✗ {errMsg}</Text>);
         }
     };
 
@@ -2195,7 +2197,8 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             appendOutput(<Text key={`deploy-hint-${getNextKey()}`} dimColor>Type your message below to continue. Use [NEXT:member_name] to assign the next speaker, use [TEAM_TASK: your task] to post your task to the team.</Text>);
             setTimeout(() => setInput(prev => prev), 50);
         } catch (error) {
-            appendOutput(<Text key={`restore-err-${getNextKey()}`} color="red">Error: {String(error)}</Text>);
+            const errMsg = error instanceof Error ? error.message : String(error);
+            appendOutput(<Text key={`restore-err-${getNextKey()}`} color="red">✗ {errMsg}</Text>);
             setMode('normal');
         } finally {
             setPendingRestore(null);

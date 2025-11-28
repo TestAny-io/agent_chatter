@@ -324,18 +324,38 @@ export async function initializeServices(
         verification = await registry.verifyAgent(member.agentType);
         verificationCache.set(member.agentType, verification);
 
-        if (verification.status !== 'verified') {
+        if (verification.status === 'failed') {
           let errorMsg = `Agent "${member.agentType}" verification failed: ${verification.error || 'Unknown error'}`;
           if (verification.checks) {
             errorMsg += '\nDetailed check results:';
             for (const check of verification.checks) {
-              const status = check.passed ? 'PASS' : 'FAIL';
-              errorMsg += `\n  ${status} ${check.name}: ${check.message}`;
+              const icon = check.passed ? '✓' : '✗';
+              errorMsg += `\n  ${icon} ${check.name}: ${check.message}`;
             }
           }
           throw new Error(errorMsg);
         }
-        output.success(`Agent ${member.agentType} verified`);
+
+        // Show appropriate message based on status
+        if (verification.status === 'verified_with_warnings') {
+          output.warn(`⚠ Agent ${member.agentType} verified with warnings`);
+          // Show warnings but don't block
+          if (verification.checks) {
+            for (const check of verification.checks) {
+              if (check.warning) {
+                output.warn(`  ${check.warning}`);
+              }
+            }
+          }
+          // Also show top-level warnings
+          if (verification.warnings) {
+            for (const warning of verification.warnings) {
+              output.warn(`  ${warning}`);
+            }
+          }
+        } else {
+          output.success(`✓ Agent ${member.agentType} verified`);
+        }
       } else {
         output.progress(`Agent ${member.agentType} (using cached verification)`);
       }

@@ -152,6 +152,48 @@ export async function handleRegister(options: { auto?: boolean }, registryPath?:
 }
 
 /**
+ * Scan 命令处理器 - 扫描已安装的 agents（不注册）
+ */
+export async function handleScan(registryPath?: string): Promise<void> {
+  const registry = new AgentRegistry(registryPath);
+
+  console.log(colorize('\n=== 扫描 AI CLI 工具 ===\n', 'bright'));
+  console.log('正在扫描系统中已安装的 AI CLI 工具...\n');
+
+  const scanned = await registry.scanAgents();
+
+  const found = scanned.filter(a => a.found);
+  const notFound = scanned.filter(a => !a.found);
+
+  if (found.length === 0) {
+    console.log(colorize('✗ 未检测到任何 AI CLI 工具', 'yellow'));
+    console.log(colorize('\n请先安装以下工具之一:', 'cyan'));
+    notFound.forEach(agent => {
+      console.log(`  - ${agent.displayName} (${agent.name})`);
+    });
+    console.log();
+    return;
+  }
+
+  // 显示扫描结果
+  console.log(colorize('✓ 检测到以下工具:\n', 'green'));
+  found.forEach(agent => {
+    const version = agent.version ? colorize(` (v${agent.version})`, 'dim') : '';
+    console.log(`  ${colorize('●', 'green')} ${agent.displayName}${version}`);
+    console.log(colorize(`    Command: ${agent.command}`, 'dim'));
+  });
+
+  if (notFound.length > 0) {
+    console.log(colorize('\n✗ 未安装的工具:', 'yellow'));
+    notFound.forEach(agent => {
+      console.log(`  ${colorize('○', 'dim')} ${agent.displayName}`);
+    });
+  }
+
+  console.log(colorize('\n使用 ', 'dim') + colorize('agents register', 'cyan') + colorize(' 命令注册这些工具\n', 'dim'));
+}
+
+/**
  * List 命令处理器 - 显示所有已注册的 agents
  */
 export async function handleList(options: { verbose?: boolean }, registryPath?: string): Promise<void> {
@@ -187,12 +229,26 @@ export async function handleList(options: { verbose?: boolean }, registryPath?: 
 }
 
 /**
+ * 获取验证状态的显示信息
+ */
+function getStatusDisplay(status: 'verified' | 'verified_with_warnings' | 'failed'): { icon: string; color: 'green' | 'yellow' | 'red'; text: string } {
+  switch (status) {
+    case 'verified':
+      return { icon: '✓', color: 'green', text: '验证成功' };
+    case 'verified_with_warnings':
+      return { icon: '⚠', color: 'yellow', text: '验证成功 (有警告)' };
+    case 'failed':
+      return { icon: '✗', color: 'red', text: '验证失败' };
+  }
+}
+
+/**
  * Verify 命令处理器 - 验证 agent 可用性
  */
-export async function handleVerify(agentName: string | undefined, registryPath?: string): Promise<void> {
+export async function handleVerify(agentName: string | undefined, options: { all?: boolean } = {}, registryPath?: string): Promise<void> {
   const registry = new AgentRegistry(registryPath);
 
-  if (!agentName) {
+  if (!agentName || options.all) {
     // 验证所有 agents
     console.log(colorize('\n=== 验证所有 Agents ===\n', 'bright'));
 
@@ -208,11 +264,11 @@ export async function handleVerify(agentName: string | undefined, registryPath?:
       console.log(colorize('  正在验证...', 'dim'));
 
       const result = await registry.verifyAgent(agent.name);
+      const statusInfo = getStatusDisplay(result.status);
 
-      if (result.status === 'verified') {
-        console.log(colorize('  ✓ 验证成功', 'green'));
-      } else {
-        console.log(colorize(`  ✗ 验证失败: ${result.error}`, 'red'));
+      console.log(colorize(`  ${statusInfo.icon} ${statusInfo.text}`, statusInfo.color));
+      if (result.status === 'failed' && result.error) {
+        console.log(colorize(`    Error: ${result.error}`, 'red'));
       }
 
       if (result.checks) {
@@ -232,11 +288,11 @@ export async function handleVerify(agentName: string | undefined, registryPath?:
   console.log(colorize(`\n=== 验证 Agent: ${agentName} ===\n`, 'bright'));
 
   const result = await registry.verifyAgent(agentName);
+  const statusInfo = getStatusDisplay(result.status);
 
-  if (result.status === 'verified') {
-    console.log(colorize('✓ 验证成功\n', 'green'));
-  } else {
-    console.log(colorize(`✗ 验证失败: ${result.error}\n`, 'red'));
+  console.log(colorize(`${statusInfo.icon} ${statusInfo.text}\n`, statusInfo.color));
+  if (result.status === 'failed' && result.error) {
+    console.log(colorize(`Error: ${result.error}\n`, 'red'));
   }
 
   if (result.checks) {
@@ -435,6 +491,15 @@ export function createAgentsCommand(): Command {
       agents.help();
     });
 
+  // scan 子命令
+  agents
+    .command('scan')
+    .description('扫描系统中已安装的 AI CLI 工具（不注册）')
+    .action(function () {
+      const registryPath = this.parent?.parent?.opts().registry;
+      return handleScan(registryPath);
+    });
+
   // register 子命令
   agents
     .command('register')
@@ -460,10 +525,11 @@ export function createAgentsCommand(): Command {
   agents
     .command('verify')
     .description('验证 agent 可用性')
-    .argument('[name]', 'Agent 名称 (不指定则验证所有)')
-    .action(function (name) {
+    .argument('[name]', 'Agent 名称')
+    .option('-a, --all', '验证所有已注册的 agents')
+    .action(function (name, options) {
       const registryPath = this.parent?.parent?.opts().registry;
-      return handleVerify(name, registryPath);
+      return handleVerify(name, options, registryPath);
     });
 
   // info 子命令
