@@ -9,6 +9,31 @@ import * as readline from 'readline';
 import { AgentRegistry } from '../registry/AgentRegistry.js';
 import type { AgentType } from '../utils/AgentDefaults.js';
 import { colorize } from '../utils/colors.js';
+import type { CheckResult } from '../services/validation/types.js';
+
+/**
+ * 打印单个检查结果，包括 message、warning 和 resolution
+ * @param check - 检查结果
+ * @param indent - 缩进空格数
+ */
+function printCheckResult(check: CheckResult, indent: number = 0): void {
+  const prefix = ' '.repeat(indent);
+  const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
+
+  // 主消息
+  console.log(`${prefix}${status} ${check.name}`);
+  console.log(`${prefix}  ${colorize(check.message, 'dim')}`);
+
+  // 警告信息（黄色）
+  if (check.warning) {
+    console.log(`${prefix}  ${colorize('⚠ ' + check.warning, 'yellow')}`);
+  }
+
+  // 解决建议（青色）
+  if (check.resolution) {
+    console.log(`${prefix}  ${colorize('→ ' + check.resolution, 'cyan')}`);
+  }
+}
 
 /**
  * 创建 readline 接口
@@ -131,13 +156,15 @@ export async function handleRegister(options: { auto?: boolean }, registryPath?:
 
         if (verification.status === 'verified') {
           console.log(colorize(`  ✓ 验证成功`, 'green'));
+        } else if (verification.status === 'verified_with_warnings') {
+          console.log(colorize(`  ⚠ 验证通过（有警告）`, 'yellow'));
+          if (verification.checks) {
+            verification.checks.forEach(check => printCheckResult(check, 4));
+          }
         } else {
           console.log(colorize(`  ✗ 验证失败: ${verification.error}`, 'yellow'));
           if (verification.checks) {
-            verification.checks.forEach(check => {
-              const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
-              console.log(`    ${status} ${check.name}: ${check.message}`);
-            });
+            verification.checks.forEach(check => printCheckResult(check, 4));
           }
         }
       } else {
@@ -272,10 +299,7 @@ export async function handleVerify(agentName: string | undefined, options: { all
       }
 
       if (result.checks) {
-        result.checks.forEach(check => {
-          const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
-          console.log(`    ${status} ${check.name}: ${check.message}`);
-        });
+        result.checks.forEach(check => printCheckResult(check, 4));
       }
 
       console.log();
@@ -296,11 +320,7 @@ export async function handleVerify(agentName: string | undefined, options: { all
   }
 
   if (result.checks) {
-    result.checks.forEach(check => {
-      const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
-      console.log(`${status} ${check.name}`);
-      console.log(colorize(`  ${check.message}`, 'dim'));
-    });
+    result.checks.forEach(check => printCheckResult(check, 0));
     console.log();
   }
 }
@@ -341,16 +361,14 @@ export async function handleInfo(agentName: string, registryPath?: string): Prom
 
   if (result.status === 'verified') {
     console.log(colorize('✓ Agent 可用\n', 'green'));
+  } else if (result.status === 'verified_with_warnings') {
+    console.log(colorize('⚠ Agent 可用（有警告）\n', 'yellow'));
   } else {
     console.log(colorize(`✗ Agent 不可用: ${result.error}\n`, 'red'));
   }
 
   if (result.checks) {
-    result.checks.forEach(check => {
-      const status = check.passed ? colorize('✓', 'green') : colorize('✗', 'red');
-      console.log(`${status} ${check.name}`);
-      console.log(colorize(`  ${check.message}`, 'dim'));
-    });
+    result.checks.forEach(check => printCheckResult(check, 0));
     console.log();
   }
 }

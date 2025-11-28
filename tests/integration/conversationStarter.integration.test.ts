@@ -15,7 +15,7 @@ vi.mock('../../src/registry/AgentValidator.js', () => {
         return {
           status: 'verified',
           checks: [
-            { name: 'Executable Check', passed: true, message: 'Command found (mocked)' },
+            { name: 'CLI Command Check', passed: true, message: 'Command found (mocked)' },
             { name: 'Version Check', passed: true, message: 'Version check passed (mocked)' },
             { name: 'Authentication Check', passed: true, message: 'Authenticated (mocked)' }
           ]

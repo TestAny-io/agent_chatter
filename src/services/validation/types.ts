@@ -12,7 +12,7 @@
  * Used to classify various errors encountered during verification
  */
 export type ErrorType =
-  // ===== Network Errors (OSI Layer 1-4) =====
+  // ===== Network Errors (OSI Layer 3-4: Network/Transport) =====
   // These errors only produce warnings, do not block verification
   | 'NETWORK_DNS' // DNS resolution failed
   | 'NETWORK_TIMEOUT' // Connection timeout
@@ -20,6 +20,12 @@ export type ErrorType =
   | 'NETWORK_UNREACHABLE' // Network unreachable
   | 'NETWORK_PROXY' // Proxy configuration issue
   | 'NETWORK_TLS' // TLS/SSL certificate issue
+
+  // ===== Network Errors (OSI Layer 7: Application/HTTP) =====
+  // HTTP layer errors - may indicate region restrictions or API issues
+  | 'NETWORK_HTTP_FORBIDDEN' // HTTP 403 - possible region restriction or access denied
+  | 'NETWORK_HTTP_UNAVAILABLE' // HTTP 5xx - service unavailable
+  | 'NETWORK_HTTP_ERROR' // Other HTTP errors
 
   // ===== Authentication Errors (OSI Layer 7) =====
   // These errors block verification
@@ -33,6 +39,10 @@ export type ErrorType =
   | 'CONFIG_INVALID' // Invalid configuration (blocking)
   | 'CONFIG_VERSION' // Version incompatible (warning)
   | 'CONFIG_DEPENDENCY' // Missing external dependency like gcloud/aws cli (warning)
+
+  // ===== Dry-Run Errors =====
+  | 'DRYRUN_FAILED' // Dry-run test failed (CLI cannot communicate with API)
+  | 'DRYRUN_TIMEOUT' // Dry-run test timed out
 
   // ===== Uncertain States =====
   // Pass with warning
@@ -192,12 +202,23 @@ export interface ConnectivityResult {
    * Includes all NETWORK_* types
    */
   errorType?:
+    // Layer 3-4 errors
     | 'NETWORK_DNS'
     | 'NETWORK_TIMEOUT'
     | 'NETWORK_REFUSED'
     | 'NETWORK_UNREACHABLE'
     | 'NETWORK_PROXY'
-    | 'NETWORK_TLS';
+    | 'NETWORK_TLS'
+    // Layer 7 errors
+    | 'NETWORK_HTTP_FORBIDDEN'
+    | 'NETWORK_HTTP_UNAVAILABLE'
+    | 'NETWORK_HTTP_ERROR';
+
+  /** HTTP status code (only for HTTP layer errors) */
+  httpStatusCode?: number;
+
+  /** HTTP response body snippet (only for HTTP layer errors, for diagnosis) */
+  httpResponseHint?: string;
 }
 
 // ===== AuthCheckResult =====
@@ -232,13 +253,26 @@ export interface AuthCheckResult {
  * UI layer can use this to provide unified resolution suggestions
  */
 export const ErrorResolutions: Record<ErrorType, string> = {
-  // Network errors
+  // Network errors (Layer 3-4)
   NETWORK_DNS: 'Check internet connection. Try: ping api.anthropic.com',
   NETWORK_TIMEOUT: 'Network slow or blocked. Check firewall/VPN settings.',
   NETWORK_REFUSED: 'Server unavailable. Check if API endpoint is accessible.',
   NETWORK_UNREACHABLE: 'Network unreachable. Check network configuration.',
   NETWORK_PROXY: 'Configure proxy: export https_proxy=http://proxy:port',
   NETWORK_TLS: 'SSL issue. Corporate network? Set NODE_EXTRA_CA_CERTS.',
+
+  // Network errors (Layer 7 - HTTP)
+  NETWORK_HTTP_FORBIDDEN:
+    'HTTP 403 Forbidden. Possible causes: ' +
+    '(1) IP may be in a restricted region - check supported countries; ' +
+    '(2) Account-level access restrictions; ' +
+    '(3) Other authorization issues. ' +
+    'If in a supported region, try re-authenticating.',
+  NETWORK_HTTP_UNAVAILABLE:
+    'API service unavailable (5xx). The service may be experiencing issues. ' +
+    'Try again later or check the provider status page.',
+  NETWORK_HTTP_ERROR:
+    'HTTP error connecting to API. Check network and try again.',
 
   // Authentication errors
   AUTH_MISSING: 'No credentials found. Run the login command.',
@@ -251,6 +285,13 @@ export const ErrorResolutions: Record<ErrorType, string> = {
   CONFIG_INVALID: 'Configuration invalid. Check config files.',
   CONFIG_VERSION: 'Version mismatch. Update agent: npm update -g <agent>',
   CONFIG_DEPENDENCY: 'External dependency missing. Install required CLI tool.',
+
+  // Dry-run errors
+  DRYRUN_FAILED:
+    'CLI dry-run test failed. The agent cannot communicate with the API. ' +
+    'Check network, credentials, or try running the CLI manually.',
+  DRYRUN_TIMEOUT:
+    'CLI dry-run test timed out. Network may be slow or blocked.',
 
   // Uncertain states
   VERIFICATION_INCOMPLETE:

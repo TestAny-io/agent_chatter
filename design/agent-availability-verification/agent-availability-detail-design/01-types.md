@@ -232,7 +232,7 @@ const verifiedResult: VerificationResult = {
   name: 'claude',
   status: 'verified',
   checks: [
-    { name: 'Executable Check', passed: true, message: 'claude found' },
+    { name: 'CLI Command Check', passed: true, message: 'claude found' },
     { name: 'Auth Check', passed: true, message: 'Authenticated via API key' },
   ],
   authMethod: 'ANTHROPIC_API_KEY',
@@ -244,7 +244,7 @@ const warnResult: VerificationResult = {
   status: 'verified_with_warnings',
   warnings: ['Cannot reach api.openai.com. Proceeding with local credentials.'],
   checks: [
-    { name: 'Executable Check', passed: true, message: 'codex found' },
+    { name: 'CLI Command Check', passed: true, message: 'codex found' },
     {
       name: 'Connectivity Check',
       passed: true,
@@ -263,7 +263,7 @@ const failedResult: VerificationResult = {
   error: 'Not authenticated',
   errorType: 'AUTH_MISSING',
   checks: [
-    { name: 'Executable Check', passed: true, message: 'gemini found' },
+    { name: 'CLI Command Check', passed: true, message: 'gemini found' },
     {
       name: 'Auth Check',
       passed: false,

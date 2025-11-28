@@ -66,6 +66,7 @@ describe('AgentValidation Integration', () => {
     it('should validate claude agent with API key', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         env: { ANTHROPIC_API_KEY: 'sk-ant-api-key-here' },
         platform: 'linux',
       });
@@ -75,14 +76,17 @@ describe('AgentValidation Integration', () => {
       expect(result.name).toBe('claude');
       expect(result.status).toBe('verified');
       expect(result.authMethod).toBe('ANTHROPIC_API_KEY env var');
-      expect(result.checks).toHaveLength(2); // Executable + Auth
-      expect(result.checks[0].name).toBe('Executable Check');
-      expect(result.checks[1].name).toBe('Auth Check');
+      expect(result.checks).toHaveLength(4); // Executable + Connectivity + Auth + Dry-Run
+      expect(result.checks[0].name).toBe('CLI Command Check');
+      expect(result.checks[1].name).toBe('Connectivity Check');
+      expect(result.checks[2].name).toBe('Auth Check');
+      expect(result.checks[3].name).toBe('Dry-Run Check');
     });
 
     it('should validate codex agent with API key', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         env: { OPENAI_API_KEY: 'sk-openai-key-here' },
         platform: 'linux',
       });
@@ -97,6 +101,7 @@ describe('AgentValidation Integration', () => {
     it('should validate gemini agent with API key', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         env: { GEMINI_API_KEY: 'AIza-gemini-key' },
         platform: 'linux',
       });
@@ -121,6 +126,7 @@ describe('AgentValidation Integration', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: {},
         homeDir: tempDir,
@@ -145,6 +151,7 @@ describe('AgentValidation Integration', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: {},
         homeDir: tempDir,
@@ -178,6 +185,7 @@ describe('AgentValidation Integration', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: {},
         homeDir: tempDir,
@@ -203,6 +211,7 @@ describe('AgentValidation Integration', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: { CLAUDE_CODE_USE_BEDROCK: '1' },
         homeDir: tempDir,
@@ -226,6 +235,7 @@ describe('AgentValidation Integration', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: { CLAUDE_CODE_USE_VERTEX: '1' },
         homeDir: tempDir,
@@ -243,6 +253,7 @@ describe('AgentValidation Integration', () => {
     it('should validate all registered agents', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         env: {
           ANTHROPIC_API_KEY: 'sk-ant-key',
           OPENAI_API_KEY: 'sk-openai-key',
@@ -262,6 +273,7 @@ describe('AgentValidation Integration', () => {
     it('should handle mixed success/failure in batch validation', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: { ANTHROPIC_API_KEY: 'sk-ant-key' },
         homeDir: tempDir,
@@ -272,8 +284,9 @@ describe('AgentValidation Integration', () => {
 
       expect(results.size).toBe(3);
       expect(results.get('claude')?.status).toBe('verified');
-      expect(results.get('codex')?.status).toBe('failed');
-      expect(results.get('gemini')?.status).toBe('failed');
+      // With new logic: 1 failure (auth) = verified_with_warnings, not failed
+      expect(results.get('codex')?.status).toBe('verified_with_warnings');
+      expect(results.get('gemini')?.status).toBe('verified_with_warnings');
     });
   });
 
@@ -285,6 +298,7 @@ describe('AgentValidation Integration', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         env: { ANTHROPIC_API_KEY: 'sk-ant-key' },
         platform: 'linux',
       });
@@ -293,12 +307,19 @@ describe('AgentValidation Integration', () => {
 
       expect(result.status).toBe('failed');
       expect(result.errorType).toBe('CONFIG_MISSING');
-      expect(result.checks).toHaveLength(1); // Only executable check, stopped early
+      // Now we add placeholder checks for all 4 items to show user what was skipped
+      expect(result.checks).toHaveLength(4);
+      expect(result.checks[0].name).toBe('CLI Command Check');
+      expect(result.checks[0].passed).toBe(false);
+      expect(result.checks[1].message).toBe('Skipped (executable not found)');
+      expect(result.checks[2].message).toBe('Skipped (executable not found)');
+      expect(result.checks[3].message).toBe('Skipped (executable not found)');
     });
 
     it('should handle unknown agent types gracefully', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         platform: 'linux',
       });
 
@@ -314,6 +335,7 @@ describe('AgentValidation Integration', () => {
     it('should handle macOS Keychain WARN passthrough', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: {},
         homeDir: tempDir,
@@ -332,6 +354,7 @@ describe('AgentValidation Integration', () => {
     it('should handle Windows Credential Manager WARN passthrough', async () => {
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+        skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         env: {},
         homeDir: tempDir,

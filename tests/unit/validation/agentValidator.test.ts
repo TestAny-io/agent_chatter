@@ -43,7 +43,7 @@ describe('AgentValidator', () => {
   });
 
   describe('validateAgent', () => {
-    describe('Executable Check', () => {
+    describe('CLI Command Check', () => {
       it('should fail when CLI not found', async () => {
         const error = new Error('not found') as any;
         error.code = 1;
@@ -51,13 +51,14 @@ describe('AgentValidator', () => {
 
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           platform: 'linux',
         });
 
         const result = await validator.validateAgent('claude');
         expect(result.status).toBe('failed');
-        expect(result.checks[0].name).toBe('Executable Check');
+        expect(result.checks[0].name).toBe('CLI Command Check');
         expect(result.checks[0].passed).toBe(false);
         expect(result.checks[0].errorType).toBe('CONFIG_MISSING');
       });
@@ -75,19 +76,21 @@ describe('AgentValidator', () => {
 
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           homeDir: '/home/test',
           platform: 'linux',
         });
 
         const result = await validator.validateAgent('claude');
-        expect(result.checks[0].name).toBe('Executable Check');
+        expect(result.checks[0].name).toBe('CLI Command Check');
         expect(result.checks[0].passed).toBe(true);
       });
 
       it('should use "which" on Unix platforms', async () => {
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           platform: 'linux',
         });
@@ -102,6 +105,7 @@ describe('AgentValidator', () => {
       it('should use "where" on Windows', async () => {
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           platform: 'win32',
         });
@@ -125,6 +129,7 @@ describe('AgentValidator', () => {
 
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           homeDir: '/home/test',
           platform: 'linux',
@@ -134,19 +139,23 @@ describe('AgentValidator', () => {
         expect(result.authMethod).toBe('OAuth credentials file');
       });
 
-      it('should fail when no credentials found', async () => {
+      it('should return verified_with_warnings when only auth fails (1 failure tolerance)', async () => {
         vi.mocked(fs.existsSync).mockReturnValue(false);
 
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           homeDir: '/home/test',
           platform: 'linux',
         });
 
         const result = await validator.validateAgent('claude');
-        expect(result.status).toBe('failed');
-        expect(result.errorType).toBe('AUTH_MISSING');
+        // With new logic: 1 failure out of 3 non-executable checks = verified_with_warnings
+        expect(result.status).toBe('verified_with_warnings');
+        // The failure should be reported in warnings
+        expect(result.warnings).toBeDefined();
+        expect(result.warnings!.some(w => w.includes('Auth Check failed'))).toBe(true);
       });
     });
 
@@ -157,6 +166,7 @@ describe('AgentValidator', () => {
         // Use env var authentication which doesn't add a warning
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           env: { ANTHROPIC_API_KEY: 'sk-ant-xxx' },
           platform: 'linux',
         });
@@ -172,6 +182,7 @@ describe('AgentValidator', () => {
 
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
           homeDir: '/Users/test',
           platform: 'darwin',
@@ -188,12 +199,13 @@ describe('AgentValidator', () => {
       it('should warn passthrough for unregistered agent', async () => {
         const validator = new AgentValidator({
           skipConnectivityCheck: true,
+          skipDryRun: true,
           authCheckerOptions: { skipStatusCommand: true },
         });
 
         const result = await validator.validateAgent('unknown-agent');
         // Should pass executable check
-        expect(result.checks[0].name).toBe('Executable Check');
+        expect(result.checks[0].name).toBe('CLI Command Check');
         // Auth check should WARN passthrough
         const authCheck = result.checks.find(c => c.name === 'Auth Check');
         expect(authCheck?.passed).toBe(true);
@@ -208,6 +220,7 @@ describe('AgentValidator', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+          skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         platform: 'darwin',
       });
@@ -223,6 +236,7 @@ describe('AgentValidator', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+          skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         platform: 'darwin',
         maxConcurrency: 1,
@@ -239,6 +253,7 @@ describe('AgentValidator', () => {
 
       const validator = new AgentValidator({
         skipConnectivityCheck: true,
+          skipDryRun: true,
         authCheckerOptions: { skipStatusCommand: true },
         platform: 'darwin',
       });

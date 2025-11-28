@@ -393,7 +393,7 @@ private async checkExecutable(agentType: string): Promise<CheckResult> {
     });
 
     return {
-      name: 'Executable Check',
+      name: 'CLI Command Check',
       passed: true,
       message: `${command} found in PATH`,
     };
@@ -414,7 +414,7 @@ private async checkExecutable(agentType: string): Promise<CheckResult> {
 
     if (isNotFound) {
       return {
-        name: 'Executable Check',
+        name: 'CLI Command Check',
         passed: false,
         message: `${command} not found`,
         errorType: 'CONFIG_MISSING',
@@ -425,7 +425,7 @@ private async checkExecutable(agentType: string): Promise<CheckResult> {
     // 权限错误 → 命令可能存在但无法执行
     if (err.code === 'EACCES' || err.code === 126) {
       return {
-        name: 'Executable Check',
+        name: 'CLI Command Check',
         passed: true,  // 放行，让后续检查继续
         message: `${command} may exist but permission denied`,
         warning: `Permission error checking ${command}. Check file permissions.`,
@@ -435,7 +435,7 @@ private async checkExecutable(agentType: string): Promise<CheckResult> {
     // 超时
     if (err.killed || err.signal === 'SIGTERM') {
       return {
-        name: 'Executable Check',
+        name: 'CLI Command Check',
         passed: true,  // 假设存在，继续检查
         message: `Executable check timed out for ${command}`,
         warning: `Timeout checking ${command}. Proceeding with verification.`,
@@ -444,7 +444,7 @@ private async checkExecutable(agentType: string): Promise<CheckResult> {
 
     // 其他未知错误 → 不确定，放行但警告
     return {
-      name: 'Executable Check',
+      name: 'CLI Command Check',
       passed: true,
       message: `Cannot verify ${command}`,
       warning: `Executable check error: ${err.code || err.message}. Proceeding with verification.`,

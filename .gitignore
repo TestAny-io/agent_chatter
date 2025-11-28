@@ -33,3 +33,4 @@ temp.md
 
 # npm pack output
 *.tgz
+misc/

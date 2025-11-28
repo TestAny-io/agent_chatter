@@ -23,6 +23,7 @@ import { EventEmitter } from 'events';
 import type { IOutput } from '../outputs/IOutput.js';
 import { SilentOutput } from '../outputs/IOutput.js';
 import type { QueueUpdateEvent } from '../models/QueueEvent.js';
+import type { CheckResult } from './validation/types.js';
 
 interface NormalizedAgent {
   name: string;
@@ -54,6 +55,27 @@ export interface InitializeServicesOptions {
  */
 export function hasFlag(args: string[], flag: string): boolean {
   return args.some(arg => arg === flag || arg.startsWith(`${flag}=`));
+}
+
+/**
+ * 打印验证检查结果（用于 REPL 部署输出）
+ */
+function printVerificationChecks(output: IOutput, checks: CheckResult[], indent: number = 2): void {
+  const prefix = ' '.repeat(indent);
+
+  for (const check of checks) {
+    const icon = check.passed ? '✓' : '✗';
+    output.info(`${prefix}${icon} ${check.name}`);
+    output.info(`${prefix}  ${check.message}`);
+
+    if (check.warning) {
+      output.warn(`${prefix}  ⚠ ${check.warning}`);
+    }
+
+    if (check.resolution) {
+      output.info(`${prefix}  → ${check.resolution}`);
+    }
+  }
 }
 
 /**
@@ -355,6 +377,12 @@ export async function initializeServices(
           }
         } else {
           output.success(`✓ Agent ${member.agentType} verified`);
+        }
+
+        // 始终展示详细检查结果
+        if (verification.checks && verification.checks.length > 0) {
+          output.info('  Verification checks:');
+          printVerificationChecks(output, verification.checks, 4);
         }
       } else {
         output.progress(`Agent ${member.agentType} (using cached verification)`);

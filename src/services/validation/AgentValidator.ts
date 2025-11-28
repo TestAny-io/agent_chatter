@@ -39,6 +39,16 @@ import './auth/GeminiAuthChecker.js';
 
 const execAsync = promisify(exec);
 
+// ===== Debug Logger =====
+
+const DEBUG_PREFIX = '[AgentValidator]';
+
+function debug(...args: unknown[]): void {
+  if (process.env.DEBUG) {
+    console.error(DEBUG_PREFIX, ...args);
+  }
+}
+
 // ===== Configuration Options =====
 
 /**
@@ -46,10 +56,23 @@ const execAsync = promisify(exec);
  */
 export interface AgentValidatorOptions {
   /**
-   * Whether to skip connectivity check
+   * Whether to skip connectivity check entirely
    * @default false
    */
   skipConnectivityCheck?: boolean;
+
+  /**
+   * Whether to skip HTTP layer check (Layer 7)
+   * When true, only performs DNS + TCP checks (Layer 3-4)
+   * @default false
+   */
+  skipHttpCheck?: boolean;
+
+  /**
+   * Whether to skip dry-run check
+   * @default false
+   */
+  skipDryRun?: boolean;
 
   /**
    * TCP connectivity check timeout (ms)
@@ -62,6 +85,18 @@ export interface AgentValidatorOptions {
    * @default 3000
    */
   dnsTimeout?: number;
+
+  /**
+   * HTTP request timeout (ms)
+   * @default 10000
+   */
+  httpTimeout?: number;
+
+  /**
+   * Dry-run check timeout (ms)
+   * @default 30000
+   */
+  dryRunTimeout?: number;
 
   /**
    * Authentication checker configuration
@@ -95,6 +130,12 @@ export interface AgentValidatorOptions {
    * @default 3
    */
   maxConcurrency?: number;
+
+  /**
+   * Dry-run command timeout (ms)
+   * @default 60000
+   */
+  dryRunTimeout?: number;
 }
 
 // ===== Implementation =====
@@ -105,14 +146,18 @@ export class AgentValidator {
   constructor(options?: AgentValidatorOptions) {
     this.options = {
       skipConnectivityCheck: options?.skipConnectivityCheck ?? false,
+      skipHttpCheck: options?.skipHttpCheck ?? false,
+      skipDryRun: options?.skipDryRun ?? false,
       connectivityTimeout: options?.connectivityTimeout ?? 5000,
       dnsTimeout: options?.dnsTimeout ?? 3000,
+      httpTimeout: options?.httpTimeout ?? 10000,
       authCheckerOptions: options?.authCheckerOptions ?? {},
       executableCheckTimeout: options?.executableCheckTimeout ?? 5000,
       env: options?.env ?? (process.env as Record<string, string | undefined>),
       homeDir: options?.homeDir ?? os.homedir(),
       platform: options?.platform ?? process.platform,
       maxConcurrency: options?.maxConcurrency ?? 3,
+      dryRunTimeout: options?.dryRunTimeout ?? 60000,
     };
   }
 
@@ -129,8 +174,12 @@ export class AgentValidator {
    * 3. Authentication check (partially blocking)
    */
   async validateAgent(agentType: string): Promise<VerificationResult> {
+    debug(`=== Starting validation for agent: ${agentType} ===`);
     const checks = await this.runChecks(agentType);
-    return this.buildVerificationResult(agentType, checks);
+    debug(`Checks completed for ${agentType}:`, checks.map(c => ({ name: c.name, passed: c.passed, errorType: c.errorType, warning: c.warning })));
+    const result = this.buildVerificationResult(agentType, checks);
+    debug(`Final result for ${agentType}: status=${result.status}, error=${result.error}, warnings=${result.warnings}`);
+    return result;
   }
 
   /**
@@ -181,6 +230,12 @@ export class AgentValidator {
 
   /**
    * Run all checks
+   *
+   * Check order:
+   * 1. Executable check (blocking if failed)
+   * 2. Connectivity check
+   * 3. Auth check
+   * 4. Dry-run check (actual CLI invocation)
    */
   private async runChecks(agentType: string): Promise<CheckResult[]> {
     const checks: CheckResult[] = [];
@@ -190,71 +245,141 @@ export class AgentValidator {
     checks.push(execCheck);
 
     // If executable doesn't exist, no need to continue checking
+    // Add placeholder checks to show user what was skipped
     if (!execCheck.passed && execCheck.errorType === 'CONFIG_MISSING') {
+      checks.push({
+        name: 'Connectivity Check',
+        passed: false,
+        message: 'Skipped (executable not found)',
+        errorType: 'CONFIG_MISSING',
+      });
+      checks.push({
+        name: 'Auth Check',
+        passed: false,
+        message: 'Skipped (executable not found)',
+        errorType: 'CONFIG_MISSING',
+      });
+      checks.push({
+        name: 'Dry-Run Check',
+        passed: false,
+        message: 'Skipped (executable not found)',
+        errorType: 'CONFIG_MISSING',
+      });
       return checks;
     }
 
-    // 2. Connectivity check (start in parallel)
-    const connectivityPromise = this.options.skipConnectivityCheck
-      ? Promise.resolve(null)
-      : this.checkConnectivity(agentType);
+    // 2. Connectivity check
+    const connectivityCheck = this.options.skipConnectivityCheck
+      ? { name: 'Connectivity Check', passed: true, message: 'Skipped' }
+      : await this.checkConnectivity(agentType);
+    checks.push(connectivityCheck);
 
     // 3. Authentication check
     const authCheck = await this.checkAuth(agentType);
     checks.push(authCheck);
 
-    // Wait for connectivity check to complete
-    const connectivityCheck = await connectivityPromise;
-    if (connectivityCheck) {
-      // Insert connectivity check result before auth check
-      checks.splice(1, 0, connectivityCheck);
-    }
+    // 4. Dry-run check (actual CLI invocation)
+    const dryRunCheck = this.options.skipDryRun
+      ? { name: 'Dry-Run Check', passed: true, message: 'Skipped' }
+      : await this.checkDryRun(agentType);
+    checks.push(dryRunCheck);
 
     return checks;
   }
 
   /**
    * Build verification result
+   *
+   * Verification logic:
+   * 1. If CLI Command Check failed → FAIL
+   * 2. Count failures in remaining 3 checks (Connectivity, Auth, Dry-Run)
+   *    - 0 failures → verified
+   *    - 1 failure → verified_with_warnings
+   *    - 2+ failures → failed
    */
   private buildVerificationResult(
     name: string,
     checks: CheckResult[]
   ): VerificationResult {
-    const status = determineVerificationStatus(checks);
-
     // Collect all warnings
     const warnings = checks.filter((c) => c.warning).map((c) => c.warning!);
-
-    // Find first blocking error
-    const blockingError = checks.find(
-      (c) => !c.passed && c.errorType && isBlockingError(c.errorType)
-    );
 
     // Find auth method (from successful auth check)
     const authCheck = checks.find(
       (c) => c.name === 'Auth Check' && c.passed
     ) as CheckResultWithAuthMethod | undefined;
 
-    const result: VerificationResult = {
-      name,
-      status,
-      checks,
-    };
-
-    if (status === 'failed' && blockingError) {
-      result.error = blockingError.message;
-      result.errorType = blockingError.errorType;
+    // Check 1: CLI Command Check - if failed, overall fails
+    const execCheck = checks.find((c) => c.name === 'CLI Command Check');
+    if (execCheck && !execCheck.passed) {
+      return {
+        name,
+        status: 'failed',
+        checks,
+        error: execCheck.message,
+        errorType: execCheck.errorType,
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
     }
 
+    // Check 2: Count failures in remaining checks (Connectivity, Auth, Dry-Run)
+    const remainingChecks = checks.filter(
+      (c) => c.name !== 'CLI Command Check'
+    );
+    const failedChecks = remainingChecks.filter((c) => !c.passed);
+    const failureCount = failedChecks.length;
+
+    debug(`[buildVerificationResult] ${name}: ${failureCount} failures in remaining checks`);
+    debug(`[buildVerificationResult] Failed checks:`, failedChecks.map(c => c.name));
+
+    // 2+ failures → failed
+    if (failureCount >= 2) {
+      // Find the most significant error to report
+      const primaryError = failedChecks[0];
+      return {
+        name,
+        status: 'failed',
+        checks,
+        error: `Multiple checks failed: ${failedChecks.map(c => c.name).join(', ')}`,
+        errorType: primaryError?.errorType,
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
+    }
+
+    // 1 failure → verified_with_warnings
+    if (failureCount === 1) {
+      const failedCheck = failedChecks[0];
+      // Add the failure as a warning
+      const allWarnings = [
+        ...warnings,
+        `${failedCheck.name} failed: ${failedCheck.message}`,
+      ];
+      return {
+        name,
+        status: 'verified_with_warnings',
+        checks,
+        warnings: allWarnings,
+        authMethod: authCheck?.authMethod,
+      };
+    }
+
+    // 0 failures
     if (warnings.length > 0) {
-      result.warnings = warnings;
+      return {
+        name,
+        status: 'verified_with_warnings',
+        checks,
+        warnings,
+        authMethod: authCheck?.authMethod,
+      };
     }
 
-    if (authCheck?.authMethod) {
-      result.authMethod = authCheck.authMethod;
-    }
-
-    return result;
+    return {
+      name,
+      status: 'verified',
+      checks,
+      authMethod: authCheck?.authMethod,
+    };
   }
 
   /**
@@ -287,7 +412,7 @@ export class AgentValidator {
       });
 
       return {
-        name: 'Executable Check',
+        name: 'CLI Command Check',
         passed: true,
         message: `${command} found in PATH`,
       };
@@ -308,7 +433,7 @@ export class AgentValidator {
 
       if (isNotFound) {
         return {
-          name: 'Executable Check',
+          name: 'CLI Command Check',
           passed: false,
           message: `${command} not found`,
           errorType: 'CONFIG_MISSING',
@@ -319,7 +444,7 @@ export class AgentValidator {
       // Permission error → command may exist but can't execute
       if (err.code === 'EACCES' || err.code === 126) {
         return {
-          name: 'Executable Check',
+          name: 'CLI Command Check',
           passed: true, // Pass, let subsequent checks continue
           message: `${command} may exist but permission denied`,
           warning: `Permission error checking ${command}. Check file permissions.`,
@@ -329,7 +454,7 @@ export class AgentValidator {
       // Timeout
       if (err.killed || err.signal === 'SIGTERM') {
         return {
-          name: 'Executable Check',
+          name: 'CLI Command Check',
           passed: true, // Assume exists, continue checking
           message: `Executable check timed out for ${command}`,
           warning: `Timeout checking ${command}. Proceeding with verification.`,
@@ -338,7 +463,7 @@ export class AgentValidator {
 
       // Other unknown errors → uncertain, pass but warn
       return {
-        name: 'Executable Check',
+        name: 'CLI Command Check',
         passed: true,
         message: `Cannot verify ${command}`,
         warning: `Executable check error: ${err.code || err.message}. Proceeding with verification.`,
@@ -375,15 +500,29 @@ export class AgentValidator {
    *
    * @param agentType - Agent type
    * @returns Check result
+   *
+   * @remarks
+   * Performs three layers of checks:
+   * - Layer 3: DNS resolution
+   * - Layer 4: TCP connection
+   * - Layer 7: HTTP request (detect region restrictions)
    */
   private async checkConnectivity(agentType: string): Promise<CheckResult> {
+    debug(`[checkConnectivity] Starting for ${agentType}`);
+    debug(`[checkConnectivity] Options: skipHttpCheck=${this.options.skipHttpCheck}, httpTimeout=${this.options.httpTimeout}`);
+
     // Pass configured timeout parameters
     const result = await checkConnectivity(agentType, {
       connectivityTimeout: this.options.connectivityTimeout,
       dnsTimeout: this.options.dnsTimeout,
+      httpTimeout: this.options.httpTimeout,
+      skipHttpCheck: this.options.skipHttpCheck,
     });
 
+    debug(`[checkConnectivity] Result for ${agentType}:`, JSON.stringify(result));
+
     if (result.reachable) {
+      debug(`[checkConnectivity] ${agentType} is reachable`);
       return {
         name: 'Connectivity Check',
         passed: true,
@@ -391,12 +530,66 @@ export class AgentValidator {
       };
     }
 
-    // Connectivity check failure doesn't block verification
+    debug(`[checkConnectivity] ${agentType} not reachable, errorType: ${result.errorType}`);
+
+    // HTTP layer errors (Layer 7) - all HTTP failures should be passed: false
+    if (result.errorType?.startsWith('NETWORK_HTTP_')) {
+      const hint = result.httpResponseHint
+        ? ` Response: "${result.httpResponseHint}"`
+        : '';
+
+      // HTTP 403 - possible region restriction
+      if (result.errorType === 'NETWORK_HTTP_FORBIDDEN') {
+        return {
+          name: 'Connectivity Check',
+          passed: false,
+          message: `HTTP 403 from API.${hint}`,
+          errorType: result.errorType,
+          resolution:
+            'Possible causes: (1) IP in restricted region; (2) Access restrictions. ' +
+            'If in supported region, try re-authenticating or using a VPN.',
+        };
+      }
+
+      // HTTP 429 - rate limited
+      if (result.errorType === 'NETWORK_HTTP_ERROR' && result.httpStatusCode === 429) {
+        return {
+          name: 'Connectivity Check',
+          passed: false,
+          message: `HTTP 429 - Rate limited`,
+          errorType: result.errorType,
+          resolution: 'API is rate limiting requests. Wait and try again.',
+        };
+      }
+
+      // HTTP 5xx - service unavailable
+      if (result.errorType === 'NETWORK_HTTP_UNAVAILABLE') {
+        return {
+          name: 'Connectivity Check',
+          passed: false,
+          message: `HTTP ${result.httpStatusCode} - Service unavailable`,
+          errorType: result.errorType,
+          resolution: 'API service may be down. Check provider status page.',
+        };
+      }
+
+      // Other HTTP errors
+      return {
+        name: 'Connectivity Check',
+        passed: false,
+        message: `HTTP ${result.httpStatusCode} from API${hint}`,
+        errorType: result.errorType,
+        resolution: 'Check network connection and try again.',
+      };
+    }
+
+    // Layer 3-4 errors - DNS, TCP, TLS, etc. - also passed: false
     return {
       name: 'Connectivity Check',
-      passed: true, // Note: still passed
-      message: 'Cannot verify online connectivity',
-      warning: `${result.error}. Proceeding with local credentials.`,
+      passed: false,
+      message: result.error || 'Cannot reach API',
+      errorType: result.errorType,
+      resolution: 'Check network connection, firewall, or VPN settings.',
     };
   }
 
@@ -471,6 +664,180 @@ export class AgentValidator {
         // Don't set errorType, let upper layer know this is uncertain state
       };
     }
+  }
+
+  /**
+   * Execute dry-run check - actually invoke the CLI to verify it works
+   *
+   * @param agentType - Agent type
+   * @returns Check result
+   *
+   * @remarks
+   * This is the most reliable check - it actually invokes the CLI with a simple
+   * prompt to verify end-to-end functionality. Detects issues that other checks miss:
+   * - Network issues from CLI's perspective (proxy, firewall)
+   * - API authentication issues at runtime
+   * - Region restrictions that only manifest at runtime
+   */
+  private async checkDryRun(agentType: string): Promise<CheckResult> {
+    debug(`[checkDryRun] Starting for ${agentType}`);
+
+    const command = this.getDryRunCommand(agentType);
+    if (!command) {
+      return {
+        name: 'Dry-Run Check',
+        passed: true,
+        message: 'No dry-run command configured',
+        warning: `Cannot perform dry-run check for ${agentType}`,
+      };
+    }
+
+    debug(`[checkDryRun] Command: ${command}`);
+
+    try {
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: this.options.dryRunTimeout,
+        env: this.options.env as NodeJS.ProcessEnv,
+      });
+
+      debug(`[checkDryRun] stdout: ${stdout.slice(0, 500)}`);
+      debug(`[checkDryRun] stderr: ${stderr.slice(0, 500)}`);
+
+      // Check for error patterns in output
+      const errorInfo = this.parseDryRunOutput(agentType, stdout, stderr);
+
+      if (errorInfo) {
+        debug(`[checkDryRun] Detected error: ${errorInfo.message}`);
+        return {
+          name: 'Dry-Run Check',
+          passed: false,
+          message: errorInfo.message,
+          errorType: 'DRYRUN_FAILED',
+          resolution: errorInfo.resolution,
+        };
+      }
+
+      return {
+        name: 'Dry-Run Check',
+        passed: true,
+        message: 'CLI responded successfully',
+      };
+    } catch (error: unknown) {
+      const err = error as {
+        code?: number | string;
+        message?: string;
+        signal?: string;
+        killed?: boolean;
+        stdout?: string;
+        stderr?: string;
+      };
+
+      debug(`[checkDryRun] Error:`, err);
+
+      // Timeout
+      if (err.killed || err.signal === 'SIGTERM') {
+        return {
+          name: 'Dry-Run Check',
+          passed: false,
+          message: 'CLI timed out',
+          errorType: 'DRYRUN_TIMEOUT',
+          resolution: `CLI did not respond within ${this.options.dryRunTimeout}ms. Check network or try increasing timeout.`,
+        };
+      }
+
+      // Check stderr for useful error info
+      const stderrText = err.stderr || '';
+      const stdoutText = err.stdout || '';
+
+      // Try to extract meaningful error message
+      const errorInfo = this.parseDryRunOutput(agentType, stdoutText, stderrText);
+      const errorMessage = errorInfo?.message || err.message || 'Unknown error';
+
+      return {
+        name: 'Dry-Run Check',
+        passed: false,
+        message: `CLI error: ${errorMessage.slice(0, 200)}`,
+        errorType: 'DRYRUN_FAILED',
+        resolution: errorInfo?.resolution || 'Run the CLI manually to diagnose the issue.',
+      };
+    }
+  }
+
+  /**
+   * Get the dry-run command for an agent type
+   */
+  private getDryRunCommand(agentType: string): string | null {
+    // Simple test prompt - just needs to trigger API communication
+    const testPrompt = 'Reply with just the word OK';
+
+    const commands: Record<string, string> = {
+      // Claude: use print mode to avoid interactive behavior
+      claude: `claude --print --output-format stream-json "${testPrompt}"`,
+      // Codex: simple exec
+      codex: `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --json "${testPrompt}"`,
+      // Gemini: yolo mode
+      gemini: `gemini --yolo --output-format stream-json "${testPrompt}"`,
+    };
+
+    return commands[agentType] || null;
+  }
+
+  /**
+   * Parse dry-run output to detect errors
+   */
+  private parseDryRunOutput(
+    agentType: string,
+    stdout: string,
+    stderr: string
+  ): { message: string; resolution: string } | null {
+    const combined = stdout + stderr;
+
+    // Check for common error patterns
+    // API Error patterns
+    if (combined.includes('API Error') || combined.includes('"status":"error"')) {
+      // Try to extract the error message
+      const apiErrorMatch = combined.match(/API Error[:\s]*([^\n\r]+)/i);
+      const jsonErrorMatch = combined.match(/"message"\s*:\s*"([^"]+)"/);
+      const errorMsg = apiErrorMatch?.[1] || jsonErrorMatch?.[1] || 'API communication failed';
+
+      // Check for specific error types
+      if (combined.includes('403') || combined.includes('forbidden') || combined.includes('Request not allowed')) {
+        return {
+          message: `API returned 403 Forbidden: ${errorMsg}`,
+          resolution: 'Possible region restriction or access denied. Try using a VPN or check account status.',
+        };
+      }
+
+      if (combined.includes('401') || combined.includes('unauthorized') || combined.includes('authentication')) {
+        return {
+          message: `Authentication failed: ${errorMsg}`,
+          resolution: 'Run the login command to authenticate.',
+        };
+      }
+
+      if (combined.includes('fetch failed') || combined.includes('network') || combined.includes('ECONNREFUSED')) {
+        return {
+          message: `Network error: ${errorMsg}`,
+          resolution: 'Check network connection, firewall, or proxy settings.',
+        };
+      }
+
+      return {
+        message: errorMsg,
+        resolution: 'Run the CLI manually to diagnose the issue.',
+      };
+    }
+
+    // Check for authentication errors
+    if (combined.includes('not authenticated') || combined.includes('login required') || combined.includes('no credentials')) {
+      return {
+        message: 'Not authenticated',
+        resolution: `Run: ${agentType} auth login`,
+      };
+    }
+
+    // No error detected
+    return null;
   }
 
   /**
