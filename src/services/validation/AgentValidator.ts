@@ -12,7 +12,7 @@
  */
 
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { checkConnectivity } from './ConnectivityChecker.js';
 import type { ConnectivityCheckerOptions } from './ConnectivityChecker.js';
@@ -677,6 +677,7 @@ export class AgentValidator {
     debug(`[checkDryRun] Starting for ${agentType}`);
 
     const command = this.getDryRunCommand(agentType);
+    const cwd = process.cwd();
     if (!command) {
       return {
         name: 'Dry-Run Check',
@@ -687,18 +688,34 @@ export class AgentValidator {
     }
 
     debug(`[checkDryRun] Command: ${command}`);
+    debug(`[checkDryRun] CWD: ${cwd}`);
+    const start = Date.now();
+
+    // Avoid propagating DEBUG to agent CLI (some CLIs change behavior or hang under DEBUG)
+    const execEnv: NodeJS.ProcessEnv = { ...this.options.env } as NodeJS.ProcessEnv;
+    if ('DEBUG' in execEnv) {
+      delete execEnv.DEBUG;
+    }
+
+    debug(`[checkDryRun] Env keys: ${Object.keys(execEnv).slice(0, 5).join(', ')}...`);
+
+    // Use spawn with stdin ignored to prevent TTY/raw mode issues (especially for Claude CLI)
+    // Claude CLI uses Ink which requires raw mode on stdin - by ignoring stdin we avoid this
+    debug(`[checkDryRun] spawn options: cwd=${cwd}, timeout=${this.options.dryRunTimeout}`);
 
     try {
-      const { stdout, stderr } = await execAsync(command, {
+      const result = await this.spawnWithTimeout(command, {
+        cwd,
+        env: execEnv,
         timeout: this.options.dryRunTimeout,
-        env: this.options.env as NodeJS.ProcessEnv,
       });
 
-      debug(`[checkDryRun] stdout: ${stdout.slice(0, 500)}`);
-      debug(`[checkDryRun] stderr: ${stderr.slice(0, 500)}`);
+      debug(`[checkDryRun] stdout: ${result.stdout.slice(0, 500)}`);
+      debug(`[checkDryRun] stderr: ${result.stderr.slice(0, 500)}`);
+      debug(`[checkDryRun] Completed in ${Date.now() - start}ms, exitCode=${result.exitCode}`);
 
       // Check for error patterns in output
-      const errorInfo = this.parseDryRunOutput(agentType, stdout, stderr);
+      const errorInfo = this.parseDryRunOutput(agentType, result.stdout, result.stderr);
 
       if (errorInfo) {
         debug(`[checkDryRun] Detected error: ${errorInfo.message}`);
@@ -711,48 +728,45 @@ export class AgentValidator {
         };
       }
 
+      // Non-zero exit code without recognized error pattern
+      if (result.exitCode !== 0) {
+        return {
+          name: 'Dry-Run Check',
+          passed: false,
+          message: `CLI exited with code ${result.exitCode}`,
+          errorType: 'DRYRUN_FAILED',
+          resolution: 'Run the CLI manually to diagnose the issue.',
+        };
+      }
+
       return {
         name: 'Dry-Run Check',
         passed: true,
         message: 'CLI responded successfully',
       };
     } catch (error: unknown) {
-      const err = error as {
-        code?: number | string;
-        message?: string;
-        signal?: string;
-        killed?: boolean;
-        stdout?: string;
-        stderr?: string;
-      };
+      const err = error as { message?: string; timedOut?: boolean };
 
       debug(`[checkDryRun] Error:`, err);
+      debug(`[checkDryRun] Duration=${Date.now() - start}ms`);
 
       // Timeout
-      if (err.killed || err.signal === 'SIGTERM') {
+      if (err.timedOut) {
         return {
           name: 'Dry-Run Check',
           passed: false,
           message: 'CLI timed out',
           errorType: 'DRYRUN_TIMEOUT',
-          resolution: `CLI did not respond within ${this.options.dryRunTimeout}ms. Check network or try increasing timeout.`,
+          resolution: `CLI did not respond within ${this.options.dryRunTimeout}ms. If agent doesn't respond in conversation, check network.`,
         };
       }
-
-      // Check stderr for useful error info
-      const stderrText = err.stderr || '';
-      const stdoutText = err.stdout || '';
-
-      // Try to extract meaningful error message
-      const errorInfo = this.parseDryRunOutput(agentType, stdoutText, stderrText);
-      const errorMessage = errorInfo?.message || err.message || 'Unknown error';
 
       return {
         name: 'Dry-Run Check',
         passed: false,
-        message: `CLI error: ${errorMessage.slice(0, 200)}`,
+        message: `CLI error: ${(err.message || 'Unknown error').slice(0, 200)}`,
         errorType: 'DRYRUN_FAILED',
-        resolution: errorInfo?.resolution || 'Run the CLI manually to diagnose the issue.',
+        resolution: 'Run the CLI manually to diagnose the issue.',
       };
     }
   }
@@ -832,6 +846,69 @@ export class AgentValidator {
 
     // No error detected
     return null;
+  }
+
+  /**
+   * Spawn a command with timeout and stdin ignored
+   * This is needed for CLIs like Claude that use Ink and require TTY raw mode
+   * By ignoring stdin, we prevent the TTY raw mode error
+   */
+  private spawnWithTimeout(
+    command: string,
+    options: {
+      cwd: string;
+      env: NodeJS.ProcessEnv;
+      timeout: number;
+    }
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    return new Promise((resolve, reject) => {
+      let stdout = '';
+      let stderr = '';
+      let killed = false;
+
+      // Use shell: true to parse the command string
+      const child = spawn(command, [], {
+        shell: true,
+        cwd: options.cwd,
+        env: options.env,
+        // Key fix: ignore stdin to prevent TTY raw mode issues
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      // Set up timeout
+      const timer = setTimeout(() => {
+        killed = true;
+        child.kill('SIGTERM');
+        // Give it a moment to terminate gracefully, then force kill
+        setTimeout(() => {
+          if (!child.killed) {
+            child.kill('SIGKILL');
+          }
+        }, 1000);
+      }, options.timeout);
+
+      child.stdout?.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      child.stderr?.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        if (killed) {
+          reject({ message: 'Command timed out', timedOut: true });
+        } else {
+          resolve({ stdout, stderr, exitCode: code ?? 0 });
+        }
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject({ message: err.message, timedOut: false });
+      });
+    });
   }
 
   /**

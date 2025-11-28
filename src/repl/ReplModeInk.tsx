@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { detectAllTools } from '../utils/ToolDetector.js';
 import { ConversationCoordinator } from '../services/ConversationCoordinator.js';
 import { initializeServices, type InitializeServicesOptions } from '../services/ServiceInitializer.js';
+import type { IOutput } from '../outputs/IOutput.js';
 import type { CLIConfig } from '../models/CLIConfig.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
 import type { Team, RoleDefinition, Member } from '../models/Team.js';
@@ -836,6 +837,28 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             return next;
         });
     };
+
+    // Bridge Agent verification output到 REPL UI
+    const uiOutput: IOutput = useMemo(() => ({
+        info: (message: string) => appendOutput(<Text key={`out-info-${getNextKey()}`} color="cyan">{message}</Text>),
+        success: (message: string) => appendOutput(<Text key={`out-success-${getNextKey()}`} color="green">{message}</Text>),
+        warn: (message: string) => appendOutput(<Text key={`out-warn-${getNextKey()}`} color="yellow">{message}</Text>),
+        error: (message: string) => appendOutput(<Text key={`out-error-${getNextKey()}`} color="red">{message}</Text>),
+        progress: (message: string, options?: { current?: number; total?: number }) => {
+            let text = message;
+            if (options?.current !== undefined && options?.total !== undefined) {
+                text += ` (${options.current}/${options.total})`;
+            }
+            appendOutput(<Text key={`out-progress-${getNextKey()}`} dimColor>{text}</Text>);
+        },
+        separator: (char: string = '─', length: number = 60) => {
+            appendOutput(<Text key={`out-sep-${getNextKey()}`} dimColor>{char.repeat(length)}</Text>);
+        },
+        keyValue: (key: string, value: string, options?: { indent?: number }) => {
+            const indent = ' '.repeat(options?.indent ?? 2);
+            appendOutput(<Text key={`out-kv-${getNextKey()}`} dimColor>{indent}{key}: {value}</Text>);
+        },
+    }), [appendOutput]);
 
     const renderEvent = (ev: AgentEvent): React.ReactNode | null => {
         const key = `stream-${ev.eventId || `${ev.agentId}-${ev.timestamp}`}-${getNextKey()}`;
@@ -1912,6 +1935,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
+                output: uiOutput,
                 onMessage: (message: ConversationMessage) => {
                     // AI 文本已经通过流式事件显示，这里不再重复
                     // Human 消息已经在 handleConversationInput 中显示，这里也不再重复
@@ -2030,6 +2054,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
             const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
+                output: uiOutput,
                 onMessage: (message: ConversationMessage) => {
                     if (message.speaker.type === 'ai' || message.speaker.type === 'human') {
                         return;
@@ -2174,20 +2199,22 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 // Start new session
                 await coordinator.setTeam(team);
                 appendOutput(<Text key={`deploy-success-${getNextKey()}`} color="green">✓ Team "{team.name}" deployed successfully</Text>);
-                appendOutput(
-                    <Box key={`team-info-${getNextKey()}`} flexDirection="column" marginLeft={2}>
-                        <Text>Team Name: {team.displayName ?? team.name}</Text>
-                        {team.description && <Text>Team Description: {team.description}</Text>}
-                        <Text>Members:</Text>
-                        {team.members.map((m, idx) => {
-                            const bgColor = m.themeColor ?? 'white';
-                            return (
-                                <Text key={`member-${idx}`}>  <Text backgroundColor={bgColor} color="black">{m.displayName}{m.displayRole ? ` (${m.displayRole})` : ''}</Text></Text>
-                            );
-                        })}
-                    </Box>
-                );
             }
+
+            // Always show team info (for both resume and new session)
+            appendOutput(
+                <Box key={`team-info-${getNextKey()}`} flexDirection="column" marginLeft={2}>
+                    <Text>Team Name: {team.displayName ?? team.name}</Text>
+                    {team.description && <Text>Team Description: {team.description}</Text>}
+                    <Text>Members:</Text>
+                    {team.members.map((m, idx) => {
+                        const bgColor = m.themeColor ?? 'white';
+                        return (
+                            <Text key={`member-${idx}`}>  <Text backgroundColor={bgColor} color="black">{m.displayName}{m.displayRole ? ` (${m.displayRole})` : ''}</Text></Text>
+                        );
+                    })}
+                </Box>
+            );
 
             const humans = team.members.filter(m => m.type === 'human');
             if (humans.length === 1) {

@@ -361,20 +361,6 @@ export async function initializeServices(
         // Show appropriate message based on status
         if (verification.status === 'verified_with_warnings') {
           output.warn(`⚠ Agent ${member.agentType} verified with warnings`);
-          // Show warnings but don't block
-          if (verification.checks) {
-            for (const check of verification.checks) {
-              if (check.warning) {
-                output.warn(`  ${check.warning}`);
-              }
-            }
-          }
-          // Also show top-level warnings
-          if (verification.warnings) {
-            for (const warning of verification.warnings) {
-              output.warn(`  ${warning}`);
-            }
-          }
         } else {
           output.success(`✓ Agent ${member.agentType} verified`);
         }
@@ -389,7 +375,7 @@ export async function initializeServices(
       }
 
       env = buildEnv(member.agentType, member);
-      output.keyValue('Working directory', `${projectRoot} (from: startup directory)`);
+      output.keyValue('Working directory', projectRoot);
 
       // Map agent type name to adapter type
       const adapterType = member.agentType === 'claude' ? 'claude-code' :
