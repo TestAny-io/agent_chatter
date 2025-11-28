@@ -94,7 +94,7 @@ export interface AgentValidatorOptions {
 
   /**
    * Dry-run check timeout (ms)
-   * @default 30000
+   * @default 60000
    */
   dryRunTimeout?: number;
 
@@ -130,12 +130,6 @@ export interface AgentValidatorOptions {
    * @default 3
    */
   maxConcurrency?: number;
-
-  /**
-   * Dry-run command timeout (ms)
-   * @default 60000
-   */
-  dryRunTimeout?: number;
 }
 
 // ===== Implementation =====
