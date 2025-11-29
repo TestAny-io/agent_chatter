@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "1.1",
+  "agents": {
+    "claude": {
+      "name": "claude",
+      "displayName": "Claude Code",
+      "command": "claude",
+      "args": ["--output-format", "stream-json"],
+      "usePty": true,
+      "version": "1.0.0",
+      "installedAt": "2025-11-25T10:00:00.000Z",
+      "lastVerified": "2025-11-27T14:30:00.000Z"
+    },
+    "codex": {
+      "name": "codex",
+      "displayName": "OpenAI Codex",
+      "command": "codex",
+      "args": [],
+      "usePty": false,
+      "installedAt": "2025-11-26T08:00:00.000Z"
+    }
+  }
+}

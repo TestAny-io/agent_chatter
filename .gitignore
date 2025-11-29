@@ -14,3 +14,34 @@ node_modules
 
 # Claude Code
 .claude/
+
+# Local team configs / test assets
+teams/
+agent-chatter-config.json
+codex-test-config.json
+codex-test-config-windows.json
+multi-agent-config.json
+agents_sample_output.jsonl
+AGENTS.md
+claude.md
+gemini.md
+notes/
+screenshots_in_dev/
+
+# User guide (work in progress, not for version control)
+# user-guide/  <-- Removed old path
+
+# Runtime directories
+.agent-chatter/
+
+# Temp files
+temp.md
+
+# npm pack output
+*.tgz
+
+# Docs subdirectories (Ignore all except user-guide)
+docs/design/
+docs/swe_challenge/
+docs/misc/
+docs/product/

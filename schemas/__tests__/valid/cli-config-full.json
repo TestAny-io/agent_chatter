@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.2",
+  "agents": [
+    {
+      "name": "claude",
+      "args": ["--verbose"]
+    }
+  ],
+  "team": {
+    "name": "full-team",
+    "displayName": "Full Feature Team",
+    "description": "A team configuration with all optional fields",
+    "instructionFile": "./team-instruction.md",
+    "roleDefinitions": [
+      {
+        "name": "developer",
+        "displayName": "Software Developer",
+        "description": "Writes and reviews code"
+      },
+      {
+        "name": "reviewer",
+        "displayName": "Code Reviewer",
+        "description": "Reviews pull requests"
+      }
+    ],
+    "members": [
+      {
+        "displayName": "Claude Code",
+        "name": "claude",
+        "displayRole": "Lead Developer",
+        "role": "developer",
+        "type": "ai",
+        "agentType": "claude-code",
+        "themeColor": "#7C3AED",
+        "baseDir": "./roles/claude",
+        "instructionFile": "instruction.md",
+        "env": {
+          "DEBUG": "true"
+        },
+        "systemInstruction": "You are a helpful coding assistant."
+      },
+      {
+        "displayName": "Human User",
+        "name": "human",
+        "displayRole": "Project Manager",
+        "role": "reviewer",
+        "type": "human",
+        "themeColor": "#10B981",
+        "baseDir": "./roles/human",
+        "systemInstruction": "You are the project manager, provide decisions and context."
+      }
+    ]
+  },
+  "maxRounds": 50,
+  "conversation": {
+    "maxAgentResponseTime": 300000,
+    "showThinkingTimer": true,
+    "allowEscCancel": true
+  }
+}

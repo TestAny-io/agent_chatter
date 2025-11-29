@@ -1,0 +1,42 @@
+import { describe, it, expect } from 'vitest';
+import { formatJsonl } from '../../src/utils/JsonlMessageFormatter.js';
+
+describe('JsonlMessageFormatter', () => {
+  it('parses Claude stream-json format', () => {
+    const raw = '{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}\n{"type":"result"}';
+    const result = formatJsonl('claude', raw);
+    expect(result.text).toBe('Hello');
+    expect(result.completed).toBe(true);
+  });
+
+  it('parses Codex item events', () => {
+    const raw = '{"type":"item.completed","item":{"text":"Codex says hi"}}\n{"type":"turn.completed"}';
+    const result = formatJsonl('codex', raw);
+    expect(result.text).toBe('Codex says hi');
+    expect(result.completed).toBe(true);
+  });
+
+  it('parses Gemini message events', () => {
+    // Gemini outputs both user (echo of prompt) and assistant messages
+    // We should only capture assistant messages
+    const raw = '{"type":"message","role":"user","content":"User prompt"}\n{"type":"message","role":"assistant","content":"Gemini hello"}\n{"type":"result"}';
+    const result = formatJsonl('gemini', raw);
+    expect(result.text).toBe('Gemini hello');
+    expect(result.completed).toBe(true);
+  });
+
+  it('filters out Gemini user role messages from multi-message output', () => {
+    // Delta messages should accumulate only assistant messages
+    const raw = '{"type":"message","role":"user","content":"User prompt"}\n{"type":"message","role":"assistant","content":"Part 1","delta":true}\n{"type":"message","role":"assistant","content":" Part 2","delta":true}\n{"type":"result"}';
+    const result = formatJsonl('gemini', raw);
+    expect(result.text).toBe('Part 1\n Part 2');
+    expect(result.completed).toBe(true);
+  });
+
+  it('handles malformed JSON gracefully and still notices completion', () => {
+    const raw = '{not json}\n{"type":"result","result":"done"}';
+    const result = formatJsonl('claude', raw);
+    expect(result.text).toContain('done');
+    expect(result.completed).toBe(true);
+  });
+});

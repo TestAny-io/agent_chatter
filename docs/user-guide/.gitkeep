@@ -1,0 +1,14 @@
+# User Guide Directory
+
+This directory contains work-in-progress user documentation and reference materials.
+
+**Note:** This directory is excluded from version control (.gitignore) to keep the repository focused on application code.
+
+## Contents
+
+- `wrappers/` - Reference implementations of wrapper scripts for Codex and Gemini CLI integration
+- More user guides will be added here as documentation develops
+
+## For Developers
+
+This is a local workspace for accumulating user-facing documentation that doesn't belong in the main codebase.

@@ -29,7 +29,7 @@ Combine multiple AI agents with human observers or participants. Perfect for AI-
 
 ## System Requirements
 
-- **Node.js**: Version 18 or higher
+- **Node.js**: Version 20 or higher (LTS recommended)
 - **Operating System**:
   - macOS (fully supported)
   - Linux (fully supported)
@@ -114,9 +114,8 @@ Create `my-team.json`:
         "role": "reviewer",
         "agentType": "claude",
         "themeColor": "cyan",
-        "roleDir": "./teams/my-ai-team/reviewer/claude-reviewer",
+        "baseDir": "./teams/my-ai-team/reviewer/claude-reviewer",
         "workDir": "./teams/my-ai-team/reviewer/claude-reviewer/work",
-        "homeDir": "./teams/my-ai-team/reviewer/claude-reviewer/home",
         "instructionFile": "./teams/my-ai-team/reviewer/claude-reviewer/AGENTS.md"
       },
       {
@@ -126,9 +125,8 @@ Create `my-team.json`:
         "type": "human",
         "role": "observer",
         "themeColor": "green",
-        "roleDir": "./teams/my-ai-team/observer/human-observer",
+        "baseDir": "./teams/my-ai-team/observer/human-observer",
         "workDir": "./teams/my-ai-team/observer/human-observer/work",
-        "homeDir": "./teams/my-ai-team/observer/human-observer/home",
         "instructionFile": "./teams/my-ai-team/observer/human-observer/README.md"
       }
     ]
@@ -136,6 +134,8 @@ Create `my-team.json`:
   "maxRounds": 10
 }
 ```
+
+> **Note:** Agent Chatter 从一开始就只支持 `schemaVersion: "1.0"`。若你手上还有早期草稿（例如 `team.roles` 结构），请参考本文档重新创建配置或使用 `/team create` 向导；本项目不提供旧版配置的自动迁移工具。
 
 ### 2. Start a Conversation
 
@@ -209,31 +209,33 @@ Each participant entry in `team.members` must define directories and the instruc
   "type": "ai",
   "role": "reviewer",
   "agentType": "claude",
-  "roleDir": "./teams/team-name/reviewer/claude-reviewer",
+  "baseDir": "./teams/team-name/reviewer/claude-reviewer",
   "workDir": "./teams/team-name/reviewer/claude-reviewer/work",
-  "homeDir": "./teams/team-name/reviewer/claude-reviewer/home",
-  "instructionFile": "./teams/team-name/reviewer/claude-reviewer/AGENTS.md",
-  "env": {
-    "HOME": "./teams/team-name/reviewer/claude-reviewer/home"
-  }
+  "instructionFile": "./teams/team-name/reviewer/claude-reviewer/AGENTS.md"
 }
 ```
 
 - `agentType`: References an entry in the top-level `agents` array (e.g., `claude`, `codex`, `gemini`).
-- `roleDir`: Anchor directory for this member. The instruction file, work directory, and CLI home typically live under this tree.
+- `baseDir`: Anchor directory for this member. The instruction file and work directory typically live under this tree.
 - `workDir`: Directory the process should treat as its working directory (symlink it to your actual project if needed).
-- `homeDir`: Directory used for `$HOME` or CLI-specific config (`CODEX_HOME`, `.gemini`, etc.). The loader creates it automatically.
 - `instructionFile`: Path to the Markdown instructions that define this member's role-specific persona.
-- `env`: Optional extra environment variables merged into the spawned CLI.
+- `env`: Optional extra environment variables merged into the spawned CLI. Note: All CLI agents (Claude Code, Codex, Gemini) use the system HOME directory for credentials.
 
 ### Conversation Control
 
-Agents control the conversation flow:
+Agents and humans control the conversation flow through markers:
 
+**Message Routing:**
 - **No marker**: Automatic round-robin to next role
 - **`[NEXT: role-name]`**: Route to specific participant
 - **`[NEXT: alice, bob]`**: Route to multiple participants
-- **`[DONE]`**: End the conversation
+
+**Conversation Completion:**
+- **AI agents**: When an AI outputs `[DONE]`, it only indicates that agent's reply is complete. The conversation continues to the next member.
+- **Human members**: When a human sends a message with `[DONE]`, the conversation terminates.
+- **Commands**: Use the `/end` command to manually terminate a conversation at any time.
+
+> **Note**: This design allows AI agents to collaborate continuously while giving humans full control over when to end the session.
 
 ## Examples
 

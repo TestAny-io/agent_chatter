@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0",
+  "teamId": "test-team",
+  "sessionId": "session-123",
+  "createdAt": "2025-11-27T10:00:00.000Z",
+  "updatedAt": "2025-11-27T14:30:00.000Z",
+  "context": {
+    "messages": [
+      {
+        "id": "msg-001",
+        "timestamp": "2025-11-27T10:00:00.000Z",
+        "speaker": {
+          "roleId": "claude",
+          "roleName": "claude",
+          "roleTitle": "Claude Code",
+          "type": "ai"
+        },
+        "content": "Hello! How can I help you today?",
+        "routing": {
+          "rawNextMarkers": ["[NEXT:human]"],
+          "resolvedAddressees": [
+            {
+              "identifier": "human",
+              "roleId": "human",
+              "roleName": "human"
+            }
+          ]
+        }
+      },
+      {
+        "id": "msg-002",
+        "timestamp": "2025-11-27T10:01:00.000Z",
+        "speaker": {
+          "roleId": "human",
+          "roleName": "human",
+          "roleTitle": "Human User",
+          "type": "human"
+        },
+        "content": "Please review this code."
+      }
+    ],
+    "teamTask": "Code review session",
+    "timestamp": 1732706400000,
+    "version": 1
+  },
+  "metadata": {
+    "lastSpeakerId": "human",
+    "messageCount": 2,
+    "summary": "Code review session with 2 messages"
+  }
+}

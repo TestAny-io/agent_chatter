@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.2",
+  "team": {
+    "name": "test-team",
+    "description": "Team with only one member (invalid)",
+    "members": [
+      {
+        "displayName": "Claude",
+        "name": "claude",
+        "role": "developer",
+        "type": "ai",
+        "agentType": "claude-code",
+        "baseDir": "./roles/claude"
+      }
+    ]
+  }
+}

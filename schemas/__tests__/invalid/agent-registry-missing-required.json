@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1.1",
+  "agents": {
+    "claude": {
+      "name": "claude",
+      "command": "claude"
+    }
+  }
+}

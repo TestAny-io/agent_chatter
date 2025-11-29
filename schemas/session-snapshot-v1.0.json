@@ -1,0 +1,219 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://testany.io/schemas/session-snapshot-v1.0.json",
+  "title": "Agent Chatter Session Snapshot",
+  "description": "Schema for persisted session snapshots (~/.agent-chatter/sessions/<teamId>/<sessionId>.json)",
+  "type": "object",
+  "required": ["schemaVersion", "teamId", "sessionId", "createdAt", "updatedAt", "context", "metadata"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Session snapshot schema version"
+    },
+    "teamId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Team identifier (must match current team on restore)"
+    },
+    "sessionId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique session identifier"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Session creation timestamp (ISO 8601)"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last update timestamp (ISO 8601)"
+    },
+    "context": {
+      "$ref": "#/definitions/ContextSnapshot",
+      "description": "Core context data from ContextManager"
+    },
+    "metadata": {
+      "$ref": "#/definitions/SessionMetadata"
+    }
+  },
+  "definitions": {
+    "ContextSnapshot": {
+      "type": "object",
+      "required": ["messages", "teamTask", "timestamp", "version"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ConversationMessage"
+          },
+          "description": "Message history"
+        },
+        "teamTask": {
+          "type": ["string", "null"],
+          "description": "Persistent team task, or null if not set"
+        },
+        "timestamp": {
+          "type": "number",
+          "description": "Snapshot timestamp (Unix milliseconds)"
+        },
+        "version": {
+          "type": "number",
+          "const": 1,
+          "description": "Context snapshot internal version"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ConversationMessage": {
+      "type": "object",
+      "required": ["id", "timestamp", "speaker", "content"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Message identifier"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Message timestamp (ISO 8601)"
+        },
+        "speaker": {
+          "$ref": "#/definitions/SpeakerInfo"
+        },
+        "content": {
+          "type": "string",
+          "description": "Message content (markers stripped)"
+        },
+        "routing": {
+          "$ref": "#/definitions/RoutingInfo"
+        }
+      },
+      "additionalProperties": false
+    },
+    "SpeakerInfo": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "roleId": {
+          "type": "string",
+          "description": "Legacy field: Speaker role ID (use 'id' in new format)"
+        },
+        "roleName": {
+          "type": "string",
+          "description": "Legacy field: Speaker role name (use 'name' in new format)"
+        },
+        "roleTitle": {
+          "type": "string",
+          "description": "Legacy field: Speaker role title (use 'displayName' in new format)"
+        },
+        "id": {
+          "type": "string",
+          "description": "New format: Speaker ID (maps from roleId)"
+        },
+        "name": {
+          "type": "string",
+          "description": "New format: Speaker name (maps from roleName)"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "New format: Speaker display name (maps from roleTitle)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["ai", "human", "system"],
+          "description": "Speaker type"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["roleId", "roleName", "roleTitle", "type"],
+          "description": "Legacy format with roleId/roleName/roleTitle"
+        },
+        {
+          "required": ["id", "name", "displayName", "type"],
+          "description": "New format with id/name/displayName"
+        }
+      ],
+      "additionalProperties": false
+    },
+    "RoutingInfo": {
+      "type": "object",
+      "properties": {
+        "rawNextMarkers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Original [NEXT:...] markers"
+        },
+        "resolvedAddressees": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ResolvedAddressee"
+          },
+          "description": "Resolved addressees"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ResolvedAddressee": {
+      "type": "object",
+      "required": ["identifier"],
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "description": "User-specified identifier from [NEXT:xxx]"
+        },
+        "roleId": {
+          "type": ["string", "null"],
+          "description": "Legacy field: Resolved role ID (use 'memberId' in new format)"
+        },
+        "roleName": {
+          "type": ["string", "null"],
+          "description": "Legacy field: Resolved role name (use 'memberName' in new format)"
+        },
+        "memberId": {
+          "type": ["string", "null"],
+          "description": "New format: Resolved member ID"
+        },
+        "memberName": {
+          "type": ["string", "null"],
+          "description": "New format: Resolved member name"
+        }
+      },
+      "oneOf": [
+        {
+          "required": ["identifier", "roleId", "roleName"],
+          "description": "Legacy format with roleId/roleName"
+        },
+        {
+          "required": ["identifier", "memberId", "memberName"],
+          "description": "New format with memberId/memberName"
+        }
+      ],
+      "additionalProperties": false
+    },
+    "SessionMetadata": {
+      "type": "object",
+      "required": ["messageCount"],
+      "properties": {
+        "lastSpeakerId": {
+          "type": "string",
+          "description": "Last speaker's member ID (speaker.id)"
+        },
+        "messageCount": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total message count"
+        },
+        "summary": {
+          "type": "string",
+          "description": "Human-readable summary for restore prompt"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
