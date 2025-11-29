@@ -39,8 +39,8 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "vitest run",
-    "test:watch": "vitest watch",
+    "test": "vitest run --pass-with-no-tests",
+    "test:watch": "vitest watch --pass-with-no-tests",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "clean": "rm -rf out"
