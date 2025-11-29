@@ -230,4 +230,19 @@ export class ClaudeCodeParser implements StreamParser {
       code: 'JSONL_PARSE_ERROR'
     };
   }
+
+  // Minimal instrumentation to detect empty/idle streams during debugging
+  // Note: avoid noisy logging in production; only used when consumers log AgentEvent:error
+  private parseNoopEvent(): AgentEvent {
+    return {
+      type: 'error',
+      eventId: randomUUID(),
+      agentId: this.agentId,
+      agentType: this.agentType,
+      teamMetadata: this.teamContext,
+      timestamp: Date.now(),
+      error: 'No data received before parser fallback',
+      code: 'NO_DATA'
+    };
+  }
 }

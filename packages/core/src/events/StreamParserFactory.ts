@@ -9,13 +9,14 @@ import { randomUUID } from 'crypto';
 
 export class StreamParserFactory {
   static create(agentType: string, agentId: string, teamContext: TeamContext): StreamParser {
-    switch (agentType as AgentType) {
+    const normalized = agentType === 'codex' ? 'openai-codex' : (agentType as AgentType);
+
+    switch (normalized) {
       case 'claude-code':
         return new ClaudeCodeParser(agentId, teamContext);
       case 'google-gemini':
         return new GeminiParser(agentId, teamContext);
       case 'openai-codex':
-      case 'codex': // backward-compat alias used in existing configs
         return new CodexParser(agentId, teamContext);
       default:
         return new LineParser(agentId, agentType, teamContext);

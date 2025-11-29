@@ -34,7 +34,8 @@ export class LocalExecutionEnvironment implements IExecutionEnvironment {
       cwd: options.cwd,
       shell: options.shell ?? false,
       env: this.buildEnv(options),
-      stdio: ['pipe', 'pipe', 'pipe']
+      // 0.2.x 行为：关闭 stdin，避免某些 CLI（如 claude）因等待 stdin 而卡住
+      stdio: ['ignore', 'pipe', 'pipe']
     };
 
     const childProcess = spawn(command, args, nodeOptions);
