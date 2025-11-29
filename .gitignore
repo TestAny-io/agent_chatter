@@ -21,6 +21,12 @@ agent-chatter-config.json
 codex-test-config.json
 codex-test-config-windows.json
 multi-agent-config.json
+agents_sample_output.jsonl
+AGENTS.md
+claude.md
+gemini.md
+notes/
+screenshots_in_dev/
 
 # User guide (work in progress, not for version control)
 # user-guide/  <-- Removed old path
