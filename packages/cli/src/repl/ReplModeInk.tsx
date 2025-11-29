@@ -807,6 +807,7 @@ function App({ registryPath, debug = false }: AppProps) {
     } | null>(null);
     
     const { exit } = useApp();
+    const debugLogStreamRef = useRef<fs.WriteStream | null>(null);
 
     const getNextKey = () => {
         const currentKey = keyCounter;
@@ -817,6 +818,9 @@ function App({ registryPath, debug = false }: AppProps) {
     useEffect(() => {
         return () => {
             attachEventEmitter(null);
+            if (debugLogStreamRef.current) {
+                debugLogStreamRef.current.end('\n');
+            }
         };
     }, []);
 
@@ -848,25 +852,46 @@ function App({ registryPath, debug = false }: AppProps) {
         });
     };
 
-    // Logger for Core services - bridges to REPL UI
-    // Debug messages go to stderr when debug mode is enabled (for easy redirection)
-    const uiLogger: ILogger = useMemo(() => ({
-        debug: (message: string, context?: Record<string, unknown>) => {
-            if (!debug) return;
-            // Debug output goes to stderr for redirection (e.g., 2>debug.log)
-            const formatted = context ? `[Core] ${message} ${JSON.stringify(context)}` : `[Core] ${message}`;
-            console.error(`\x1b[2m${formatted}\x1b[0m`);
-        },
-        info: (message: string, _context?: Record<string, unknown>) => {
-            appendOutput(<Text key={`log-info-${getNextKey()}`} color="cyan">{message}</Text>);
-        },
-        warn: (message: string, _context?: Record<string, unknown>) => {
-            appendOutput(<Text key={`log-warn-${getNextKey()}`} color="yellow">{message}</Text>);
-        },
-        error: (message: string, _context?: Record<string, unknown>) => {
-            appendOutput(<Text key={`log-error-${getNextKey()}`} color="red">{message}</Text>);
-        },
-    }), [appendOutput, debug]);
+    // Logger for Core services - writes to debug.log (and stderr for warn/error) to keep REPL UI clean
+    useEffect(() => {
+        if (!debug) return;
+        const logPath = path.join(process.cwd(), 'debug.log');
+        const stream = fs.createWriteStream(logPath, { flags: 'a' });
+        stream.write(`\n===== ${new Date().toISOString()} REPL session started =====\n`);
+        debugLogStreamRef.current = stream;
+        return () => {
+            stream.end('\n');
+        };
+    }, [debug]);
+
+    const uiLogger: ILogger = useMemo(() => {
+        const writeLog = (level: string, message: string, context?: Record<string, unknown>, echoToStderr?: boolean) => {
+            const formatted = context ? `[Core] [${level}] ${message} ${JSON.stringify(context)}` : `[Core] [${level}] ${message}`;
+            if (debug && debugLogStreamRef.current) {
+                debugLogStreamRef.current.write(`${new Date().toISOString()} ${formatted}\n`);
+            }
+            if (echoToStderr) {
+                console.error(`\x1b[2m${formatted}\x1b[0m`);
+            }
+        };
+
+        return {
+            debug: (message: string, context?: Record<string, unknown>) => {
+                if (!debug) return;
+                writeLog('DEBUG', message, context, false);
+            },
+            info: (message: string, context?: Record<string, unknown>) => {
+                if (!debug) return;
+                writeLog('INFO', message, context, false);
+            },
+            warn: (message: string, context?: Record<string, unknown>) => {
+                writeLog('WARN', message, context, true);
+            },
+            error: (message: string, context?: Record<string, unknown>) => {
+                writeLog('ERROR', message, context, true);
+            },
+        };
+    }, [debug]);
 
     // Helper to format verification results for UI display
     const formatVerificationResults = (results: Map<string, VerificationResult>) => {
@@ -889,6 +914,15 @@ function App({ registryPath, debug = false }: AppProps) {
         }
     };
 
+    const logEventToDebug = (text: string) => {
+        if (!debug) return;
+        const entry = `${new Date().toISOString()} [AgentEvent] ${text}`;
+        if (debugLogStreamRef.current) {
+            debugLogStreamRef.current.write(`${entry}\n`);
+        }
+        // Do not echo to UI/STDOUT to keep REPL clean
+    };
+
     const renderEvent = (ev: AgentEvent): React.ReactNode | null => {
         const key = `stream-${ev.eventId || `${ev.agentId}-${ev.timestamp}`}-${getNextKey()}`;
         switch (ev.type) {
@@ -901,6 +935,10 @@ function App({ registryPath, debug = false }: AppProps) {
                 if (ev.category === 'result') {
                     return null;
                 }
+                // Reasoning/text 都显示在 UI（与 v0.2.8 行为一致），并在 debug 时写日志
+                if (ev.category === 'reasoning') {
+                    logEventToDebug(`[text:reasoning] ${truncate(ev.text)}`);
+                }
                 return (
                     <Box key={key} flexDirection="column" marginTop={0}>
                         <Text color={ev.category === 'reasoning' ? 'gray' : undefined}>
@@ -908,34 +946,38 @@ function App({ registryPath, debug = false }: AppProps) {
                         </Text>
                     </Box>
                 );
-            case 'tool.started':
-                {
-                    const formatTodos = (todos: any[]) => {
-                        const names = todos
-                            .map(t => t?.content)
-                            .filter(Boolean)
-                            .join(' | ');
-                        return names ? `todos: ${names}` : '';
-                    };
+            case 'tool.started': {
+                const formatTodos = (todos: any[]) => {
+                    const names = todos
+                        .map(t => t?.content)
+                        .filter(Boolean)
+                        .join(' | ');
+                    return names ? `todos: ${names}` : '';
+                };
 
-                    const displayParam =
-                        ev.input?.command ||
-                        ev.input?.pattern ||
-                        ev.input?.file_path ||
-                        ev.input?.path ||
-                        (Array.isArray(ev.input?.todos) ? formatTodos(ev.input?.todos) : '') ||
-                        ev.input?.notebook_path ||
-                        ev.input?.prompt ||
-                        '';
-                    return (
-                        <Text key={key} color="yellow">
-                            {displayParam
-                                ? `⏺ ${ev.toolName ?? 'tool'} (${displayParam})`
-                                : `⏺ ${ev.toolName ?? 'tool'}`}
-                        </Text>
-                    );
-                }
+                const displayParam =
+                    ev.input?.command ||
+                    ev.input?.pattern ||
+                    ev.input?.file_path ||
+                    ev.input?.path ||
+                    (Array.isArray(ev.input?.todos) ? formatTodos(ev.input?.todos) : '') ||
+                    ev.input?.notebook_path ||
+                    ev.input?.prompt ||
+                    '';
+                const label = displayParam
+                    ? `⏺ ${ev.toolName ?? 'tool'} (${displayParam})`
+                    : `⏺ ${ev.toolName ?? 'tool'}`;
+                logEventToDebug(`[tool.started] ${label}`);
+                return (
+                    <Text key={key} color="yellow">
+                        {label}
+                    </Text>
+                );
+            }
             case 'tool.completed':
+                logEventToDebug(
+                    `[tool.completed] ${ev.toolId || ev.toolName} output=${truncate(ev.output)}${ev.error ? ` error=${ev.error}` : ''}`
+                );
                 return (
                     <Box key={key} flexDirection="column">
                         <Text color="green">⎿  {truncate(ev.output)}</Text>

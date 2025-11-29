@@ -17,6 +17,7 @@ import type { TeamContext } from '../../models/Team.js';
 export class CodexParser implements StreamParser {
   private buffer = '';
   private readonly agentType: AgentType = 'openai-codex';
+  private toolIdToName = new Map<string, string>();
 
   constructor(private agentId: string, private teamContext: TeamContext) {}
 
@@ -59,6 +60,7 @@ export class CodexParser implements StreamParser {
 
   reset(): void {
     this.buffer = '';
+    this.toolIdToName.clear();
   }
 
   private jsonToEvent(json: any): AgentEvent | null {
@@ -87,11 +89,14 @@ export class CodexParser implements StreamParser {
         if (json.type === 'item.started') {
           const toolName = this.mapToolName(itemType);
           if (toolName) {
+            const toolId = json.item.id;
+            // Track toolId -> toolName for tool.completed lookup
+            this.toolIdToName.set(toolId, toolName);
             return {
               ...base,
               type: 'tool.started',
               toolName,
-              toolId: json.item.id,
+              toolId,
               input: {
                 command: json.item.command,
                 path: json.item.path,
@@ -132,10 +137,12 @@ export class CodexParser implements StreamParser {
         }
 
         if (itemType === 'command_execution' || itemType === 'file_change' || itemType === 'file_read' || itemType === 'web_search') {
+          const toolId = json.item.id;
           return {
             ...base,
             type: 'tool.completed',
-            toolId: json.item.id,
+            toolName: this.toolIdToName.get(toolId) || this.mapToolName(itemType) || 'unknown',
+            toolId,
             output: json.item.aggregated_output || '',
             error: json.item.exit_code && json.item.exit_code !== 0
               ? `Exit code: ${json.item.exit_code}`

@@ -8,6 +8,7 @@ import type { TeamContext } from '../../models/Team.js';
 export class GeminiParser implements StreamParser {
   private buffer = '';
   private readonly agentType: AgentType = 'google-gemini';
+  private toolIdToName = new Map<string, string>();
 
   constructor(private agentId: string, private teamContext: TeamContext) {}
 
@@ -65,6 +66,7 @@ export class GeminiParser implements StreamParser {
 
   reset(): void {
     this.buffer = '';
+    this.toolIdToName.clear();
   }
 
   private jsonToEvent(json: any): AgentEvent | null {
@@ -93,28 +95,34 @@ export class GeminiParser implements StreamParser {
         };
       case 'tool_use': {
         const toolName = json.tool_name ?? json.name;
+        const toolId = json.tool_id ?? json.id;
 
         // Check for write_todos - emit TodoListEvent instead of tool.started
         if (toolName === 'write_todos') {
           return this.parseWriteTodosEvent(json, base);
         }
 
+        // Track toolId -> toolName for tool.completed lookup
+        this.toolIdToName.set(toolId, toolName);
         return {
           ...base,
           type: 'tool.started',
           toolName,
-          toolId: json.tool_id ?? json.id,
+          toolId,
           input: json.parameters ?? json.input ?? {}
         };
       }
-      case 'tool_result':
+      case 'tool_result': {
+        const toolId = json.tool_id ?? json.tool_use_id;
         return {
           ...base,
           type: 'tool.completed',
-          toolId: json.tool_id ?? json.tool_use_id,
+          toolName: this.toolIdToName.get(toolId) || 'unknown',
+          toolId,
           output: typeof json.output === 'string' ? json.output : json.output?.text ?? undefined,
           error: json.status && json.status !== 'success' ? json.status : undefined
         };
+      }
       case 'result':
         return {
           ...base,

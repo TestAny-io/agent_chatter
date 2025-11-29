@@ -497,6 +497,17 @@ export class ConversationCoordinator {
       return;
     }
 
+    // 去重（全局）防止重复路由同一成员导致 UI key 冲突和重复执行
+    // 保持原始顺序
+    const uniqueMembers: Member[] = [];
+    const seen = new Set<string>();
+    for (const member of resolvedMembers) {
+      if (seen.has(member.id)) continue;
+      seen.add(member.id);
+      uniqueMembers.push(member);
+    }
+    resolvedMembers = uniqueMembers;
+
     // 更新消息的 resolvedAddressees
     if (message.routing) {
       message.routing.resolvedAddressees = resolvedMembers.map(member => ({

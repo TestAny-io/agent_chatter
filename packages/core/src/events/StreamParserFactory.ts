@@ -15,6 +15,7 @@ export class StreamParserFactory {
       case 'google-gemini':
         return new GeminiParser(agentId, teamContext);
       case 'openai-codex':
+      case 'codex': // backward-compat alias used in existing configs
         return new CodexParser(agentId, teamContext);
       default:
         return new LineParser(agentId, agentType, teamContext);

@@ -37,7 +37,7 @@ export const QueueDisplay: React.FC<QueueDisplayProps> = ({
 
       {/* 待处理队列 */}
       {items.map((member, index) => (
-        <React.Fragment key={member.id}>
+        <React.Fragment key={`${member.id}-${index}`}>
           {(executing || index > 0) && <Text color="gray"> → </Text>}
           <Text>{member.displayName}</Text>
         </React.Fragment>

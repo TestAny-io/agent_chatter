@@ -30,6 +30,7 @@ export interface ToolStartedEvent extends AgentEventBase {
 
 export interface ToolCompletedEvent extends AgentEventBase {
   type: 'tool.completed';
+  toolName: string;
   toolId: string;
   output?: string;
   error?: string;

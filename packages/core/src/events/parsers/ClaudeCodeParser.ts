@@ -7,6 +7,7 @@ import type { TeamContext } from '../../models/Team.js';
 export class ClaudeCodeParser implements StreamParser {
   private buffer = '';
   private readonly agentType: AgentType = 'claude-code';
+  private toolIdToName = new Map<string, string>();
 
   constructor(private agentId: string, private teamContext: TeamContext) {}
 
@@ -48,6 +49,7 @@ export class ClaudeCodeParser implements StreamParser {
 
   reset(): void {
     this.buffer = '';
+    this.toolIdToName.clear();
   }
 
   private jsonToEvents(json: any): AgentEvent[] {
@@ -85,6 +87,8 @@ export class ClaudeCodeParser implements StreamParser {
               }
               // Do NOT emit tool.started for TodoWrite (suppression)
             } else {
+              // Track toolId -> toolName for tool.completed lookup
+              this.toolIdToName.set(item.id, item.name);
               evs.push({
                 ...base,
                 eventId: randomUUID(),
@@ -103,11 +107,13 @@ export class ClaudeCodeParser implements StreamParser {
         const evs: AgentEvent[] = [];
         for (const item of content) {
           if (item.type === 'tool_result') {
+            const toolId = item.tool_use_id;
             evs.push({
               ...base,
               eventId: randomUUID(),
               type: 'tool.completed',
-              toolId: item.tool_use_id,
+              toolName: this.toolIdToName.get(toolId) || 'unknown',
+              toolId,
               output: item.content || '',
               error: item.is_error ? item.content : undefined
             });
@@ -121,6 +127,8 @@ export class ClaudeCodeParser implements StreamParser {
           const todoEvent = this.parseTodoWriteEvent(json, base);
           return todoEvent ? [todoEvent] : [];
         }
+        // Track toolId -> toolName for tool.completed lookup
+        this.toolIdToName.set(json.id, json.name);
         return [{
           ...base,
           type: 'tool.started',
@@ -128,14 +136,17 @@ export class ClaudeCodeParser implements StreamParser {
           toolId: json.id,
           input: json.input || {}
         }];
-      case 'tool_result':
+      case 'tool_result': {
+        const toolId = json.tool_use_id;
         return [{
           ...base,
           type: 'tool.completed',
-          toolId: json.tool_use_id,
+          toolName: this.toolIdToName.get(toolId) || 'unknown',
+          toolId,
           output: typeof json.content === 'string' ? json.content : undefined,
           error: json.is_error ? json.content : undefined
         }];
+      }
       case 'result': {
         const evs: AgentEvent[] = [];
         // Emit text event with result content for accumulation
