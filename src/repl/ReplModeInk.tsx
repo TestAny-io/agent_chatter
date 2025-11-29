@@ -11,9 +11,13 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { detectAllTools } from '../utils/ToolDetector.js';
 import { ConversationCoordinator } from '../services/ConversationCoordinator.js';
-import { initializeServices, type InitializeServicesOptions } from '../services/ServiceInitializer.js';
-import type { IOutput } from '../outputs/IOutput.js';
+import { initializeServices, type InitializeServicesOptions, type InitializeServicesResult } from '../services/ServiceInitializer.js';
+import type { ILogger } from '../interfaces/ILogger.js';
+import { LocalExecutionEnvironment } from '../cli/LocalExecutionEnvironment.js';
+import { AdapterFactory } from '../cli/adapters/AdapterFactory.js';
+import type { VerificationResult } from '../registry/AgentRegistry.js';
 import type { CLIConfig } from '../models/CLIConfig.js';
+import { splitConfig, type UIPreferences, DEFAULT_UI_PREFERENCES } from '../cli/config/index.js';
 import type { ConversationMessage } from '../models/ConversationMessage.js';
 import type { Team, RoleDefinition, Member } from '../models/Team.js';
 import { processWizardStep1Input, type WizardStep1Event } from './wizard/wizardStep1Reducer.js';
@@ -738,6 +742,7 @@ function App({ registryPath }: { registryPath?: string } = {}) {
     const [output, setOutput] = useState<React.ReactNode[]>([<WelcomeScreen key="welcome" />]);
     const [currentConfig, setCurrentConfig] = useState<CLIConfig | null>(null);
     const [currentConfigPath, setCurrentConfigPath] = useState<string | null>(null);
+    const [uiPrefs, setUiPrefs] = useState<UIPreferences>(DEFAULT_UI_PREFERENCES);
     const [keyCounter, setKeyCounter] = useState(0);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [mode, setMode] = useState<AppMode>('normal');
@@ -838,27 +843,43 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         });
     };
 
-    // Bridge Agent verification output到 REPL UI
-    const uiOutput: IOutput = useMemo(() => ({
-        info: (message: string) => appendOutput(<Text key={`out-info-${getNextKey()}`} color="cyan">{message}</Text>),
-        success: (message: string) => appendOutput(<Text key={`out-success-${getNextKey()}`} color="green">{message}</Text>),
-        warn: (message: string) => appendOutput(<Text key={`out-warn-${getNextKey()}`} color="yellow">{message}</Text>),
-        error: (message: string) => appendOutput(<Text key={`out-error-${getNextKey()}`} color="red">{message}</Text>),
-        progress: (message: string, options?: { current?: number; total?: number }) => {
-            let text = message;
-            if (options?.current !== undefined && options?.total !== undefined) {
-                text += ` (${options.current}/${options.total})`;
-            }
-            appendOutput(<Text key={`out-progress-${getNextKey()}`} dimColor>{text}</Text>);
+    // Logger for Core services - bridges to REPL UI
+    const uiLogger: ILogger = useMemo(() => ({
+        debug: (message: string, _context?: Record<string, unknown>) => {
+            // Debug messages are silent in UI unless verbose mode
+            appendOutput(<Text key={`log-debug-${getNextKey()}`} dimColor>{message}</Text>);
         },
-        separator: (char: string = '─', length: number = 60) => {
-            appendOutput(<Text key={`out-sep-${getNextKey()}`} dimColor>{char.repeat(length)}</Text>);
+        info: (message: string, _context?: Record<string, unknown>) => {
+            appendOutput(<Text key={`log-info-${getNextKey()}`} color="cyan">{message}</Text>);
         },
-        keyValue: (key: string, value: string, options?: { indent?: number }) => {
-            const indent = ' '.repeat(options?.indent ?? 2);
-            appendOutput(<Text key={`out-kv-${getNextKey()}`} dimColor>{indent}{key}: {value}</Text>);
+        warn: (message: string, _context?: Record<string, unknown>) => {
+            appendOutput(<Text key={`log-warn-${getNextKey()}`} color="yellow">{message}</Text>);
+        },
+        error: (message: string, _context?: Record<string, unknown>) => {
+            appendOutput(<Text key={`log-error-${getNextKey()}`} color="red">{message}</Text>);
         },
     }), [appendOutput]);
+
+    // Helper to format verification results for UI display
+    const formatVerificationResults = (results: Map<string, VerificationResult>) => {
+        for (const [agentType, result] of results) {
+            if (result.status === 'verified') {
+                appendOutput(<Text key={`verify-${agentType}-${getNextKey()}`} color="green">✓ Agent {agentType} verified</Text>);
+            } else if (result.status === 'verified_with_warnings') {
+                appendOutput(<Text key={`verify-${agentType}-${getNextKey()}`} color="yellow">⚠ Agent {agentType} verified with warnings</Text>);
+            }
+            if (result.checks && result.checks.length > 0) {
+                appendOutput(<Text key={`verify-checks-${agentType}-${getNextKey()}`} dimColor>  Verification checks:</Text>);
+                for (const check of result.checks) {
+                    const icon = check.passed ? '✓' : '✗';
+                    appendOutput(<Text key={`check-${agentType}-${check.name}-${getNextKey()}`} dimColor>    {icon} {check.name}: {check.message}</Text>);
+                    if (check.warning) {
+                        appendOutput(<Text key={`check-warn-${agentType}-${check.name}-${getNextKey()}`} color="yellow">      ⚠ {check.warning}</Text>);
+                    }
+                }
+            }
+        }
+    };
 
     const renderEvent = (ev: AgentEvent): React.ReactNode | null => {
         const key = `stream-${ev.eventId || `${ev.agentId}-${ev.timestamp}`}-${getNextKey()}`;
@@ -1084,10 +1105,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
 
         // ESC key - Cancel agent execution in conversation mode
         if (key.escape) {
-            if (mode === 'conversation' && activeCoordinator && executingAgent && currentConfig) {
-                // Check if ESC cancellation is allowed
-                const allowEscCancel = currentConfig.conversation?.allowEscCancel ?? true;
-                if (allowEscCancel) {
+            if (mode === 'conversation' && activeCoordinator && executingAgent) {
+                // Check if ESC cancellation is allowed (LLD-05: use uiPrefs)
+                if (uiPrefs.allowEscCancel) {
                     // handleUserCancellation is async, fire-and-forget for UI responsiveness
                     activeCoordinator.handleUserCancellation().catch(() => {
                         // Errors already logged in method
@@ -1934,8 +1954,18 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
-            const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
-                output: uiOutput,
+            // LLD-05: Split config into Core config and UI preferences
+            const { coreConfig, uiPrefs: extractedUiPrefs } = splitConfig(config);
+            setUiPrefs(extractedUiPrefs);
+
+            // CLI layer provides concrete implementations
+            const executionEnv = new LocalExecutionEnvironment();
+            const adapterFactory = new AdapterFactory(executionEnv);
+
+            const { coordinator, team, messageRouter, eventEmitter, verificationResults } = await initializeServices(coreConfig, {
+                logger: uiLogger,
+                executionEnv,
+                adapterFactory,
                 onMessage: (message: ConversationMessage) => {
                     // AI 文本已经通过流式事件显示，这里不再重复
                     // Human 消息已经在 handleConversationInput 中显示，这里也不再重复
@@ -2000,6 +2030,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
             });
             attachEventEmitter(eventEmitter);
 
+            // Display verification results from Core
+            formatVerificationResults(verificationResults);
+
             if (!team.members.length) {
                 throw new Error('Team has no members configured. Please update the configuration file.');
             }
@@ -2053,8 +2086,18 @@ function App({ registryPath }: { registryPath?: string } = {}) {
         try {
             appendOutput(<Text key={`init-${getNextKey()}`} dimColor>Initializing services...</Text>);
 
-            const { coordinator, team, messageRouter, eventEmitter } = await initializeServices(config, {
-                output: uiOutput,
+            // LLD-05: Split config into Core config and UI preferences
+            const { coreConfig, uiPrefs: extractedUiPrefs } = splitConfig(config);
+            setUiPrefs(extractedUiPrefs);
+
+            // CLI layer provides concrete implementations
+            const executionEnv = new LocalExecutionEnvironment();
+            const adapterFactory = new AdapterFactory(executionEnv);
+
+            const { coordinator, team, messageRouter, eventEmitter, verificationResults } = await initializeServices(coreConfig, {
+                logger: uiLogger,
+                executionEnv,
+                adapterFactory,
                 onMessage: (message: ConversationMessage) => {
                     if (message.speaker.type === 'ai' || message.speaker.type === 'human') {
                         return;
@@ -2112,6 +2155,9 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                     );
                 }
             });
+
+            // Display verification results from Core
+            formatVerificationResults(verificationResults);
 
             if (!team.members.length) {
                 throw new Error('Team has no members configured. Please update the configuration file.');
@@ -2254,13 +2300,12 @@ function App({ registryPath }: { registryPath?: string } = {}) {
                 <TodoListView todoList={activeTodoList} />
             )}
 
-            {/* ThinkingIndicator - Show when agent is executing */}
-            {mode === 'conversation' && executingAgent && currentConfig &&
-             currentConfig.conversation?.showThinkingTimer !== false && (
+            {/* ThinkingIndicator - Show when agent is executing (LLD-05: use uiPrefs) */}
+            {mode === 'conversation' && executingAgent && uiPrefs.showThinkingTimer && (
                 <ThinkingIndicator
                     member={executingAgent}
-                    maxTimeoutMs={currentConfig.conversation?.maxAgentResponseTime ?? 1800000}
-                    allowEscCancel={currentConfig.conversation?.allowEscCancel ?? true}
+                    maxTimeoutMs={currentConfig?.conversation?.maxAgentResponseTime ?? 1800000}
+                    allowEscCancel={uiPrefs.allowEscCancel}
                 />
             )}
 

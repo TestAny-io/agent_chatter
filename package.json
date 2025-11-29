@@ -1,69 +1,28 @@
 {
-  "name": "@testany/agent-chatter",
-  "description": "Multi-agent conversation orchestration CLI for AI assistants",
-  "version": "0.2.8",
+  "name": "agent-chatter-monorepo",
+  "private": true,
   "type": "module",
-  "main": "./out/cli.js",
-  "bin": {
-    "agent-chatter": "./out/cli.js"
-  },
+  "workspaces": [
+    "packages/core",
+    "packages/cli"
+  ],
   "scripts": {
-    "compile": "tsc -p ./",
-    "build": "tsc",
-    "watch": "tsc -watch -p ./",
-    "test": "vitest run",
-    "test:unit": "vitest run tests/unit",
-    "test:integration": "vitest run tests/integration",
-    "test:watch": "vitest watch",
-    "prepublishOnly": "npm run build && npm test",
-    "pack:local": "npm pack",
-    "install:global": "npm install -g $(npm pack | tail -1)",
-    "uninstall:global": "npm uninstall -g @testany/agent-chatter",
-    "link:dev": "npm run build && npm link",
-    "unlink:dev": "npm unlink -g"
-  },
-  "files": [
-    "out/**/*",
-    "schemas/**/*",
-    "README.md",
-    "LICENSE"
-  ],
-  "keywords": [
-    "cli",
-    "ai",
-    "agent",
-    "conversation",
-    "orchestration",
-    "claude",
-    "gemini",
-    "openai",
-    "multi-agent"
-  ],
-  "author": "TestAny.io <support@testany.io>",
-  "license": "UNLICENSED",
-  "private": false,
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
+    "build": "npm run build --workspaces",
+    "build:core": "npm run build -w packages/core",
+    "build:cli": "npm run build -w packages/cli",
+    "test": "npm run test --workspaces --if-present",
+    "test:core": "npm run test -w packages/core",
+    "test:cli": "npm run test -w packages/cli",
+    "clean": "rm -rf packages/*/out packages/*/node_modules",
+    "lint": "npm run lint --workspaces --if-present"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "@types/react": "^19.2.5",
-    "ink-testing-library": "^4.0.0",
-    "typescript": "^5.3.0",
-    "vitest": "^4.0.9"
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.3.0"
   },
-  "dependencies": {
-    "ajv": "^8.17.1",
-    "ajv-formats": "^3.0.1",
-    "chalk": "^5.6.2",
-    "commander": "^14.0.2",
-    "ink": "npm:@jrichman/ink@^6.4.3",
-    "ink-text-input": "^6.0.0",
-    "inquirer": "^9.3.8",
-    "inquirer-autocomplete-standalone": "^0.8.1",
-    "react": "^19.2.0"
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

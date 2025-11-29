@@ -9,6 +9,8 @@ import * as path from 'path';
 import { initializeServices } from '../../src/services/ServiceInitializer.js';
 import type { CLIConfig } from '../../src/models/CLIConfig.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
+import { LocalExecutionEnvironment } from '../../src/cli/LocalExecutionEnvironment.js';
+import { AdapterFactory } from '../../src/cli/adapters/AdapterFactory.js';
 
 // Mock AgentValidator to avoid calling real CLI commands in CI
 vi.mock('../../src/registry/AgentValidator.js', () => {
@@ -28,38 +30,12 @@ vi.mock('../../src/registry/AgentValidator.js', () => {
   };
 });
 
-vi.mock('../../src/infrastructure/ProcessManager.js', () => {
-  const startCalls: Array<{ command: string; args: string[]; env?: Record<string, string>; cwd?: string }> = [];
-
-  class ProcessManager {
-    async startProcess(config: { command: string; args: string[]; env?: Record<string, string>; cwd?: string }): Promise<string> {
-      startCalls.push(config);
-      return `proc-${startCalls.length}`;
-    }
-
-    async sendAndReceive(processId: string, input: string): Promise<string> {
-      return 'Response [DONE]';
-    }
-
-    async stopProcess(processId: string): Promise<void> {
-      // no-op
-    }
-
-    cleanup(): void {
-      // no-op
-    }
-  }
-
-  return {
-    ProcessManager,
-    __processMock: {
-      startCalls,
-      reset() {
-        startCalls.length = 0;
-      }
-    }
-  };
-});
+// Helper function to create CLI dependencies for tests
+function createCliDependencies() {
+  const executionEnv = new LocalExecutionEnvironment();
+  const adapterFactory = new AdapterFactory(executionEnv);
+  return { executionEnv, adapterFactory };
+}
 
 describe('Verification Cache Integration', () => {
   let tempDir: string;
@@ -146,7 +122,12 @@ describe('Verification Cache Integration', () => {
     };
 
     const startTime = Date.now();
-    const { team } = await initializeServices(config, { registryPath: tempRegistryPath });
+    const { executionEnv, adapterFactory } = createCliDependencies();
+    const { team } = await initializeServices(config, {
+      registryPath: tempRegistryPath,
+      executionEnv,
+      adapterFactory
+    });
     const endTime = Date.now();
 
     // All 4 members should be initialized (3 AI + 1 Human)

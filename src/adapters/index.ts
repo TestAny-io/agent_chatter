@@ -1,12 +1,16 @@
 /**
- * Agent Adapters - Unified interface for different AI agent CLIs
+ * Agent Adapters - Interface Re-exports (Core Layer)
  *
- * Exports all adapter interfaces and implementations
+ * LLD-04: Core only exports interfaces.
+ * Implementations are in CLI layer (src/cli/adapters/).
+ *
+ * For implementations, import from:
+ *   import { AdapterFactory, ClaudeCodeAdapter, ... } from '../cli/index.js';
  */
 
-export type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult } from './IAgentAdapter.js';
-export { ClaudeCodeAdapter } from './ClaudeCodeAdapter.js';
-export { OpenAICodexAdapter } from './OpenAICodexAdapter.js';
-export { GenericShellAdapter } from './GenericShellAdapter.js';
-export type { GenericShellAdapterConfig } from './GenericShellAdapter.js';
-export { AdapterFactory } from './AdapterFactory.js';
+// Re-export interfaces from interfaces/ directory
+export type { IAgentAdapter, AgentSpawnConfig, AgentSpawnResult, AgentExecutionMode } from '../interfaces/IAgentAdapter.js';
+export type { IAdapterFactory, AdapterFactoryFn } from '../interfaces/IAdapterFactory.js';
+
+// NOTE: Implementations are NOT exported from Core.
+// Import from src/cli/ for concrete implementations.

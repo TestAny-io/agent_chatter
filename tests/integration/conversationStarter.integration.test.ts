@@ -5,7 +5,9 @@ import * as path from 'path';
 import { initializeServices } from '../../src/services/ServiceInitializer.js';
 import type { CLIConfig } from '../../src/models/CLIConfig.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
-import type { IOutput } from '../../src/outputs/IOutput.js';
+import type { ILogger } from '../../src/interfaces/ILogger.js';
+import { LocalExecutionEnvironment } from '../../src/cli/LocalExecutionEnvironment.js';
+import { AdapterFactory } from '../../src/cli/adapters/AdapterFactory.js';
 
 // Mock AgentValidator to avoid calling real CLI commands in CI
 vi.mock('../../src/registry/AgentValidator.js', () => {
@@ -25,62 +27,16 @@ vi.mock('../../src/registry/AgentValidator.js', () => {
   };
 });
 
-vi.mock('../../src/infrastructure/ProcessManager.js', () => {
-  const startCalls: Array<{ command: string; args: string[]; env?: Record<string, string>; cwd?: string }> = [];
-  const registerCalls: Array<{ childProcess: any; config: any }> = [];
-  const sendCalls: Array<{ processId: string; input: string }> = [];
-  const stopCalls: string[] = [];
-  let counter = 0;
-
-  class ProcessManager {
-    async startProcess(config: { command: string; args: string[]; env?: Record<string, string>; cwd?: string }): Promise<string> {
-      startCalls.push(config);
-      counter += 1;
-      return `proc-${counter}`;
-    }
-
-    registerProcess(childProcess: any, config: { command: string; args: string[]; env?: Record<string, string>; cwd?: string }): string {
-      registerCalls.push({ childProcess, config });
-      counter += 1;
-      return `proc-${counter}`;
-    }
-
-    async sendAndReceive(processId: string, input: string): Promise<string> {
-      sendCalls.push({ processId, input });
-      return 'Automated response [DONE]';
-    }
-
-    async stopProcess(processId: string): Promise<void> {
-      stopCalls.push(processId);
-    }
-
-    cleanup(): void {
-      // no-op for tests
-    }
-  }
-
-  return {
-    ProcessManager,
-    __processMock: {
-      startCalls,
-      registerCalls,
-      sendCalls,
-      stopCalls,
-      reset() {
-        startCalls.length = 0;
-        registerCalls.length = 0;
-        sendCalls.length = 0;
-        stopCalls.length = 0;
-        counter = 0;
-      }
-    }
-  };
-});
+// Helper function to create CLI dependencies for tests
+function createCliDependencies() {
+  const executionEnv = new LocalExecutionEnvironment();
+  const adapterFactory = new AdapterFactory(executionEnv);
+  return { executionEnv, adapterFactory };
+}
 
 describe.sequential('ServiceInitializer integration', () => {
   let tempDir: string;
   let tempRegistryPath: string;
-  let processMock: { startCalls: any[]; sendCalls: any[]; stopCalls: any[]; reset: () => void };
 
   beforeEach(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-chatter-test-'));
@@ -89,10 +45,6 @@ describe.sequential('ServiceInitializer integration', () => {
     tempRegistryPath = path.join(tempDir, 'test-registry.json');
     const registry = new AgentRegistry(tempRegistryPath);
     await registry.registerAgent('claude', 'echo');
-
-    const module = await import('../../src/infrastructure/ProcessManager.js');
-    processMock = module.__processMock;
-    processMock.reset();
   });
 
   afterEach(() => {
@@ -152,7 +104,12 @@ describe.sequential('ServiceInitializer integration', () => {
       maxRounds: 5
     };
 
-    const { coordinator, team } = await initializeServices(config, { registryPath: tempRegistryPath });
+    const { executionEnv, adapterFactory } = createCliDependencies();
+    const { coordinator, team } = await initializeServices(config, {
+      registryPath: tempRegistryPath,
+      executionEnv,
+      adapterFactory
+    });
 
     expect(team.members).toHaveLength(2);
     expect(team.members[0].instructionFileText).toContain('integration test agent');
@@ -161,11 +118,6 @@ describe.sequential('ServiceInitializer integration', () => {
     // New API: setTeam() + sendMessage()
     coordinator.setTeam(team);
     await coordinator.sendMessage('Review the new feature');
-
-    // In stateless mode (Claude), ProcessManager is not used. We still expect the
-    // conversation to pause after the AI message is delivered.
-    expect(processMock.registerCalls).toHaveLength(0);
-    expect(processMock.stopCalls).toEqual([]);
 
     // NEW BEHAVIOR: AI's [DONE] no longer terminates the conversation.
     // Instead, it continues to the next member (human) via round-robin.
@@ -210,11 +162,16 @@ describe.sequential('ServiceInitializer integration', () => {
       }
     };
 
-    const { team } = await initializeServices(config, { registryPath: tempRegistryPath });
+    const { executionEnv, adapterFactory } = createCliDependencies();
+    const { team } = await initializeServices(config, {
+      registryPath: tempRegistryPath,
+      executionEnv,
+      adapterFactory
+    });
     expect(team.members[0].systemInstruction).toBeUndefined();
   }, 30000); // Increased timeout for real-time verification
 
-  it('emits progress and success via provided output implementation', async () => {
+  it('emits logging via provided logger implementation', async () => {
     const aiRoleDir = path.join(tempDir, 'dev', 'alpha');
     const observerDir = path.join(tempDir, 'observer');
     fs.mkdirSync(aiRoleDir, { recursive: true });
@@ -247,26 +204,30 @@ describe.sequential('ServiceInitializer integration', () => {
       }
     };
 
-    class MockOutput implements IOutput {
+    class MockLogger implements ILogger {
       calls: Array<{ method: string; args: any[] }> = [];
-      info(message: string): void { this.calls.push({ method: 'info', args: [message] }); }
-      success(message: string): void { this.calls.push({ method: 'success', args: [message] }); }
-      warn(message: string): void { this.calls.push({ method: 'warn', args: [message] }); }
-      error(message: string): void { this.calls.push({ method: 'error', args: [message] }); }
-      progress(message: string): void { this.calls.push({ method: 'progress', args: [message] }); }
-      separator(char?: string, length?: number): void { this.calls.push({ method: 'separator', args: [char, length] }); }
-      keyValue(key: string, value: string): void { this.calls.push({ method: 'keyValue', args: [key, value] }); }
+      debug(message: string, context?: Record<string, unknown>): void { this.calls.push({ method: 'debug', args: [message, context] }); }
+      info(message: string, context?: Record<string, unknown>): void { this.calls.push({ method: 'info', args: [message, context] }); }
+      warn(message: string, context?: Record<string, unknown>): void { this.calls.push({ method: 'warn', args: [message, context] }); }
+      error(message: string, context?: Record<string, unknown>): void { this.calls.push({ method: 'error', args: [message, context] }); }
     }
 
-    const output = new MockOutput();
-    await initializeServices(config, { registryPath: tempRegistryPath, output });
+    const logger = new MockLogger();
+    const { executionEnv, adapterFactory } = createCliDependencies();
+    await initializeServices(config, {
+      registryPath: tempRegistryPath,
+      executionEnv,
+      adapterFactory,
+      logger
+    });
 
-    const progressCall = output.calls.find(c => c.method === 'progress');
-    const successCall = output.calls.find(c => c.method === 'success');
-    const keyValueCall = output.calls.find(c => c.method === 'keyValue' && String(c.args[0]).includes('Working directory'));
+    // Check that logger was called with expected methods
+    const verifyingCall = logger.calls.find(c => c.method === 'debug' && String(c.args[0]).includes('Verifying agent'));
+    const verifiedCall = logger.calls.find(c => c.method === 'info' && String(c.args[0]).includes('verified'));
+    const workingDirCall = logger.calls.find(c => c.method === 'debug' && String(c.args[0]).includes('Working directory'));
 
-    expect(progressCall).toBeTruthy();
-    expect(successCall).toBeTruthy();
-    expect(keyValueCall).toBeTruthy();
+    expect(verifyingCall).toBeTruthy();
+    expect(verifiedCall).toBeTruthy();
+    expect(workingDirCall).toBeTruthy();
   }, 30000);
 });

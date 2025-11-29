@@ -1,20 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ContextManager } from '../../../src/context/ContextManager.js';
 import type { ConversationMessage } from '../../../src/models/ConversationMessage.js';
-import type { IOutput } from '../../../src/outputs/IOutput.js';
+import type { ILogger } from '../../../src/interfaces/ILogger.js';
 
-// Helper to create a mock output
-function createMockOutput(): IOutput & { warnCalls: string[] } {
+// Helper to create a mock logger
+function createMockLogger(): ILogger & { warnCalls: string[] } {
   const warnCalls: string[] = [];
   return {
     warnCalls,
+    debug: vi.fn(),
     info: vi.fn(),
-    success: vi.fn(),
     warn: vi.fn((msg: string) => warnCalls.push(msg)),
     error: vi.fn(),
-    progress: vi.fn(),
-    separator: vi.fn(),
-    keyValue: vi.fn(),
   };
 }
 
@@ -127,8 +124,8 @@ describe('ContextManager', () => {
     });
 
     it('setTeamTask truncates at 5KB', () => {
-      const mockOutput = createMockOutput();
-      const mgr = new ContextManager({ output: mockOutput });
+      const mockLogger = createMockLogger();
+      const mgr = new ContextManager({ logger: mockLogger });
       const largeTask = 'x'.repeat(6 * 1024); // 6KB
 
       mgr.setTeamTask(largeTask);
@@ -136,8 +133,8 @@ describe('ContextManager', () => {
       const task = mgr.getTeamTask();
       expect(task).not.toBeNull();
       expect(Buffer.byteLength(task!, 'utf8')).toBeLessThanOrEqual(5 * 1024);
-      expect(mockOutput.warnCalls.length).toBeGreaterThan(0);
-      expect(mockOutput.warnCalls[0]).toContain('TeamTask exceeded 5KB limit');
+      expect(mockLogger.warnCalls.length).toBeGreaterThan(0);
+      expect(mockLogger.warnCalls[0]).toContain('TeamTask exceeded 5KB limit');
     });
 
     it('setTeamTask calls onTeamTaskChanged hook', () => {
@@ -462,8 +459,8 @@ describe('ContextManager', () => {
     });
 
     it('falls back to PlainTextAssembler for unknown type', () => {
-      const mockOutput = createMockOutput();
-      const mgr = new ContextManager({ output: mockOutput });
+      const mockLogger = createMockLogger();
+      const mgr = new ContextManager({ logger: mockLogger });
 
       const input = {
         contextMessages: [],
@@ -475,8 +472,8 @@ describe('ContextManager', () => {
       const output = mgr.assemblePrompt('custom-agent' as any, input);
 
       expect(output.prompt).toBe('Hello');
-      expect(mockOutput.warnCalls.length).toBeGreaterThan(0);
-      expect(mockOutput.warnCalls[0]).toContain('Unknown agentType');
+      expect(mockLogger.warnCalls.length).toBeGreaterThan(0);
+      expect(mockLogger.warnCalls[0]).toContain('Unknown agentType');
     });
 
     it('normalizes agent type (claude -> claude-code)', () => {

@@ -23,7 +23,7 @@ codex-test-config-windows.json
 multi-agent-config.json
 
 # User guide (work in progress, not for version control)
-user-guide/
+# user-guide/  <-- Removed old path
 
 # Runtime directories
 .agent-chatter/
@@ -33,4 +33,9 @@ temp.md
 
 # npm pack output
 *.tgz
-misc/
+
+# Docs subdirectories (Ignore all except user-guide)
+docs/design/
+docs/swe_challenge/
+docs/misc/
+docs/product/

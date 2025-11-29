@@ -1,0 +1,62 @@
+{
+  "name": "@testany/agent-chatter",
+  "version": "0.3.0",
+  "description": "Multi-agent conversation orchestration CLI for AI assistants",
+  "type": "module",
+  "main": "./out/cli.js",
+  "bin": {
+    "agent-chatter": "./out/cli.js"
+  },
+  "license": "UNLICENSED",
+  "private": false,
+  "author": "TestAny.io <support@testany.io>",
+  "keywords": [
+    "cli",
+    "ai",
+    "agent",
+    "conversation",
+    "orchestration",
+    "claude",
+    "gemini",
+    "openai",
+    "multi-agent"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@testany/agent-chatter-core": "*",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.2",
+    "ink": "npm:@jrichman/ink@^6.4.3",
+    "ink-text-input": "^6.0.0",
+    "inquirer": "^9.3.8",
+    "inquirer-autocomplete-standalone": "^0.8.1",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.2.5",
+    "ink-testing-library": "^4.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.9"
+  },
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "clean": "rm -rf out",
+    "start": "node out/cli.js"
+  },
+  "files": [
+    "out/**/*",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
