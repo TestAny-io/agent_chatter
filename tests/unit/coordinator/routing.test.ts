@@ -109,6 +109,26 @@ describe('ConversationCoordinator Routing', () => {
     expect(result.unresolved).toEqual([]);
   });
 
+  it('resolves addressees when intent suffix is adjacent (no space)', () => {
+    const stub = new StubAgentManager({});
+    const agentManager = createStubAsAgentManager(stub);
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router);
+
+    const team = buildTeam([
+      createMember({ id: 'max-id', name: 'max', displayName: 'Max', order: 0 }),
+      createMember({ id: 'carol-id', name: 'carol', displayName: 'Carol', order: 1 })
+    ]);
+
+    (coordinator as any).team = team;
+
+    // Raw token without space before intent marker (user typed [NEXT:max!p1])
+    const result = (coordinator as any).resolveAddressees(['max!p1']);
+
+    expect(result.resolved.map((role: Role) => role.id)).toEqual(['max-id']);
+    expect(result.unresolved).toEqual([]);
+  });
+
   it('seeds routing queue with multiple NEXT markers from initial message', async () => {
     const stub = new StubAgentManager({});
     const agentManager = createStubAsAgentManager(stub);
