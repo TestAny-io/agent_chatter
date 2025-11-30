@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "1.0",
+  "agents": [
+    {
+      "name": "claude",
+      "command": "claude",
+      "args": [
+        "--append-system-prompt",
+        "Always end your response with the exact text [DONE] on a new line."
+      ],
+      "endMarker": "[DONE]",
+      "usePty": false
+    }
+  ],
+  "team": {
+    "name": "multi-perspective-code-review",
+    "displayName": "Multi-Perspective Code Review Team",
+    "description": "Three AI experts reviewing code from different angles",
+    "instructionFile": "./teams/multi-role-demo/team_instruction.md",
+    "roleDefinitions": [
+      {
+        "name": "security-reviewer",
+        "displayName": "Security Reviewer",
+        "description": "Reviews code for security vulnerabilities and attack vectors"
+      },
+      {
+        "name": "performance-optimizer",
+        "displayName": "Performance Optimizer",
+        "description": "Analyzes code efficiency and suggests performance improvements"
+      },
+      {
+        "name": "readability-expert",
+        "displayName": "Readability Expert",
+        "description": "Evaluates code clarity and maintainability"
+      },
+      {
+        "name": "observer",
+        "displayName": "Observer",
+        "description": "Human observer who coordinates the review"
+      }
+    ],
+    "members": [
+      {
+        "displayName": "Alice - Security Expert",
+        "displayRole": "Security Reviewer",
+        "name": "alice",
+        "type": "ai",
+        "role": "security-reviewer",
+        "agentType": "claude",
+        "themeColor": "red",
+        "roleDir": "./teams/multi-role-demo/security/alice",
+        "workDir": "./teams/multi-role-demo/security/alice/work",
+        "instructionFile": "./teams/multi-role-demo/security/alice/AGENTS.md"
+      },
+      {
+        "displayName": "Bob - Performance Expert",
+        "displayRole": "Performance Optimizer",
+        "name": "bob",
+        "type": "ai",
+        "role": "performance-optimizer",
+        "agentType": "claude",
+        "themeColor": "yellow",
+        "roleDir": "./teams/multi-role-demo/performance/bob",
+        "workDir": "./teams/multi-role-demo/performance/bob/work",
+        "instructionFile": "./teams/multi-role-demo/performance/bob/AGENTS.md"
+      },
+      {
+        "displayName": "Carol - Readability Expert",
+        "displayRole": "Readability Expert",
+        "name": "carol",
+        "type": "ai",
+        "role": "readability-expert",
+        "agentType": "claude",
+        "themeColor": "cyan",
+        "roleDir": "./teams/multi-role-demo/readability/carol",
+        "workDir": "./teams/multi-role-demo/readability/carol/work",
+        "instructionFile": "./teams/multi-role-demo/readability/carol/AGENTS.md"
+      },
+      {
+        "displayName": "Human Coordinator",
+        "displayRole": "Observer",
+        "name": "coordinator",
+        "type": "human",
+        "role": "observer",
+        "themeColor": "green",
+        "roleDir": "./teams/multi-role-demo/observer/human",
+        "workDir": "./teams/multi-role-demo/observer/human/work",
+        "instructionFile": "./teams/multi-role-demo/observer/human/README.md"
+      }
+    ]
+  },
+  "maxRounds": 10
+}

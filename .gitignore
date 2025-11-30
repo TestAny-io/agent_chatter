@@ -43,5 +43,4 @@ temp.md
 # Docs subdirectories (Ignore all except user-guide)
 docs/design/
 docs/swe_challenge/
-docs/misc/
 docs/product/
