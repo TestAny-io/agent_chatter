@@ -41,9 +41,19 @@ export type { ConversationStatus } from './services/ConversationCoordinator.js';
 
 export { AgentManager } from './services/AgentManager.js';
 export { MessageRouter } from './services/MessageRouter.js';
+export type { ParsedAddressee, ParseResult } from './services/MessageRouter.js';
 export { TeamManager } from './services/TeamManager.js';
 export { AgentConfigManager } from './services/AgentConfigManager.js';
 export { ContextEventCollector } from './services/ContextEventCollector.js';
+
+// v3: RoutingQueue
+export { RoutingQueue } from './services/RoutingQueue.js';
+export type {
+  RoutingQueueConfig,
+  RoutingQueueCallbacks,
+  EnqueueInput,
+  EnqueueResult,
+} from './services/RoutingQueue.js';
 
 export {
   initializeServices,
@@ -83,7 +93,23 @@ export type { SessionSnapshot, SessionSummary } from './models/SessionSnapshot.j
 // ═══════════════════════════════════════════════════════════════
 // Events
 // ═══════════════════════════════════════════════════════════════
-export type { QueueUpdateEvent } from './models/QueueEvent.js';
+export type {
+  QueueUpdateEvent,
+  QueueItemView,
+  QueueStats,
+  SkipReason,
+  QueueProtectionEvent,
+} from './models/QueueEvent.js';
+
+// v3: RoutingItem types
+export type { RoutingItem, RoutingIntent, ShortIntent } from './models/RoutingItem.js';
+export {
+  generateRoutingItemId,
+  intentToEnum,
+  enumToShortIntent,
+  getIntentPriority,
+  compareIntents,
+} from './models/RoutingItem.js';
 export type {
   AgentEvent,
   TodoItem,
@@ -116,6 +142,14 @@ export type { ScannedAgent } from './registry/AgentScanner.js';
 // Context
 // ═══════════════════════════════════════════════════════════════
 export { ContextManager } from './context/ContextManager.js';
+export type {
+  AssemblerInput,
+  AssemblerOutput,
+  PromptContextMessage,
+  RouteContextOptions,
+  RouteContextResult,
+  ContextManagerOptions,
+} from './context/types.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Infrastructure

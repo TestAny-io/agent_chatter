@@ -81,9 +81,99 @@ describe('MessageRouter', () => {
       [TEAM_TASK: new task]
       Real content here
       [NEXT: bob]`;
-      
+
       const cleaned = router.stripAllMarkersForContext(input);
       expect(cleaned).toBe('Real content here');
+    });
+  });
+
+  // v3: Intent parsing tests
+  describe('v3 NEXT intent parsing', () => {
+    it('parses single addressee without intent (defaults to P2)', () => {
+      const result = router.parseMessage('[NEXT: sarah]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P2' }
+      ]);
+    });
+
+    it('parses single addressee with P1 intent', () => {
+      const result = router.parseMessage('[NEXT: sarah!P1]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P1' }
+      ]);
+    });
+
+    it('parses lowercase intent', () => {
+      const result = router.parseMessage('[NEXT: sarah!p3]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P3' }
+      ]);
+    });
+
+    it('parses multiple addressees with mixed intents', () => {
+      const result = router.parseMessage('[NEXT: sarah!P1, max, carol!P3]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P1' },
+        { name: 'max', intent: 'P2' },
+        { name: 'carol', intent: 'P3' }
+      ]);
+    });
+
+    it('preserves special characters in name', () => {
+      const result = router.parseMessage('[NEXT: Dr. Smith!P1]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'Dr. Smith', intent: 'P1' }
+      ]);
+    });
+
+    it('handles name with spaces', () => {
+      const result = router.parseMessage('[NEXT: John Doe !P2]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'John Doe', intent: 'P2' }
+      ]);
+    });
+
+    it('trims leading and trailing spaces', () => {
+      const result = router.parseMessage('[NEXT:   sarah !P1  ,  max  ]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P1' },
+        { name: 'max', intent: 'P2' }
+      ]);
+    });
+
+    it('skips empty segments', () => {
+      const result = router.parseMessage('[NEXT: sarah, , , max]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P2' },
+        { name: 'max', intent: 'P2' }
+      ]);
+    });
+
+    it('treats invalid intent as part of name', () => {
+      const result = router.parseMessage('[NEXT: sarah!P4]');
+      // !P4 is not valid, so it's treated as part of the name
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah!P4', intent: 'P2' }
+      ]);
+    });
+
+    it('maintains backward compatibility with addressees array', () => {
+      const result = router.parseMessage('[NEXT: sarah!P1, max!P3]');
+      // Legacy field contains names only
+      expect(result.addressees).toEqual(['sarah', 'max']);
+      // New field contains full info
+      expect(result.parsedAddressees).toEqual([
+        { name: 'sarah', intent: 'P1' },
+        { name: 'max', intent: 'P3' }
+      ]);
+    });
+
+    it('handles multiple NEXT markers with intents', () => {
+      const result = router.parseMessage('Text [NEXT: alice!P1] more [NEXT: bob!P3]');
+      expect(result.parsedAddressees).toEqual([
+        { name: 'alice', intent: 'P1' },
+        { name: 'bob', intent: 'P3' }
+      ]);
     });
   });
 });

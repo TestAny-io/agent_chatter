@@ -36,6 +36,9 @@ export interface ConversationMessage {
 
 /**
  * Routing information parsed from message content
+ *
+ * v3 extension: Added parentMessageId and intent for causal tracking
+ * @see docs/design/route_rule/V3/detail/01-data-model.md
  */
 export interface MessageRouting {
   /** Original [NEXT: ...] markers */
@@ -43,6 +46,39 @@ export interface MessageRouting {
 
   /** Resolved addressees */
   resolvedAddressees: ResolvedAddressee[];
+
+  // === v3 New Fields (optional for backward compatibility) ===
+
+  /**
+   * Parsed addressees with intent information (v3)
+   *
+   * Saved from parse result to preserve intent markers (!P1/!P2/!P3)
+   * that would be lost after content is cleaned.
+   *
+   * @see docs/design/route_rule/V3/detail/02-parsing.md
+   */
+  parsedAddressees?: ParsedAddressee[];
+
+  /**
+   * Parent message ID
+   *
+   * Points to the message that triggered this message
+   * (i.e., the message containing [NEXT: xxx])
+   *
+   * - For first human message: undefined (no parent)
+   * - For AI reply: points to the [NEXT] trigger message
+   * - For subsequent human input: points to previous message (or undefined for buzz-in)
+   */
+  parentMessageId?: string;
+
+  /**
+   * Intent of this message (determined by routing queue dispatch)
+   *
+   * - P1_INTERRUPT: Error correction/interruption, highest priority
+   * - P2_REPLY: Direct response, default priority
+   * - P3_EXTEND: Extension/new topic, lowest priority
+   */
+  intent?: 'P1_INTERRUPT' | 'P2_REPLY' | 'P3_EXTEND';
 }
 
 /**
@@ -80,16 +116,48 @@ export interface MessageDelivery {
 }
 
 /**
+ * Parsed addressee with intent
+ *
+ * @see docs/design/route_rule/V3/detail/01-data-model.md
+ */
+export interface ParsedAddressee {
+  /** Addressee name (trimmed) */
+  name: string;
+
+  /**
+   * Intent marker (optional)
+   * Parsed from !P1 / !P2 / !P3, defaults to P2
+   */
+  intent: 'P1' | 'P2' | 'P3';
+}
+
+/**
  * ParseResult - Message parsing result
  *
  * Return value of MessageRouter.parseMessage()
+ *
+ * v3 extension: Added parsedAddressees with intent information
  */
 export interface ParseResult {
-  /** Parsed addressee identifiers */
+  /** Parsed addressee identifiers (legacy, for backward compatibility) */
   addressees: string[];
+
+  /**
+   * Parsed addressees with intent information (v3)
+   *
+   * Corresponds 1:1 with addressees, but includes intent info.
+   * Use addressees for names only; use this for intent.
+   */
+  parsedAddressees: ParsedAddressee[];
 
   /** Clean content with markers stripped */
   cleanContent: string;
+
+  /** Sender identifier from [FROM: xxx] marker */
+  fromMember?: string;
+
+  /** Team task from [TEAM_TASK: xxx] marker */
+  teamTask?: string;
 }
 
 /**

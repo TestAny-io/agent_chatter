@@ -13,6 +13,29 @@ export type { ValidationResult as AgentValidationResult } from './AgentConfig.js
 export type * from './ConversationMessage.js';
 export type * from './ConversationSession.js';
 
+// v3: RoutingItem and related types
+export type {
+  RoutingItem,
+  RoutingIntent,
+  ShortIntent,
+} from './RoutingItem.js';
+export {
+  generateRoutingItemId,
+  intentToEnum,
+  enumToShortIntent,
+  getIntentPriority,
+  compareIntents,
+} from './RoutingItem.js';
+
+// v3: Queue events with extended types
+export type {
+  QueueUpdateEvent,
+  QueueItemView,
+  QueueStats,
+  SkipReason,
+  QueueProtectionEvent,
+} from './QueueEvent.js';
+
 // CLIConfig types (kept for backward compatibility)
 export type {
   CLIConfig,

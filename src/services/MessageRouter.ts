@@ -3,20 +3,61 @@
  *
  * 负责解析消息中的 [NEXT: ...] 标记
  * 提取目标接收者并清理消息内容
+ *
+ * v3 extension: Added intent parsing support
+ * @see docs/design/route_rule/V3/detail/02-parsing.md
  */
+
+import type { ILogger } from '../interfaces/ILogger.js';
+import { SilentLogger } from '../interfaces/ILogger.js';
+
+/**
+ * Parsed addressee with intent
+ *
+ * @see docs/design/route_rule/V3/detail/01-data-model.md
+ */
+export interface ParsedAddressee {
+  /** Addressee name (trimmed) */
+  name: string;
+
+  /**
+   * Intent marker (optional)
+   * Parsed from !P1 / !P2 / !P3, defaults to P2
+   */
+  intent: 'P1' | 'P2' | 'P3';
+}
 
 /**
  * 消息解析结果
+ *
+ * v3 extension: Added parsedAddressees with intent information
  */
 export interface ParseResult {
-  addressees: string[];     // 提取的接收者列表
-  cleanContent: string;     // 移除路由标记（NEXT）后的内容
-  fromMember?: string;      // [FROM:xxx] 标记指定的发送者
-  teamTask?: string;        // [TEAM_TASK:xxx] 标记指定的团队任务
+  /** Parsed addressee identifiers (legacy, for backward compatibility) */
+  addressees: string[];
+
+  /**
+   * Parsed addressees with intent information (v3)
+   *
+   * Corresponds 1:1 with addressees, but includes intent info.
+   * Use addressees for names only; use this for intent.
+   */
+  parsedAddressees: ParsedAddressee[];
+
+  /** Clean content with markers stripped */
+  cleanContent: string;
+
+  /** Sender identifier from [FROM: xxx] marker */
+  fromMember?: string;
+
+  /** Team task from [TEAM_TASK: xxx] marker */
+  teamTask?: string;
 }
 
 /**
  * MessageRouter 类
+ *
+ * v3 extension: Added logger injection and intent parsing
  */
 export class MessageRouter {
   // 匹配 [FROM: name] 的正则表达式
@@ -27,10 +68,37 @@ export class MessageRouter {
   private readonly NEXT_PATTERN = /\[NEXT:\s*([^\]]*)\]/gi;
 
   /**
+   * v3: Single addressee segment parsing regex
+   *
+   * Pattern breakdown:
+   * ^           - Start of string
+   * \s*         - Optional leading whitespace
+   * (.+?)       - Capture group 1: name (non-greedy, at least 1 char)
+   * (?:         - Non-capture group start
+   *   \s*       - Optional whitespace before intent
+   *   !         - Intent marker
+   *   ([pP][123]) - Capture group 2: P1/P2/P3 (case insensitive)
+   * )?          - Non-capture group end, entire intent section optional
+   * \s*         - Optional trailing whitespace
+   * $           - End of string
+   */
+  private readonly ADDRESSEE_PATTERN = /^\s*(.+?)(?:\s*!([pP][123]))?\s*$/;
+
+  /** Logger for warning about invalid addressees */
+  private readonly logger: ILogger;
+
+  constructor(options?: { logger?: ILogger }) {
+    this.logger = options?.logger ?? new SilentLogger();
+  }
+
+  /**
    * 解析消息，提取标记和清理内容
+   *
+   * v3 extension: Now returns parsedAddressees with intent information
    */
   parseMessage(message: string): ParseResult {
-    let addressees: string[] = [];
+    const addressees: string[] = [];           // Legacy, backward compatible
+    const parsedAddressees: ParsedAddressee[] = [];  // v3 new
 
     // 1. 提取 [FROM:xxx]
     this.FROM_PATTERN.lastIndex = 0;
@@ -45,21 +113,21 @@ export class MessageRouter {
       teamTask = taskMatch[1]?.trim();
     }
 
-    // 3. 总是提取 NEXT 标记中的接收者
-    // 重置正则表达式的 lastIndex
+    // 3. 提取 NEXT 标记中的接收者（含意图解析）
     this.NEXT_PATTERN.lastIndex = 0;
 
     let match;
     while ((match = this.NEXT_PATTERN.exec(message)) !== null) {
       const addresseeList = match[1];
-      if (addresseeList && addresseeList.trim()) {
-        const names = addresseeList
-          .split(',')
-          .map(name => name.trim())
-          .filter(name => name.length > 0);
-        
-        // 支持多个收件人
-        addressees.push(...names);
+      if (!addresseeList || !addresseeList.trim()) {
+        continue;
+      }
+
+      // v3: Use new intent-aware parsing
+      const parsed = this.parseAddresseeList(addresseeList);
+      for (const addr of parsed) {
+        addressees.push(addr.name);        // Backward compatible
+        parsedAddressees.push(addr);       // v3 new
       }
     }
 
@@ -68,10 +136,54 @@ export class MessageRouter {
 
     return {
       addressees,
+      parsedAddressees,
       cleanContent,
       fromMember,
       teamTask
     };
+  }
+
+  /**
+   * v3: Parse addressee list with intent information
+   *
+   * Parses content from [NEXT: ...] marker, extracting addressee names
+   * and their optional intent markers (!P1, !P2, !P3).
+   *
+   * @param content - Content inside [NEXT: ...] marker
+   * @returns Array of parsed addressees with intent
+   */
+  private parseAddresseeList(content: string): ParsedAddressee[] {
+    const result: ParsedAddressee[] = [];
+    const segments = content.split(',');
+
+    for (const segment of segments) {
+      const match = this.ADDRESSEE_PATTERN.exec(segment);
+
+      if (!match) {
+        // Cannot match, skip and log warning
+        this.logger.warn(`[MessageRouter] Invalid addressee segment: "${segment}"`);
+        continue;
+      }
+
+      const [, name, intentRaw] = match;
+
+      // Validate name is not empty
+      const trimmedName = name.trim();
+      if (trimmedName.length === 0) {
+        this.logger.warn(`[MessageRouter] Empty addressee name in segment: "${segment}"`);
+        continue;
+      }
+
+      // Parse intent (default P2)
+      let intent: 'P1' | 'P2' | 'P3' = 'P2';
+      if (intentRaw) {
+        intent = intentRaw.toUpperCase() as 'P1' | 'P2' | 'P3';
+      }
+
+      result.push({ name: trimmedName, intent });
+    }
+
+    return result;
   }
 
   /**

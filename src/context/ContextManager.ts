@@ -19,12 +19,18 @@ import type {
   ContextSnapshot,
   InternalContextMessage,
   PromptContextMessage,
+  RouteContextOptions,
+  RouteContextResult,
 } from './types.js';
 import {
   DEFAULT_CONTEXT_WINDOW_SIZE,
   DEFAULT_MAX_BYTES,
   MAX_TEAM_TASK_BYTES,
+  DEFAULT_MAX_SIBLINGS,
+  DEFAULT_SIBLING_CONTENT_LENGTH,
+  DEFAULT_FORCE_PARENT_REINSERTION,
 } from './types.js';
+import type { RoutingItem } from '../models/RoutingItem.js';
 
 // Import assemblers (will be implemented next)
 import { ClaudeContextAssembler } from './assemblers/ClaudeContextAssembler.js';
@@ -121,12 +127,22 @@ export class ContextManager implements IContextProvider {
   private readonly logger: ILogger;
   private nextMessageId: number = 1;
 
+  // v3 configuration
+  private readonly defaultMaxSiblings: number;
+  private readonly defaultForceParentReinsertion: boolean;
+  private readonly siblingContentMaxLength: number;
+
   constructor(options?: ContextManagerOptions) {
     this.contextWindowSize = options?.contextWindowSize ?? DEFAULT_CONTEXT_WINDOW_SIZE;
     this.maxBytes = options?.maxBytes ?? DEFAULT_MAX_BYTES;
     this.onMessageAdded = options?.onMessageAdded;
     this.onTeamTaskChanged = options?.onTeamTaskChanged;
     this.logger = options?.logger ?? new SilentLogger();
+
+    // v3 configuration
+    this.defaultMaxSiblings = options?.defaultMaxSiblings ?? DEFAULT_MAX_SIBLINGS;
+    this.defaultForceParentReinsertion = options?.defaultForceParentReinsertion ?? DEFAULT_FORCE_PARENT_REINSERTION;
+    this.siblingContentMaxLength = options?.siblingContentMaxLength ?? DEFAULT_SIBLING_CONTENT_LENGTH;
 
     // Initialize assembler map
     this.assemblers = new Map();
@@ -318,6 +334,264 @@ export class ContextManager implements IContextProvider {
 
     // No match, return unchanged
     return contextMessages;
+  }
+
+  // --------------------------------------------------------------------------
+  // v3: Route-based Context Retrieval
+  // --------------------------------------------------------------------------
+
+  /**
+   * v3: Get context based on a routing item
+   *
+   * Uses parentMessageId from the route to correctly position the context window,
+   * ensuring the AI responds to the correct parent message.
+   *
+   * @param agentId - Target agent ID
+   * @param agentType - Agent type (for assembler selection)
+   * @param route - Routing item containing parentMessageId and intent
+   * @param options - Context options
+   * @returns Route context result with parent and sibling context
+   */
+  getContextForRoute(
+    agentId: string,
+    agentType: AgentType,
+    route: RoutingItem,
+    options?: RouteContextOptions
+  ): RouteContextResult {
+    const {
+      windowSizeOverride,
+      systemInstruction,
+      instructionFileText,
+      maxSiblings = this.defaultMaxSiblings,
+      forceParentReinsertion = this.defaultForceParentReinsertion,
+    } = options ?? {};
+
+    const windowSize = windowSizeOverride ?? this.contextWindowSize;
+
+    // Step 1: Find parent message
+    const parentMsg = this.findMessageById(route.parentMessageId);
+    if (!parentMsg) {
+      // Parent message not found (abnormal), fall back to old logic
+      this.logger.warn(
+        `[ContextManager] Parent message ${route.parentMessageId} not found, falling back to latest`
+      );
+      const fallback = this.getContextForAgent(agentId, agentType, options);
+      return {
+        ...fallback,
+        siblingContext: [],
+        meta: {
+          parentMessageId: undefined,
+          intent: route.intent,
+          targetMemberId: route.targetMemberId,
+          siblingCount: 0,
+          siblingTotalCount: 0,
+          truncatedSiblings: false,
+        },
+      };
+    }
+
+    // Step 2: Build context window
+    const parentIndex = this.messages.indexOf(parentMsg);
+    const contextEndIndex = parentIndex; // Does not include parent message itself
+    const contextStartIndex = Math.max(0, contextEndIndex - windowSize);
+    const contextMessages = this.messages.slice(contextStartIndex, contextEndIndex);
+
+    // Step 3: Check if parent message is in window
+    const parentInWindow = contextMessages.some(m => m.id === parentMsg.id);
+
+    // Step 4: Collect sibling messages (completed messages with same parent)
+    const { siblings, totalCount, truncated } = this.collectSiblings(
+      route.parentMessageId,
+      maxSiblings
+    );
+
+    // Step 5: Convert to internal format
+    const internalContext: InternalContextMessage[] = contextMessages.map(msg => ({
+      from: msg.speaker.name,
+      to: this.formatAddressees(msg.routing?.resolvedAddressees?.map(a => a.identifier)),
+      content: stripAllMarkers(msg.content),
+      messageId: msg.id,
+    }));
+
+    // Step 6: Deduplication
+    const deduplicatedContext = this.deduplicateContextForRoute(
+      internalContext,
+      parentMsg,
+      route.targetMemberId
+    );
+
+    // Step 7: Parent message reinsertion
+    let parentContext: PromptContextMessage | undefined;
+    if (forceParentReinsertion && !parentInWindow) {
+      parentContext = {
+        from: parentMsg.speaker.name,
+        to: this.formatAddressees(parentMsg.routing?.resolvedAddressees?.map(a => a.identifier)),
+        content: stripAllMarkers(parentMsg.content),
+      };
+    }
+
+    // Step 8: Format sibling context
+    const siblingContext: PromptContextMessage[] = siblings.map(msg =>
+      this.formatSiblingEntry(msg)
+    );
+
+    // Step 9: Convert to output format
+    const outputContext: PromptContextMessage[] = deduplicatedContext.map(msg => ({
+      from: msg.from,
+      to: msg.to,
+      content: msg.content,
+    }));
+
+    return {
+      contextMessages: outputContext,
+      currentMessage: stripAllMarkers(parentMsg.content),
+      teamTask: this.teamTask,
+      systemInstruction,
+      instructionFileText,
+      maxBytes: this.maxBytes,
+      parentContext,
+      siblingContext,
+      routeMeta: {
+        parentMessageId: route.parentMessageId,
+        intent: route.intent,
+      },
+      meta: {
+        parentMessageId: route.parentMessageId,
+        intent: route.intent,
+        targetMemberId: route.targetMemberId,
+        siblingCount: siblings.length,
+        siblingTotalCount: totalCount,
+        truncatedSiblings: truncated,
+      },
+    };
+  }
+
+  /**
+   * Find message by ID
+   */
+  private findMessageById(messageId: string): ConversationMessage | undefined {
+    return this.messages.find(m => m.id === messageId);
+  }
+
+  /**
+   * Collect sibling messages (completed messages with same parent)
+   *
+   * @param parentMessageId - Parent message ID
+   * @param maxCount - Maximum number of siblings
+   * @returns { siblings, totalCount, truncated }
+   */
+  private collectSiblings(
+    parentMessageId: string,
+    maxCount: number
+  ): { siblings: ConversationMessage[]; totalCount: number; truncated: boolean } {
+    // Step 1: Collect all siblings (no truncation)
+    const allSiblings: ConversationMessage[] = [];
+
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i];
+      if (msg.routing?.parentMessageId === parentMessageId) {
+        allSiblings.push(msg);
+      }
+    }
+
+    const totalCount = allSiblings.length;
+
+    // Step 2: Truncate based on maxCount
+    const siblings = allSiblings.slice(0, maxCount);
+    const truncated = totalCount > maxCount;
+
+    return { siblings, totalCount, truncated };
+  }
+
+  /**
+   * Summarize sibling message content
+   *
+   * Strategy:
+   * - Keep speaker name (from)
+   * - Keep intent marker (if available)
+   * - Truncate to siblingContentMaxLength chars with ellipsis
+   * - Remove code blocks, keep text description
+   */
+  private summarizeSiblingContent(msg: ConversationMessage): string {
+    let stripped = stripAllMarkers(msg.content);
+
+    // Remove code blocks
+    stripped = stripped.replace(/```[\s\S]*?```/g, '[code block omitted]');
+
+    // Truncate content
+    if (stripped.length > this.siblingContentMaxLength) {
+      stripped = stripped.slice(0, this.siblingContentMaxLength) + '...';
+    }
+
+    return stripped;
+  }
+
+  /**
+   * Format sibling context entry
+   *
+   * Keeps speaker, intent, and other key information
+   */
+  private formatSiblingEntry(msg: ConversationMessage): PromptContextMessage {
+    const content = this.summarizeSiblingContent(msg);
+    const intent = msg.routing?.intent;
+
+    // Format: "{speaker} [{intent}]"
+    const intentSuffix = intent ? ` [${intent}]` : '';
+
+    return {
+      from: msg.speaker.name + intentSuffix,
+      to: this.formatAddressees(msg.routing?.resolvedAddressees?.map(a => a.identifier)),
+      content,
+    };
+  }
+
+  /**
+   * Deduplicate context for route-based retrieval
+   *
+   * Deduplication rules (per HLD):
+   * 1. Remove parent message itself (avoid [MESSAGE] and [CONTEXT] duplication)
+   * 2. Remove target member's most recent completed message (avoid self-repetition)
+   * 3. Keep other necessary context
+   */
+  private deduplicateContextForRoute(
+    contextMessages: InternalContextMessage[],
+    parentMessage: ConversationMessage,
+    targetMemberId: string
+  ): InternalContextMessage[] {
+    // Step 1: Remove parent message itself
+    let filtered = contextMessages.filter(msg => msg.messageId !== parentMessage.id);
+
+    // Step 2: Find and remove target member's most recent message
+    const targetMemberLastMsgId = this.findTargetMemberLastMessage(
+      filtered,
+      targetMemberId
+    );
+
+    if (targetMemberLastMsgId) {
+      filtered = filtered.filter(msg => msg.messageId !== targetMemberLastMsgId);
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Find target member's last message in context
+   */
+  private findTargetMemberLastMessage(
+    contextMessages: InternalContextMessage[],
+    targetMemberId: string
+  ): string | null {
+    // Iterate from end to find first message belonging to target member
+    for (let i = contextMessages.length - 1; i >= 0; i--) {
+      const ctxMsg = contextMessages[i];
+      const originalMsg = this.messages.find(m => m.id === ctxMsg.messageId);
+
+      if (originalMsg && originalMsg.speaker.id === targetMemberId) {
+        return ctxMsg.messageId;
+      }
+    }
+
+    return null;
   }
 
   // --------------------------------------------------------------------------

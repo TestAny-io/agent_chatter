@@ -109,9 +109,10 @@ describe('ConversationCoordinator Routing', () => {
     await coordinator.sendMessage('task [NEXT:ai-alpha][NEXT:ai-beta][NEXT:ai-gamma]', human.id);
 
     expect(sendSpy).toHaveBeenCalledTimes(3);
-    expect(sendSpy).toHaveBeenNthCalledWith(1, ai1, 'task');
-    expect(sendSpy).toHaveBeenNthCalledWith(2, ai2, 'task');
-    expect(sendSpy).toHaveBeenNthCalledWith(3, ai3, 'task');
+    // v3: sendToAgent now receives optional third parameter (route)
+    expect(sendSpy).toHaveBeenNthCalledWith(1, ai1, 'task', expect.anything());
+    expect(sendSpy).toHaveBeenNthCalledWith(2, ai2, 'task', expect.anything());
+    expect(sendSpy).toHaveBeenNthCalledWith(3, ai3, 'task', expect.anything());
   });
 
   it('processes queued NEXT before falling back to human when current message has no NEXT', async () => {
@@ -130,11 +131,15 @@ describe('ConversationCoordinator Routing', () => {
     const session = SessionUtils.createSession(team.id, team.name);
     (coordinator as any).session = session;
 
-    // Bug 7 fix: routingQueue only stores { member }, content is looked up dynamically
-    (coordinator as any).routingQueue = [
-      { member: ai2 },
-      { member: ai3 }
-    ];
+    // v3: Use routingQueueV3 instead of legacy routingQueue (single source of truth)
+    const v3Queue = (coordinator as any).routingQueueV3;
+    v3Queue.enqueue(
+      [
+        { targetMemberId: ai2.id, intent: 'P2_REPLY' },
+        { targetMemberId: ai3.id, intent: 'P2_REPLY' }
+      ],
+      'parent-msg-1'
+    );
 
     const sendSpy = vi
       .spyOn(ConversationCoordinator.prototype as any, 'sendToAgent')
@@ -154,8 +159,9 @@ describe('ConversationCoordinator Routing', () => {
 
     expect(sendSpy).toHaveBeenCalledTimes(2);
     // Content is now dynamically retrieved from latest message
-    expect(sendSpy).toHaveBeenNthCalledWith(1, ai2, 'no next markers');
-    expect(sendSpy).toHaveBeenNthCalledWith(2, ai3, 'no next markers');
+    // v3: Third parameter (route) is now always provided from v3 queue
+    expect(sendSpy).toHaveBeenNthCalledWith(1, ai2, 'no next markers', expect.anything());
+    expect(sendSpy).toHaveBeenNthCalledWith(2, ai3, 'no next markers', expect.anything());
     expect((coordinator as any).waitingForMemberId).toBeNull();
   });
 
