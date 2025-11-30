@@ -874,9 +874,7 @@ export class ConversationCoordinator {
     }
 
     for (const addressee of addressees) {
-      // Strip trailing intent markers like "!p1" to be robust against
-      // raw tokens that still contain intent (e.g., "sarah !p1")
-      const cleanedAddressee = addressee.replace(/!\s*[pP][123]\s*$/, '');
+      const cleanedAddressee = this.stripIntentSuffix(addressee);
       // 规范化：转小写，移除空格和连字符
       const normalizedAddressee = this.normalizeIdentifier(cleanedAddressee);
 
@@ -902,6 +900,15 @@ export class ConversationCoordinator {
     }
 
     return result;
+  }
+
+  /**
+   * Strip trailing intent marker (!p1/!p2/!p3 or fullwidth variant) from raw token.
+   * This makes resolveAddressees robust to raw markers like "sarah !p1" or "max!P1".
+   */
+  private stripIntentSuffix(token: string): string {
+    // Remove ASCII or fullwidth exclamation followed by p1/p2/p3 (case-insensitive)
+    return token.replace(/[!！]\s*[pP][123]\s*$/, '').trim();
   }
 
   /**

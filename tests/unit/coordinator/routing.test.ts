@@ -129,6 +129,25 @@ describe('ConversationCoordinator Routing', () => {
     expect(result.unresolved).toEqual([]);
   });
 
+  it('resolves addressees when intent suffix uses fullwidth exclamation', () => {
+    const stub = new StubAgentManager({});
+    const agentManager = createStubAsAgentManager(stub);
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router);
+
+    const team = buildTeam([
+      createMember({ id: 'sarah-id', name: 'sarah', displayName: 'Sarah', order: 0 }),
+    ]);
+
+    (coordinator as any).team = team;
+
+    // Raw token with fullwidth exclamation mark (常见输入法字符)
+    const result = (coordinator as any).resolveAddressees(['sarah！P1']);
+
+    expect(result.resolved.map((role: Role) => role.id)).toEqual(['sarah-id']);
+    expect(result.unresolved).toEqual([]);
+  });
+
   it('seeds routing queue with multiple NEXT markers from initial message', async () => {
     const stub = new StubAgentManager({});
     const agentManager = createStubAsAgentManager(stub);
