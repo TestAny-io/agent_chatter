@@ -38,27 +38,13 @@ jobs:
           echo "Package contents:"
           tar -tzf "$PACKAGE_FILE"
 
-          # 验证必需文件存在
-          tar -tzf "$PACKAGE_FILE" | grep -q "package/out/cli.js" || exit 1
+          # 核心包内容检查
+          tar -tzf "$PACKAGE_FILE" | grep -q "package/out/index.js" || exit 1
+          tar -tzf "$PACKAGE_FILE" | grep -q "package/out/index.d.ts" || exit 1
           tar -tzf "$PACKAGE_FILE" | grep -q "package/package.json" || exit 1
           tar -tzf "$PACKAGE_FILE" | grep -q "package/README.md" || exit 1
 
-          # 全局安装包
-          npm install -g "$PACKAGE_FILE"
-
-          # 验证可执行文件
-          which agent-chatter || exit 1
-
-          # 运行核心命令 (smoke tests)
-          agent-chatter --version
-          agent-chatter --help
-          agent-chatter status
-          agent-chatter agents list  # 应返回空列表或已注册的 agents
-
-          # 验证 registry 参数
-          agent-chatter --registry /tmp/test-registry.json agents list
-
-          echo "✓ Package smoke tests passed"
+          echo "✓ Core package contents verified"
 
       - name: Publish to npm
         run: npm publish
