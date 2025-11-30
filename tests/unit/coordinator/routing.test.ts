@@ -89,6 +89,26 @@ describe('ConversationCoordinator Routing', () => {
     expect(helper).toBe('alpha');
   });
 
+  it('resolves addressees when intent suffix is present in raw token', () => {
+    const stub = new StubAgentManager({});
+    const agentManager = createStubAsAgentManager(stub);
+    const router = new MessageRouter();
+    const coordinator = new ConversationCoordinator(agentManager, router);
+
+    const team = buildTeam([
+      createMember({ id: 'sarah-id', name: 'sarah', displayName: 'Sarah', order: 0 }),
+      createMember({ id: 'max-id', name: 'max', displayName: 'Max', order: 1 })
+    ]);
+
+    (coordinator as any).team = team;
+
+    // Raw token still contains intent marker (user typed [NEXT:sarah !p1])
+    const result = (coordinator as any).resolveAddressees(['sarah !p1']);
+
+    expect(result.resolved.map((role: Role) => role.id)).toEqual(['sarah-id']);
+    expect(result.unresolved).toEqual([]);
+  });
+
   it('seeds routing queue with multiple NEXT markers from initial message', async () => {
     const stub = new StubAgentManager({});
     const agentManager = createStubAsAgentManager(stub);

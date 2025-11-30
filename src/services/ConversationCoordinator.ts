@@ -874,8 +874,11 @@ export class ConversationCoordinator {
     }
 
     for (const addressee of addressees) {
+      // Strip trailing intent markers like "!p1" to be robust against
+      // raw tokens that still contain intent (e.g., "sarah !p1")
+      const cleanedAddressee = addressee.replace(/!\s*[pP][123]\s*$/, '');
       // 规范化：转小写，移除空格和连字符
-      const normalizedAddressee = this.normalizeIdentifier(addressee);
+      const normalizedAddressee = this.normalizeIdentifier(cleanedAddressee);
 
       // 尝试按 ID、名称或显示名称匹配
       const member = this.team.members.find(m => {
