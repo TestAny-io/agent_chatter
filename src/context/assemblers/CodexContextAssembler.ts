@@ -27,6 +27,10 @@ export class CodexContextAssembler implements IContextAssembler {
       systemInstruction,
       instructionFileText,
       maxBytes,
+      // v3 new fields
+      parentContext,
+      siblingContext,
+      routeMeta,
     } = input;
 
     const sections: string[] = [];
@@ -50,9 +54,44 @@ export class CodexContextAssembler implements IContextAssembler {
       sections.push(`[CONTEXT]\n${contextLines.join('\n')}`);
     }
 
+    // v3: [PARENT_CONTEXT]
+    if (parentContext) {
+      sections.push(
+        `[PARENT_CONTEXT]\n` +
+        `(This is the message you are replying to, reinserted for context)\n` +
+        `- ${parentContext.from}: ${parentContext.content}`
+      );
+    }
+
+    // v3: [RELATED_CONTEXT]
+    if (siblingContext && siblingContext.length > 0) {
+      const siblingLines = siblingContext.map(msg =>
+        `- ${msg.from}: ${msg.content}`
+      );
+      sections.push(
+        `[RELATED_CONTEXT]\n` +
+        `(Other responses to the same message - avoid repeating)\n` +
+        siblingLines.join('\n')
+      );
+    }
+
     // [MESSAGE]
     if (currentMessage?.trim()) {
       sections.push(`[MESSAGE]\n${currentMessage.trim()}`);
+    }
+
+    // v3: [ROUTING_META]
+    if (routeMeta) {
+      const metaLines: string[] = [];
+      if (routeMeta.parentMessageId) {
+        metaLines.push(`parentMessageId: ${routeMeta.parentMessageId}`);
+      }
+      if (routeMeta.intent) {
+        metaLines.push(`intent: ${routeMeta.intent}`);
+      }
+      if (metaLines.length > 0) {
+        sections.push(`[ROUTING_META]\n${metaLines.join('\n')}`);
+      }
     }
 
     let prompt = sections.join('\n\n');

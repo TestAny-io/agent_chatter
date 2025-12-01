@@ -3,6 +3,9 @@
  *
  * Assembles prompts for Claude Code CLI.
  * Uses --append-system-prompt for system instructions (separated from main prompt).
+ *
+ * v3 extension: Added PARENT_CONTEXT, RELATED_CONTEXT, and ROUTING_META sections
+ * @see docs/design/route_rule/V3/detail/04-prompt-assembly.md
  */
 
 import { Buffer } from 'buffer';
@@ -27,12 +30,16 @@ export class ClaudeContextAssembler implements IContextAssembler {
       systemInstruction,
       instructionFileText,
       maxBytes,
+      // v3 new fields
+      parentContext,
+      siblingContext,
+      routeMeta,
     } = input;
 
     // Build system instruction text (for --append-system-prompt AND inline [SYSTEM])
     const systemText = this.buildSystemFlag(systemInstruction, instructionFileText);
 
-    // Build sections - order: [SYSTEM], [TEAM_TASK], [CONTEXT], [MESSAGE]
+    // Build sections - order: [SYSTEM], [TEAM_TASK], [CONTEXT], [PARENT_CONTEXT], [RELATED_CONTEXT], [MESSAGE], [ROUTING_META]
     const sections: string[] = [];
 
     // [SYSTEM] - embed system instruction in prompt (before MESSAGE)
@@ -53,15 +60,54 @@ export class ClaudeContextAssembler implements IContextAssembler {
       sections.push(`[CONTEXT]\n${contextLines.join('\n')}`);
     }
 
+    // v3: [PARENT_CONTEXT] - parent message reinsertion (when pushed out of window)
+    if (parentContext) {
+      sections.push(
+        `[PARENT_CONTEXT]\n` +
+        `(This is the message you are replying to, reinserted for context)\n` +
+        `- ${parentContext.from}: ${parentContext.content}`
+      );
+    }
+
+    // v3: [RELATED_CONTEXT] - sibling context (other responses to the same message)
+    if (siblingContext && siblingContext.length > 0) {
+      const siblingLines = siblingContext.map(msg =>
+        `- ${msg.from}: ${msg.content}`
+      );
+      sections.push(
+        `[RELATED_CONTEXT]\n` +
+        `(Other responses to the same message - avoid repeating)\n` +
+        siblingLines.join('\n')
+      );
+    }
+
     // [MESSAGE] - only if content exists
     if (currentMessage?.trim()) {
       sections.push(`[MESSAGE]\n${currentMessage.trim()}`);
     }
 
+    // v3: [ROUTING_META] - optional debugging/advanced prompting info
+    if (routeMeta) {
+      const metaLines: string[] = [];
+      if (routeMeta.parentMessageId) {
+        metaLines.push(`parentMessageId: ${routeMeta.parentMessageId}`);
+      }
+      if (routeMeta.intent) {
+        metaLines.push(`intent: ${routeMeta.intent}`);
+      }
+      if (metaLines.length > 0) {
+        sections.push(`[ROUTING_META]\n${metaLines.join('\n')}`);
+      }
+    }
+
     let prompt = sections.join('\n\n');
 
     // Apply byte budget (systemFlag is now embedded in prompt, pass as undefined for --append-system-prompt)
-    const result = this.applyByteBudget(prompt, systemText, maxBytes, contextMessages);
+    const result = this.applyByteBudgetV3(prompt, systemText, maxBytes, {
+      contextMessages,
+      parentContext,
+      siblingContext,
+    });
 
     return result;
   }
@@ -88,6 +134,7 @@ export class ClaudeContextAssembler implements IContextAssembler {
 
   /**
    * Applies byte budget, trimming context if necessary.
+   * @deprecated Use applyByteBudgetV3 for v3 features
    */
   private applyByteBudget(
     prompt: string,
@@ -115,6 +162,130 @@ export class ClaudeContextAssembler implements IContextAssembler {
     const trimmedPrompt = this.trimPromptToFit(prompt, availableForPrompt, contextMessages);
 
     return { prompt: trimmedPrompt, systemFlag };
+  }
+
+  /**
+   * v3: Applies byte budget with priority-based trimming
+   *
+   * Priority order (highest to lowest):
+   * 1. [MESSAGE] - cannot be truncated
+   * 2. [SYSTEM] - cannot be truncated
+   * 3. [TEAM_TASK] - can truncate (keep first 5KB)
+   * 4. [PARENT_CONTEXT] - can truncate (keep first 1KB)
+   * 5. [RELATED_CONTEXT] - can be removed or truncated
+   * 6. [CONTEXT] - remove oldest messages first
+   */
+  private applyByteBudgetV3(
+    prompt: string,
+    systemFlag: string | undefined,
+    maxBytes: number,
+    sections: {
+      contextMessages: PromptContextMessage[];
+      parentContext?: PromptContextMessage;
+      siblingContext?: PromptContextMessage[];
+    }
+  ): AssemblerOutput {
+    const { contextMessages, parentContext, siblingContext } = sections;
+
+    let currentBytes = Buffer.byteLength(prompt, 'utf8');
+    const systemBytes = systemFlag ? Buffer.byteLength(systemFlag, 'utf8') : 0;
+    const totalBytes = currentBytes + systemBytes;
+
+    if (totalBytes <= maxBytes) {
+      return { prompt, systemFlag };
+    }
+
+    // Need to trim
+    let trimmedPrompt = prompt;
+
+    // Step 1: Remove sibling context ([RELATED_CONTEXT])
+    if (siblingContext && siblingContext.length > 0) {
+      trimmedPrompt = this.removeSiblingSection(trimmedPrompt);
+      currentBytes = Buffer.byteLength(trimmedPrompt, 'utf8');
+      if (currentBytes + systemBytes <= maxBytes) {
+        return { prompt: trimmedPrompt, systemFlag };
+      }
+    }
+
+    // Step 2: Truncate parent context ([PARENT_CONTEXT]) - keep first 1KB
+    if (parentContext) {
+      trimmedPrompt = this.truncateParentSection(trimmedPrompt, 1024);
+      currentBytes = Buffer.byteLength(trimmedPrompt, 'utf8');
+      if (currentBytes + systemBytes <= maxBytes) {
+        return { prompt: trimmedPrompt, systemFlag };
+      }
+    }
+
+    // Step 3: Remove context messages from oldest
+    let remainingContext = [...contextMessages];
+    while (remainingContext.length > 0 && currentBytes + systemBytes > maxBytes) {
+      remainingContext = remainingContext.slice(1); // Remove oldest
+      trimmedPrompt = this.rebuildPromptWithContext(trimmedPrompt, remainingContext);
+      currentBytes = Buffer.byteLength(trimmedPrompt, 'utf8');
+    }
+
+    // Step 4: If still too large, truncate the entire prompt
+    if (currentBytes + systemBytes > maxBytes) {
+      const availableForPrompt = maxBytes - systemBytes;
+      if (availableForPrompt > 0) {
+        trimmedPrompt = this.truncateToBytes(trimmedPrompt, availableForPrompt);
+      } else {
+        trimmedPrompt = '';
+      }
+    }
+
+    return { prompt: trimmedPrompt, systemFlag };
+  }
+
+  /**
+   * Remove [RELATED_CONTEXT] section from prompt
+   */
+  private removeSiblingSection(prompt: string): string {
+    return prompt.replace(/\[RELATED_CONTEXT\]\n[\s\S]*?(?=\n\n\[|$)/, '').trim();
+  }
+
+  /**
+   * Truncate [PARENT_CONTEXT] section to maxBytes
+   */
+  private truncateParentSection(prompt: string, maxContentBytes: number): string {
+    const parentMatch = prompt.match(/(\[PARENT_CONTEXT\]\n[\s\S]*?)(?=\n\n\[|$)/);
+    if (!parentMatch) {
+      return prompt;
+    }
+
+    const parentSection = parentMatch[1];
+    const parentBytes = Buffer.byteLength(parentSection, 'utf8');
+
+    if (parentBytes <= maxContentBytes) {
+      return prompt;
+    }
+
+    // Truncate the content
+    const truncatedSection = this.truncateToBytes(parentSection, maxContentBytes) + '...';
+    return prompt.replace(parentMatch[1], truncatedSection);
+  }
+
+  /**
+   * Rebuild prompt with new context messages
+   */
+  private rebuildPromptWithContext(
+    prompt: string,
+    remainingContext: PromptContextMessage[]
+  ): string {
+    // Replace existing [CONTEXT] section
+    const contextPattern = /\[CONTEXT\]\n[\s\S]*?(?=\n\n\[|$)/;
+
+    if (remainingContext.length === 0) {
+      // Remove context section entirely
+      return prompt.replace(contextPattern, '').replace(/\n\n+/g, '\n\n').trim();
+    }
+
+    const contextLines = remainingContext.map(msg =>
+      `- ${msg.from} -> ${msg.to ?? 'all'}: ${msg.content}`
+    );
+    const newContextSection = `[CONTEXT]\n${contextLines.join('\n')}`;
+
+    return prompt.replace(contextPattern, newContextSection);
   }
 
   /**

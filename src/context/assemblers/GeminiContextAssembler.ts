@@ -27,6 +27,10 @@ export class GeminiContextAssembler implements IContextAssembler {
       systemInstruction,
       instructionFileText,
       maxBytes,
+      // v3 new fields
+      parentContext,
+      siblingContext,
+      routeMeta,
     } = input;
 
     const sections: string[] = [];
@@ -50,9 +54,40 @@ export class GeminiContextAssembler implements IContextAssembler {
       sections.push(`Conversation so far:\n${contextLines.join('\n')}`);
     }
 
+    // v3: Parent context (reinserted when pushed out of window)
+    if (parentContext) {
+      sections.push(
+        `Original message (reinserted for context):\n` +
+        `- ${parentContext.from}: ${parentContext.content}`
+      );
+    }
+
+    // v3: Related responses (sibling context)
+    if (siblingContext && siblingContext.length > 0) {
+      const siblingLines = siblingContext.map(msg =>
+        `- ${msg.from}: ${msg.content}`
+      );
+      sections.push(
+        `Related responses (avoid repeating):\n` +
+        siblingLines.join('\n')
+      );
+    }
+
     // Last message:
     if (currentMessage?.trim()) {
       sections.push(`Last message:\n${currentMessage.trim()}`);
+    }
+
+    // v3: Routing metadata (optional)
+    if (routeMeta && (routeMeta.parentMessageId || routeMeta.intent)) {
+      const metaParts: string[] = [];
+      if (routeMeta.parentMessageId) {
+        metaParts.push(`Replying to: ${routeMeta.parentMessageId}`);
+      }
+      if (routeMeta.intent) {
+        metaParts.push(`Intent: ${routeMeta.intent}`);
+      }
+      sections.push(`Routing info:\n${metaParts.join('\n')}`);
     }
 
     let prompt = sections.join('\n\n');

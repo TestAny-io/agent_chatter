@@ -25,7 +25,7 @@ import { MessageRouter } from './MessageRouter.js';
 import type { ConversationConfig } from '../models/CLIConfig.js';
 import { formatJsonl } from '../utils/JsonlMessageFormatter.js';
 import { ContextManager } from '../context/ContextManager.js';
-import type { AgentType } from '../context/types.js';
+import type { AgentType, RouteContextResult } from '../context/types.js';
 import type { ISessionStorage } from '../infrastructure/ISessionStorage.js';
 import { SessionStorageService } from '../infrastructure/SessionStorageService.js';
 import { createSessionSnapshot, type SessionSnapshot, type PersistedMessage } from '../models/SessionSnapshot.js';
@@ -34,6 +34,10 @@ import { SilentLogger } from '../interfaces/ILogger.js';
 import type { SpeakerInfo } from '../models/SpeakerInfo.js';
 import { isNewSpeaker, getSpeakerId, type SpeakerInfoInput, migrateMessageSpeaker } from '../utils/speakerMigration.js';
 import type { QueueUpdateEvent } from '../models/QueueEvent.js';
+// v3: RoutingQueue and related types
+import { RoutingQueue, type RoutingQueueConfig, type EnqueueInput } from './RoutingQueue.js';
+import type { RoutingItem, RoutingIntent } from '../models/RoutingItem.js';
+import { intentToEnum } from '../models/RoutingItem.js';
 
 export type ConversationStatus = 'active' | 'paused' | 'completed';
 
@@ -108,6 +112,11 @@ export interface ConversationCoordinatorOptions {
    * 用于 UI 显示队列可见性
    */
   onQueueUpdate?: (event: QueueUpdateEvent) => void;
+
+  /**
+   * v3: Routing queue configuration
+   */
+  routingQueueConfig?: Partial<RoutingQueueConfig>;
 }
 
 function normalizeAgentType(type?: string): string {
@@ -130,7 +139,12 @@ export class ConversationCoordinator {
   private contextMessageCount: number;
   private waitingForMemberId: string | null = null;  // 等待哪个成员的输入
   private currentExecutingMember: Member | null = null;  // Currently executing agent (for cancellation)
+  /** @deprecated v3: Use routingQueueV3 instead */
   private routingQueue: Array<{ member: Member }> = [];
+  /** v3: New priority-based routing queue */
+  private routingQueueV3: RoutingQueue;
+  /** v3: Currently executing routing item (for v3 context) */
+  private currentRoutingItem: RoutingItem | null = null;
   private routingInProgress = false;
   private contextManager: ContextManager;
   private sessionStorage: ISessionStorage;
@@ -170,6 +184,16 @@ export class ConversationCoordinator {
 
     // Initialize session storage (default: file-based, with logger injection)
     this.sessionStorage = options.sessionStorage ?? new SessionStorageService(undefined, this.logger);
+
+    // v3: Initialize RoutingQueue with config and callbacks
+    this.routingQueueV3 = new RoutingQueue({
+      config: options.routingQueueConfig,
+      logger: this.logger,
+      callbacks: {
+        onQueueUpdate: options.onQueueUpdate,
+      },
+      memberLookup: (memberId) => this.team?.members.find(m => m.id === memberId),
+    });
   }
 
   /**
@@ -186,6 +210,8 @@ export class ConversationCoordinator {
     this.session = null;
     this.waitingForMemberId = null;
     this.routingQueue = [];
+    this.routingQueueV3.clear(); // v3: Clear the new queue
+    this.currentRoutingItem = null;
     this.status = 'active';
     this.contextManager.clear();
 
@@ -231,6 +257,7 @@ export class ConversationCoordinator {
     }
 
     // Create and store message
+    // v3: Save parsedAddressees to preserve intent markers (!P1/!P2/!P3)
     const message: ConversationMessage = MessageUtils.createMessage(
       sender.id,
       sender.name,
@@ -239,7 +266,8 @@ export class ConversationCoordinator {
       parsed.cleanContent,
       {
         rawNextMarkers: parsed.addressees,
-        resolvedAddressees: []
+        resolvedAddressees: [],
+        parsedAddressees: parsed.parsedAddressees,
       }
     );
 
@@ -337,6 +365,8 @@ export class ConversationCoordinator {
 
   /**
    * 处理 Agent 响应
+   *
+   * v3: Includes parentMessageId and intent from currentRoutingItem when available
    */
   async onAgentResponse(memberId: string, rawResponse: string): Promise<void> {
     if (!this.session || !this.team) {
@@ -356,6 +386,16 @@ export class ConversationCoordinator {
     // 解析消息
     const parsed = this.messageRouter.parseMessage(formatted.text);
 
+    // v3: Build routing with parentMessageId, intent, and parsedAddressees
+    const routing = {
+      rawNextMarkers: parsed.addressees,
+      resolvedAddressees: [],
+      // v3 fields
+      parsedAddressees: parsed.parsedAddressees,
+      parentMessageId: this.currentRoutingItem?.parentMessageId,
+      intent: this.currentRoutingItem?.intent,
+    };
+
     // 创建 ConversationMessage
     const message: ConversationMessage = MessageUtils.createMessage(
       member.id,
@@ -363,10 +403,7 @@ export class ConversationCoordinator {
       member.displayName,
       member.type,
       parsed.cleanContent,
-      {
-        rawNextMarkers: parsed.addressees,
-        resolvedAddressees: []
-      }
+      routing
     );
 
     // 添加到历史
@@ -397,6 +434,7 @@ export class ConversationCoordinator {
     const parsed = this.messageRouter.parseMessage(content);
 
     // 创建消息
+    // v3: Save parsedAddressees to preserve intent markers
     const message: ConversationMessage = MessageUtils.createMessage(
       member.id,
       member.name,
@@ -405,7 +443,8 @@ export class ConversationCoordinator {
       parsed.cleanContent,
       {
         rawNextMarkers: parsed.addressees,
-        resolvedAddressees: []
+        resolvedAddressees: [],
+        parsedAddressees: parsed.parsedAddressees,
       }
     );
 
@@ -425,6 +464,8 @@ export class ConversationCoordinator {
 
   /**
    * 路由消息到下一个接收者
+   *
+   * v3: Also enqueues items into routingQueueV3 with intent parsing
    */
   private async routeToNext(message: ConversationMessage): Promise<void> {
     if (!this.session || !this.team) {
@@ -434,11 +475,19 @@ export class ConversationCoordinator {
     const addressees = message.routing?.rawNextMarkers || [];
     this.logger.debug(`[Routing] From ${message.speaker.name} addressees=${JSON.stringify(addressees)}`);
 
+    // v3: Use saved parsedAddressees from message.routing (preserved from original parse)
+    // Do NOT re-parse message.content as it's already cleaned (NEXT markers stripped)
+    const parsedAddressees = message.routing?.parsedAddressees || [];
+    this.logger.debug(
+      `[v3 Routing] Using saved parsedAddressees: ${JSON.stringify(parsedAddressees)}`
+    );
+
     let resolvedMembers: Member[] = [];
 
     if (addressees.length === 0) {
       // 没有指定接收者，如果队列已有待处理路由则继续处理队列
-      if (this.routingQueue.length > 0) {
+      // v3: Only check routingQueueV3 (single source of truth)
+      if (!this.routingQueueV3.isEmpty()) {
         await this.processRoutingQueue();
         return;
       }
@@ -521,16 +570,38 @@ export class ConversationCoordinator {
       `[Routing] Resolved addressees: ${resolvedMembers.map(m => `${m.name}(${m.id})`).join(', ') || 'none'}`
     );
 
-    // 入队并串行处理（只存 member，处理时动态获取最新消息）
-    // 去重相邻的重复成员（例如 [max, max, carol] -> [max, carol]）
-    for (const member of resolvedMembers) {
-      const lastInQueue = this.routingQueue[this.routingQueue.length - 1];
-      // Only skip if the immediately previous entry is the same member
-      if (lastInQueue && lastInQueue.member.id === member.id) {
-        this.logger.debug(`[Routing] Skipping duplicate adjacent member: ${member.name}(${member.id})`);
-        continue;
+    // v3: Enqueue ONLY into v3 queue (legacy queue removed for single-source scheduling)
+    if (resolvedMembers.length > 0) {
+      // Build enqueue inputs with intent from parsedAddressees
+      const enqueueInputs: EnqueueInput[] = [];
+      for (const member of resolvedMembers) {
+        // Find matching parsed addressee by id, name, or displayName
+        // (aligns with resolveAddressees normalization rules)
+        const normalizedMemberId = this.normalizeIdentifier(member.id);
+        const normalizedMemberName = this.normalizeIdentifier(member.name);
+        const normalizedMemberDisplayName = this.normalizeIdentifier(member.displayName);
+
+        const matchingParsed = parsedAddressees.find(pa => {
+          const normalizedPa = this.normalizeIdentifier(pa.name);
+          return normalizedPa === normalizedMemberId ||
+                 normalizedPa === normalizedMemberName ||
+                 normalizedPa === normalizedMemberDisplayName;
+        });
+        const shortIntent = matchingParsed?.intent ?? 'P2';
+        const intent = intentToEnum(shortIntent);
+
+        enqueueInputs.push({
+          targetMemberId: member.id,
+          intent,
+        });
       }
-      this.routingQueue.push({ member });
+
+      // Enqueue with message ID as parentMessageId
+      const enqueueResult = this.routingQueueV3.enqueue(enqueueInputs, message.id);
+      this.logger.debug(
+        `[v3 Routing] Enqueued ${enqueueResult.enqueued.length} items, ` +
+        `skipped ${enqueueResult.skipped.length}`
+      );
     }
 
     // 通知队列更新（入队完成）
@@ -539,6 +610,14 @@ export class ConversationCoordinator {
     await this.processRoutingQueue();
   }
 
+  /**
+   * Process routing queue using v3 queue as single source of truth
+   *
+   * v3 Architecture:
+   * - Uses routingQueueV3.selectNext() as the sole driver
+   * - Gets member via memberLookup from route.targetMemberId
+   * - Ensures member and route are always in sync
+   */
   private async processRoutingQueue(): Promise<void> {
     if (this.routingInProgress) {
       this.logger.debug('[ProcessQueue] Already in progress, skipping');
@@ -546,22 +625,42 @@ export class ConversationCoordinator {
     }
     this.routingInProgress = true;
 
-    this.logger.debug(`[ProcessQueue] Processing queue with ${this.routingQueue.length} items`);
+    this.logger.debug(`[ProcessQueue] Processing v3 queue with ${this.routingQueueV3.size()} items`);
 
-    while (this.routingQueue.length > 0) {
-      const { member } = this.routingQueue.shift()!;
+    // v3: Use routingQueueV3 as single source of truth
+    while (!this.routingQueueV3.isEmpty()) {
+      const route = this.routingQueueV3.selectNext();
+      if (!route) {
+        this.logger.debug('[ProcessQueue] selectNext returned null, queue empty');
+        break;
+      }
 
-      // 通知队列更新（member 已从 routingQueue 移除，作为 executing 传入）
+      // Get member from route's targetMemberId
+      const member = this.team?.members.find(m => m.id === route.targetMemberId);
+      if (!member) {
+        this.logger.warn(`[ProcessQueue] Member ${route.targetMemberId} not found, skipping route`);
+        continue;
+      }
+
+      this.currentRoutingItem = route;
+      this.logger.debug(
+        `[v3 ProcessQueue] Selected route: ${route.id} -> ${member.name}(${member.id}), ` +
+        `intent=${route.intent}, parent=${route.parentMessageId}`
+      );
+
+      // 通知队列更新（member 作为 executing 传入）
       this.notifyQueueUpdate(member);
 
-      // 动态获取最新消息作为 [MESSAGE]
+      // 动态获取最新消息作为 [MESSAGE] (fallback for legacy context)
       const latestMessage = this.session?.messages[this.session.messages.length - 1];
       const messageContent = latestMessage?.content ?? '';
 
       this.logger.debug(`[ProcessQueue] Processing ${member.name} (${member.type}), latest message from: ${latestMessage?.speaker.name}`);
 
       if (member.type === 'ai') {
-        await this.sendToAgent(member, messageContent);
+        await this.sendToAgent(member, messageContent, route);
+        // Clear current routing item after completion
+        this.currentRoutingItem = null;
         continue;
       }
 
@@ -569,6 +668,9 @@ export class ConversationCoordinator {
       this.waitingForMemberId = member.id;
       this.status = 'paused';
       this.notifyStatusChange();
+
+      // Clear current routing item when pausing for human
+      this.currentRoutingItem = null;
 
       // 通知队列更新（Human 暂停，无 executing）
       this.notifyQueueUpdate();
@@ -584,6 +686,9 @@ export class ConversationCoordinator {
 
     this.logger.debug('[ProcessQueue] Finished processing queue');
 
+    // Clear current routing item
+    this.currentRoutingItem = null;
+
     // 通知队列清空（无 executing）
     this.notifyQueueUpdate();
 
@@ -592,14 +697,22 @@ export class ConversationCoordinator {
 
   /**
    * 发送消息给 Agent
+   *
+   * v3: When route parameter is provided, uses getContextForRoute for
+   * causal-aware context retrieval with parent message and sibling context.
+   *
+   * @param member - Target member
+   * @param message - Message content (legacy, ignored when route is provided)
+   * @param route - v3 routing item (optional, enables v3 context features)
    */
-  private async sendToAgent(member: Member, message: string): Promise<void> {
+  private async sendToAgent(member: Member, message: string, route?: RoutingItem): Promise<void> {
     if (!member.agentConfigId) {
       throw new Error(`Member ${member.id} has no agent config`);
     }
 
     // Track currently executing member for cancellation
     this.currentExecutingMember = member;
+    this.currentRoutingItem = route ?? null; // v3: Track current routing item
 
     // Notify that agent has started
     if (this.options.onAgentStarted) {
@@ -619,14 +732,34 @@ export class ConversationCoordinator {
 
       // Use ContextManager to prepare context and assemble prompt
       const agentType = normalizeAgentType(member.agentType) as AgentType;
-      const contextInput = this.contextManager.getContextForAgent(
-        member.id,
-        agentType,
-        {
-          systemInstruction: member.systemInstruction,
-          instructionFileText: member.instructionFileText,
-        }
-      );
+
+      // v3: Use getContextForRoute when RoutingItem is available
+      let contextInput;
+      if (route) {
+        contextInput = this.contextManager.getContextForRoute(
+          member.id,
+          agentType,
+          route,
+          {
+            systemInstruction: member.systemInstruction,
+            instructionFileText: member.instructionFileText,
+          }
+        );
+        this.logger.debug(
+          `[v3] Using getContextForRoute for ${member.name}, ` +
+          `parent=${route.parentMessageId}, intent=${route.intent}`
+        );
+      } else {
+        // Legacy: use getContextForAgent
+        contextInput = this.contextManager.getContextForAgent(
+          member.id,
+          agentType,
+          {
+            systemInstruction: member.systemInstruction,
+            instructionFileText: member.instructionFileText,
+          }
+        );
+      }
 
       const prompt = this.contextManager.assemblePrompt(agentType, contextInput);
 
@@ -672,7 +805,8 @@ export class ConversationCoordinator {
       }
 
       // 如果路由队列中已有待处理的 NEXT，优先继续处理队列
-      if (this.routingQueue.length > 0) {
+      // v3: Only check routingQueueV3 (single source of truth)
+      if (!this.routingQueueV3.isEmpty()) {
         await this.processRoutingQueue();
         return;
       }
@@ -740,8 +874,9 @@ export class ConversationCoordinator {
     }
 
     for (const addressee of addressees) {
+      const cleanedAddressee = this.stripIntentSuffix(addressee);
       // 规范化：转小写，移除空格和连字符
-      const normalizedAddressee = this.normalizeIdentifier(addressee);
+      const normalizedAddressee = this.normalizeIdentifier(cleanedAddressee);
 
       // 尝试按 ID、名称或显示名称匹配
       const member = this.team.members.find(m => {
@@ -765,6 +900,15 @@ export class ConversationCoordinator {
     }
 
     return result;
+  }
+
+  /**
+   * Strip trailing intent marker (!p1/!p2/!p3 or fullwidth variant) from raw token.
+   * This makes resolveAddressees robust to raw markers like "sarah !p1" or "max!P1".
+   */
+  private stripIntentSuffix(token: string): string {
+    // Remove ASCII or fullwidth exclamation followed by p1/p2/p3 (case-insensitive)
+    return token.replace(/[!！]\s*[pP][123]\s*$/, '').trim();
   }
 
   /**
@@ -796,6 +940,8 @@ export class ConversationCoordinator {
   /**
    * Store message in both session and ContextManager
    * This keeps both data stores in sync
+   *
+   * v3: Also marks the message as completed in RoutingQueue
    */
   private storeMessage(message: ConversationMessage): void {
     // Add to session (for backward compatibility)
@@ -811,6 +957,9 @@ export class ConversationCoordinator {
       content: message.content,
       routing: message.routing,
     });
+
+    // v3: Mark message as completed for local queue scheduling
+    this.routingQueueV3.markCompleted(message.id);
   }
 
   /**
@@ -859,6 +1008,8 @@ export class ConversationCoordinator {
   /**
    * 通知队列状态更新
    *
+   * v3: Uses RoutingQueueV3 for v3-aware event emission with stats and itemsDetail
+   *
    * @param executing - 当前正在执行的成员（可选）
    */
   private notifyQueueUpdate(executing?: Member): void {
@@ -866,14 +1017,9 @@ export class ConversationCoordinator {
       return;
     }
 
-    // items 是待处理队列（不含 executing）
-    const items = this.routingQueue.map(item => item.member);
-
-    this.options.onQueueUpdate({
-      items,
-      executing,
-      isEmpty: items.length === 0 && !executing
-    });
+    // v3: Delegate to RoutingQueue for full v3 event with itemsDetail and stats
+    // routingQueueV3 is the single source of truth (legacy queue removed)
+    this.routingQueueV3.notifyQueueUpdate(executing, this.currentRoutingItem ?? undefined);
   }
 
   /**
@@ -1016,7 +1162,9 @@ export class ConversationCoordinator {
     this.session = this.rebuildSession(snapshot, migratedMessages);
 
     // 8. Reset execution state (Ready-Idle principle)
-    this.routingQueue = [];
+    this.routingQueue = []; // Legacy (deprecated)
+    this.routingQueueV3.clear(); // v3: Clear the routing queue
+    this.currentRoutingItem = null;
     this.currentExecutingMember = null;
     this.status = 'paused';
     this.waitingForMemberId = this.getFirstHumanMemberId();
