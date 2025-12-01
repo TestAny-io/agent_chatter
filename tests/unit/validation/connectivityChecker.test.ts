@@ -67,6 +67,22 @@ describe('ConnectivityChecker', () => {
   }
 
   describe('checkConnectivity - Layer 3-4 (DNS + TCP)', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      // Save and clear proxy environment variables for Layer 3-4 tests
+      originalEnv = { ...process.env };
+      delete process.env.https_proxy;
+      delete process.env.HTTPS_PROXY;
+      delete process.env.http_proxy;
+      delete process.env.HTTP_PROXY;
+    });
+
+    afterEach(() => {
+      // Restore original environment
+      process.env = originalEnv;
+    });
+
     it('should return reachable: true for unknown agent type', async () => {
       const result = await checkConnectivity('unknown-agent');
       expect(result.reachable).toBe(true);
@@ -224,13 +240,23 @@ describe('ConnectivityChecker', () => {
   });
 
   describe('checkConnectivity - Layer 7 (HTTP)', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+
     // Use real timers for HTTP tests since they involve more complex async flows
     beforeEach(() => {
       vi.useRealTimers();
+      // Save and clear proxy environment variables
+      originalEnv = { ...process.env };
+      delete process.env.https_proxy;
+      delete process.env.HTTPS_PROXY;
+      delete process.env.http_proxy;
+      delete process.env.HTTP_PROXY;
     });
 
     afterEach(() => {
       vi.useFakeTimers();
+      // Restore original environment
+      process.env = originalEnv;
     });
 
     // Setup: DNS and TCP always succeed synchronously, HTTP varies
@@ -360,6 +386,156 @@ describe('ConnectivityChecker', () => {
         const result = await checkConnectivity(agent);
         expect(result.reachable).toBe(true);
       }
+    });
+  });
+
+  describe('checkConnectivity - Proxy Support', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      // Save original environment
+      originalEnv = { ...process.env };
+      vi.useRealTimers();
+    });
+
+    afterEach(() => {
+      // Restore original environment
+      process.env = originalEnv;
+      vi.useFakeTimers();
+    });
+
+    function setupLayer34Success() {
+      vi.mocked(dns.resolve4).mockImplementation((host, callback) => {
+        (callback as (err: NodeJS.ErrnoException | null, addresses: string[]) => void)(null, ['1.2.3.4']);
+      });
+
+      const mockSocket = createMockSocket();
+      vi.mocked(net.createConnection).mockImplementation(() => {
+        process.nextTick(() => mockSocket.emit('connect'));
+        return mockSocket;
+      });
+    }
+
+    function createHttpMock(statusCode: number, body: string = '') {
+      const mockReq = createMockHttpRequest();
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = statusCode;
+
+      vi.mocked(https.request).mockImplementation((options, callback) => {
+        process.nextTick(() => {
+          (callback as (res: any) => void)(mockRes);
+          process.nextTick(() => {
+            if (body) {
+              mockRes.emit('data', Buffer.from(body));
+            }
+            mockRes.emit('end');
+          });
+        });
+        return mockReq;
+      });
+
+      return mockReq;
+    }
+
+    it('should skip DNS/TCP checks when https_proxy is set', async () => {
+      process.env.https_proxy = 'http://proxy.example.com:8080';
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      // Should not call DNS or TCP (they're skipped in proxy mode)
+      // But should still call HTTPS request
+      expect(vi.mocked(dns.resolve4)).not.toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
+      expect(vi.mocked(https.request)).toHaveBeenCalled();
+      expect(result.reachable).toBe(true);
+    });
+
+    it('should skip DNS/TCP checks when HTTPS_PROXY is set', async () => {
+      process.env.HTTPS_PROXY = 'http://proxy.example.com:8080';
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(vi.mocked(dns.resolve4)).not.toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
+      expect(result.reachable).toBe(true);
+    });
+
+    it('should skip DNS/TCP checks when http_proxy is set', async () => {
+      process.env.http_proxy = 'http://proxy.example.com:8080';
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(vi.mocked(dns.resolve4)).not.toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
+      expect(result.reachable).toBe(true);
+    });
+
+    it('should skip DNS/TCP checks when HTTP_PROXY is set', async () => {
+      process.env.HTTP_PROXY = 'http://proxy.example.com:8080';
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(vi.mocked(dns.resolve4)).not.toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
+      expect(result.reachable).toBe(true);
+    });
+
+    it('should use proxy agent when proxy is configured', async () => {
+      process.env.https_proxy = 'http://proxy.example.com:8080';
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      await checkConnectivity('claude');
+
+      // Verify https.request was called with proxy agent
+      expect(vi.mocked(https.request)).toHaveBeenCalled();
+      const callArgs = vi.mocked(https.request).mock.calls[0][0] as any;
+      expect(callArgs.agent).toBeDefined();
+    });
+
+    it('should perform DNS/TCP checks when no proxy is configured', async () => {
+      // Ensure no proxy env vars are set
+      delete process.env.https_proxy;
+      delete process.env.HTTPS_PROXY;
+      delete process.env.http_proxy;
+      delete process.env.HTTP_PROXY;
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      // Should call DNS and TCP when no proxy
+      expect(vi.mocked(dns.resolve4)).toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).toHaveBeenCalled();
+      expect(result.reachable).toBe(true);
+    });
+
+    it('should prioritize https_proxy over other proxy env vars', async () => {
+      process.env.https_proxy = 'http://https-proxy.example.com:8080';
+      process.env.http_proxy = 'http://http-proxy.example.com:8080';
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      await checkConnectivity('claude');
+
+      // Should skip Layer 3-4 checks
+      expect(vi.mocked(dns.resolve4)).not.toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
     });
   });
 });

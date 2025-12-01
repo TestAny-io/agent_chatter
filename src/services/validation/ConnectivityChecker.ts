@@ -14,6 +14,7 @@
 import * as dns from 'dns';
 import * as net from 'net';
 import * as https from 'https';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ConnectivityResult } from './types.js';
 import type { ILogger } from '../../interfaces/ILogger.js';
 import { SilentLogger } from '../../interfaces/ILogger.js';
@@ -142,16 +143,29 @@ export async function checkConnectivity(
 
   const startTime = Date.now();
 
-  try {
-    // Step 1: DNS resolution (Layer 3)
-    logger.debug(`[Layer 3] Starting DNS resolution for ${endpoint.host}...`);
-    const addresses = await resolveDns(endpoint.host, dnsTimeout);
-    logger.debug(`[Layer 3] DNS resolved: ${addresses.join(', ')} (${Date.now() - startTime}ms)`);
+  // Detect proxy configuration
+  const proxyUrl = detectProxy();
+  if (proxyUrl) {
+    logger.debug(`Proxy detected: ${proxyUrl}`);
+    logger.debug(`Skipping DNS and TCP checks (Layer 3-4) when using proxy`);
+  }
 
-    // Step 2: TCP connection check (Layer 4)
-    logger.debug(`[Layer 4] Starting TCP connection to ${endpoint.host}:${endpoint.port}...`);
-    await checkTcpConnection(endpoint.host, endpoint.port, connectivityTimeout);
-    logger.debug(`[Layer 4] TCP connection successful (${Date.now() - startTime}ms)`);
+  try {
+    // Step 1 & 2: DNS + TCP checks (Layer 3-4)
+    // Skip when proxy is configured, as direct connection checks are meaningless
+    if (!proxyUrl) {
+      // Step 1: DNS resolution (Layer 3)
+      logger.debug(`[Layer 3] Starting DNS resolution for ${endpoint.host}...`);
+      const addresses = await resolveDns(endpoint.host, dnsTimeout);
+      logger.debug(`[Layer 3] DNS resolved: ${addresses.join(', ')} (${Date.now() - startTime}ms)`);
+
+      // Step 2: TCP connection check (Layer 4)
+      logger.debug(`[Layer 4] Starting TCP connection to ${endpoint.host}:${endpoint.port}...`);
+      await checkTcpConnection(endpoint.host, endpoint.port, connectivityTimeout);
+      logger.debug(`[Layer 4] TCP connection successful (${Date.now() - startTime}ms)`);
+    } else {
+      logger.debug(`[Layer 3-4] Skipped (proxy mode)`);
+    }
 
     // Step 3: HTTP check (Layer 7) - detect region restrictions
     if (!skipHttpCheck && httpPath) {
@@ -160,7 +174,8 @@ export async function checkConnectivity(
         endpoint.host,
         httpPath,
         httpTimeout,
-        logger
+        logger,
+        proxyUrl
       );
       logger.debug(`[Layer 7] HTTP result: ${JSON.stringify(httpResult)}`);
 
@@ -191,6 +206,27 @@ export async function checkConnectivity(
 }
 
 // ===== Private Methods =====
+
+/**
+ * Detect proxy configuration from environment variables
+ *
+ * @returns Proxy URL if configured, otherwise undefined
+ *
+ * @remarks
+ * Checks environment variables in this order:
+ * - https_proxy (lowercase, preferred for HTTPS endpoints)
+ * - HTTPS_PROXY (uppercase)
+ * - http_proxy (lowercase)
+ * - HTTP_PROXY (uppercase)
+ */
+function detectProxy(): string | undefined {
+  return (
+    process.env.https_proxy ||
+    process.env.HTTPS_PROXY ||
+    process.env.http_proxy ||
+    process.env.HTTP_PROXY
+  );
+}
 
 /**
  * DNS resolution with timeout control
@@ -376,6 +412,8 @@ function classifyError(error: unknown, host: string): ConnectivityResult {
  * @param host - Hostname
  * @param path - HTTP path
  * @param timeoutMs - Timeout in milliseconds
+ * @param logger - Logger instance
+ * @param proxyUrl - Optional proxy URL from environment variables
  * @returns Connectivity result
  *
  * @remarks
@@ -389,22 +427,34 @@ async function checkHttpEndpoint(
   host: string,
   path: string,
   timeoutMs: number,
-  logger: ILogger
+  logger: ILogger,
+  proxyUrl?: string
 ): Promise<ConnectivityResult> {
   logger.debug(`[HTTP] Sending POST to https://${host}${path} (timeout: ${timeoutMs}ms)`);
+  if (proxyUrl) {
+    logger.debug(`[HTTP] Using proxy: ${proxyUrl}`);
+  }
+
   return new Promise((resolve) => {
-    const req = https.request(
-      {
-        hostname: host,
-        port: 443,
-        path: path,
-        method: 'POST', // Use POST to match actual API usage
-        timeout: timeoutMs,
-        headers: {
-          'Content-Type': 'application/json',
-          // No auth header - we expect 401/403
-        },
+    const requestOptions: https.RequestOptions = {
+      hostname: host,
+      port: 443,
+      path: path,
+      method: 'POST', // Use POST to match actual API usage
+      timeout: timeoutMs,
+      headers: {
+        'Content-Type': 'application/json',
+        // No auth header - we expect 401/403
       },
+    };
+
+    // Add proxy agent if proxy is configured
+    if (proxyUrl) {
+      requestOptions.agent = new HttpsProxyAgent(proxyUrl);
+    }
+
+    const req = https.request(
+      requestOptions,
       (res) => {
         const statusCode = res.statusCode || 0;
         logger.debug(`[HTTP] Response status: ${statusCode}`);
