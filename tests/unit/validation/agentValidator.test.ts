@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import { AgentValidator } from '../../../src/services/validation/AgentValidator.js';
+import { checkConnectivity } from '../../../src/services/validation/ConnectivityChecker.js';
 
 // Mock fs module
 vi.mock('fs', () => ({
@@ -31,6 +32,7 @@ vi.mock('util', () => ({
 // Mock connectivity checker
 vi.mock('../../../src/services/validation/ConnectivityChecker.js', () => ({
   checkConnectivity: vi.fn().mockResolvedValue({ reachable: true, latencyMs: 50 }),
+  sanitizeProxyUrl: vi.fn((url: string) => url.replace(/\/\/[^@]+@/, '//')),
 }));
 
 describe('AgentValidator', () => {
@@ -262,6 +264,108 @@ describe('AgentValidator', () => {
       expect(results.has('claude')).toBe(true);
       expect(results.has('codex')).toBe(true);
       expect(results.has('gemini')).toBe(true);
+    });
+  });
+
+  describe('proxyUsed in CheckResult', () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      mockExecAsync.mockResolvedValue({ stdout: '/usr/local/bin/claude', stderr: '' });
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ accessToken: 'token' }));
+    });
+
+    it('should include proxyUsed when proxy is configured in environment', async () => {
+      // Mock ConnectivityChecker to return proxyUsed
+      vi.mocked(checkConnectivity).mockResolvedValue({
+        reachable: true,
+        latencyMs: 50,
+        proxyUsed: 'http://proxy.example.com:8080',
+      });
+
+      const validator = new AgentValidator({
+        skipDryRun: true,
+        authCheckerOptions: { skipStatusCommand: true },
+        homeDir: '/home/test',
+        platform: 'linux',
+      });
+
+      const result = await validator.validateAgent('claude');
+
+      // Find connectivity check
+      const connectivityCheck = result.checks.find(c => c.name === 'Connectivity Check');
+      expect(connectivityCheck).toBeDefined();
+      expect(connectivityCheck!.proxyUsed).toBe('http://proxy.example.com:8080');
+    });
+
+    it('should include proxyUsed even when connectivity fails', async () => {
+      // Mock ConnectivityChecker to return proxyUsed with failure
+      vi.mocked(checkConnectivity).mockResolvedValue({
+        reachable: false,
+        error: 'Connection timeout',
+        errorType: 'NETWORK_TIMEOUT',
+        proxyUsed: 'http://proxy.example.com:8080',
+      });
+
+      const validator = new AgentValidator({
+        skipDryRun: true,
+        authCheckerOptions: { skipStatusCommand: true },
+        homeDir: '/home/test',
+        platform: 'linux',
+      });
+
+      const result = await validator.validateAgent('claude');
+
+      const connectivityCheck = result.checks.find(c => c.name === 'Connectivity Check');
+      expect(connectivityCheck).toBeDefined();
+      expect(connectivityCheck!.passed).toBe(false);
+      expect(connectivityCheck!.proxyUsed).toBe('http://proxy.example.com:8080');
+    });
+
+    it('should not include proxyUsed when no proxy is configured', async () => {
+      // Mock ConnectivityChecker without proxy
+      vi.mocked(checkConnectivity).mockResolvedValue({
+        reachable: true,
+        latencyMs: 50,
+        // No proxyUsed field
+      });
+
+      const validator = new AgentValidator({
+        skipDryRun: true,
+        authCheckerOptions: { skipStatusCommand: true },
+        homeDir: '/home/test',
+        platform: 'linux',
+      });
+
+      const result = await validator.validateAgent('claude');
+
+      const connectivityCheck = result.checks.find(c => c.name === 'Connectivity Check');
+      expect(connectivityCheck).toBeDefined();
+      expect(connectivityCheck!.proxyUsed).toBeUndefined();
+    });
+
+    it('should pass through proxyUsed from explicit proxyUrl option', async () => {
+      // Mock ConnectivityChecker to return explicit proxy
+      vi.mocked(checkConnectivity).mockResolvedValue({
+        reachable: true,
+        latencyMs: 50,
+        proxyUsed: 'http://explicit-proxy:9090',
+      });
+
+      const validator = new AgentValidator({
+        proxyUrl: 'http://user:pass@explicit-proxy:9090',
+        skipDryRun: true,
+        authCheckerOptions: { skipStatusCommand: true },
+        homeDir: '/home/test',
+        platform: 'linux',
+      });
+
+      const result = await validator.validateAgent('claude');
+
+      const connectivityCheck = result.checks.find(c => c.name === 'Connectivity Check');
+      expect(connectivityCheck).toBeDefined();
+      // Should be sanitized (no user:pass)
+      expect(connectivityCheck!.proxyUsed).toBe('http://explicit-proxy:9090');
     });
   });
 });

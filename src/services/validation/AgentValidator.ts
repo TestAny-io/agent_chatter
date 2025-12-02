@@ -542,6 +542,7 @@ export class AgentValidator {
         name: 'Connectivity Check',
         passed: true,
         message: `API reachable (${result.latencyMs}ms)`,
+        proxyUsed: result.proxyUsed,
       };
     }
 
@@ -563,6 +564,7 @@ export class AgentValidator {
           resolution:
             'Possible causes: (1) IP in restricted region; (2) Access restrictions. ' +
             'If in supported region, try re-authenticating or using a VPN.',
+          proxyUsed: result.proxyUsed,
         };
       }
 
@@ -574,6 +576,7 @@ export class AgentValidator {
           message: `HTTP 429 - Rate limited`,
           errorType: result.errorType,
           resolution: 'API is rate limiting requests. Wait and try again.',
+          proxyUsed: result.proxyUsed,
         };
       }
 
@@ -585,6 +588,7 @@ export class AgentValidator {
           message: `HTTP ${result.httpStatusCode} - Service unavailable`,
           errorType: result.errorType,
           resolution: 'API service may be down. Check provider status page.',
+          proxyUsed: result.proxyUsed,
         };
       }
 
@@ -595,6 +599,7 @@ export class AgentValidator {
         message: `HTTP ${result.httpStatusCode} from API${hint}`,
         errorType: result.errorType,
         resolution: 'Check network connection and try again.',
+        proxyUsed: result.proxyUsed,
       };
     }
 
@@ -605,6 +610,7 @@ export class AgentValidator {
       message: result.error || 'Cannot reach API',
       errorType: result.errorType,
       resolution: 'Check network connection, firewall, or VPN settings.',
+      proxyUsed: result.proxyUsed,
     };
   }
 

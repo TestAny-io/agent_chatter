@@ -109,6 +109,17 @@ export interface CheckResult {
 
   /** Non-blocking warning (may exist even when passed=true) */
   warning?: string;
+
+  /**
+   * Proxy URL used for connectivity check (sanitized)
+   *
+   * @remarks
+   * - Only present when a proxy was detected or explicitly provided
+   * - Authentication information (user:pass@) is removed for security
+   * - Example: "http://proxy.example.com:8080"
+   * - Passed through from ConnectivityResult for CLI visibility
+   */
+  proxyUsed?: string;
 }
 
 /**
