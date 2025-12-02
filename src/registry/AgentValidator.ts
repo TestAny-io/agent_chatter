@@ -14,10 +14,14 @@
 import type { AgentDefinition } from './RegistryStorage.js';
 import type { VerificationResult, CheckResult } from './AgentRegistry.js';
 import { AgentValidator as NewAgentValidator } from '../services/validation/AgentValidator.js';
+import type { AgentValidatorOptions as NewAgentValidatorOptions } from '../services/validation/AgentValidator.js';
 import type {
   VerificationResult as NewVerificationResult,
   CheckResult as NewCheckResult,
 } from '../services/validation/types.js';
+
+// Re-export for use in AgentRegistry
+export type { AgentValidatorOptions } from '../services/validation/AgentValidator.js';
 
 /**
  * AgentValidator class
@@ -28,12 +32,12 @@ import type {
 export class AgentValidator {
   private readonly newValidator: NewAgentValidator;
 
-  constructor() {
-    // Initialize new validator with default options
-    // Skip connectivity check by default for backwards compatibility
-    // (original implementation didn't do connectivity checks)
+  constructor(options?: NewAgentValidatorOptions) {
+    // Initialize new validator with provided options
+    // Enable connectivity check by default with new implementation
     this.newValidator = new NewAgentValidator({
-      skipConnectivityCheck: false, // Enable connectivity check with new implementation
+      skipConnectivityCheck: false,
+      ...options
     });
   }
 

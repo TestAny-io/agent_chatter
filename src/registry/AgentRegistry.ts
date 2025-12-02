@@ -9,6 +9,7 @@ import type { AgentDefinition, AgentRegistryData } from './RegistryStorage.js';
 import { AgentScanner } from './AgentScanner.js';
 import type { ScannedAgent } from './AgentScanner.js';
 import { AgentValidator } from './AgentValidator.js';
+import type { AgentValidatorOptions } from './AgentValidator.js';
 import { getDefaultAgentConfig } from '../utils/AgentDefaults.js';
 import type { AgentType } from '../utils/AgentDefaults.js';
 import type { VerificationResult, CheckResult } from '../services/validation/types.js';
@@ -271,8 +272,11 @@ export class AgentRegistry {
 
   /**
    * 验证 agent（便捷方法）
+   *
+   * @param name - Agent name
+   * @param options - Validation options (e.g., proxyUrl)
    */
-  async verifyAgent(name: string): Promise<VerificationResult> {
+  async verifyAgent(name: string, options?: AgentValidatorOptions): Promise<VerificationResult> {
     if (!this.loaded) {
       await this.load();
     }
@@ -287,7 +291,7 @@ export class AgentRegistry {
       };
     }
 
-    const validator = new AgentValidator();
+    const validator = new AgentValidator(options);
     const result = await validator.verify(agent);
 
     // 更新最后验证时间
