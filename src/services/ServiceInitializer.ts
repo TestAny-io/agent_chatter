@@ -47,6 +47,15 @@ export interface InitializeServicesOptions {
   executionEnv: IExecutionEnvironment;
   /** Adapter factory for creating agent adapters (required, injected by CLI) */
   adapterFactory: IAdapterFactory;
+  /**
+   * Proxy URL to use for agent connectivity checks and CLI processes
+   *
+   * @remarks
+   * - Used by AgentValidator for connectivity checks
+   * - Injected as https_proxy environment variable when spawning agent CLI processes
+   * - Takes precedence over existing environment variables
+   */
+  proxyUrl?: string;
   contextMessageCount?: number;
   onMessage?: (message: ConversationMessage) => void;
   onStatusChange?: (status: ConversationStatus) => void;
@@ -315,7 +324,10 @@ export async function initializeServices(
   const agentConfigManager = new AgentConfigManager(storage);
   const teamManager = new TeamManager(storage);
   // AgentManager now only depends on interfaces (executionEnv, adapterFactory)
-  const agentManager = new AgentManager(executionEnv, adapterFactory, agentConfigManager, logger);
+  const agentManager = new AgentManager(executionEnv, adapterFactory, agentConfigManager, {
+    logger,
+    proxyUrl: options.proxyUrl
+  });
   const projectRoot = process.cwd();
   const eventEmitter = agentManager.getEventEmitter();
   const contextCollector = new (await import('./ContextEventCollector.js')).ContextEventCollector(eventEmitter, {
@@ -352,7 +364,9 @@ export async function initializeServices(
 
       if (isFirstVerification) {
         logger.debug(`Verifying agent: ${member.agentType}`, { agentType: member.agentType });
-        verification = await registry.verifyAgent(member.agentType);
+        verification = await registry.verifyAgent(member.agentType, {
+          proxyUrl: options.proxyUrl
+        });
         verificationCache.set(member.agentType, verification);
 
         if (verification.status === 'failed') {

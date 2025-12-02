@@ -538,4 +538,206 @@ describe('ConnectivityChecker', () => {
       expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
     });
   });
+
+  describe('proxyUsed field', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      originalEnv = { ...process.env };
+      vi.useRealTimers();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+      vi.useFakeTimers();
+    });
+
+    function setupLayer34Success() {
+      vi.mocked(dns.resolve4).mockImplementation((host, callback) => {
+        (callback as (err: NodeJS.ErrnoException | null, addresses: string[]) => void)(null, ['1.2.3.4']);
+      });
+
+      const mockSocket = createMockSocket();
+      vi.mocked(net.createConnection).mockImplementation(() => {
+        process.nextTick(() => mockSocket.emit('connect'));
+        return mockSocket;
+      });
+    }
+
+    function createHttpMock(statusCode: number, body: string = '') {
+      const mockReq = createMockHttpRequest();
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = statusCode;
+
+      vi.mocked(https.request).mockImplementation((options, callback) => {
+        process.nextTick(() => {
+          (callback as (res: any) => void)(mockRes);
+          process.nextTick(() => {
+            if (body) {
+              mockRes.emit('data', Buffer.from(body));
+            }
+            mockRes.emit('end');
+          });
+        });
+        return mockReq;
+      });
+
+      return mockReq;
+    }
+
+    it('should return sanitized proxyUsed when proxy env is set', async () => {
+      process.env.https_proxy = 'http://user:pass@proxy.example.com:8080';
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(result.reachable).toBe(true);
+      expect(result.proxyUsed).toBe('http://proxy.example.com:8080');
+    });
+
+    it('should return undefined proxyUsed when no proxy', async () => {
+      delete process.env.https_proxy;
+      delete process.env.HTTPS_PROXY;
+      delete process.env.http_proxy;
+      delete process.env.HTTP_PROXY;
+
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(result.reachable).toBe(true);
+      expect(result.proxyUsed).toBeUndefined();
+    });
+
+    it('should return proxyUsed even when connectivity check fails', async () => {
+      process.env.https_proxy = 'http://proxy:8080';
+      setupLayer34Success();
+      createHttpMock(503);
+
+      const result = await checkConnectivity('claude');
+
+      expect(result.reachable).toBe(false);
+      expect(result.proxyUsed).toBe('http://proxy:8080');
+    });
+
+    it('should sanitize proxyUsed when proxy has username only', async () => {
+      process.env.https_proxy = 'http://user@proxy:8080';
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(result.reachable).toBe(true);
+      expect(result.proxyUsed).toBe('http://proxy:8080');
+    });
+
+    it('should remove trailing slash from proxyUsed', async () => {
+      process.env.https_proxy = 'http://proxy:8080/';
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude');
+
+      expect(result.reachable).toBe(true);
+      expect(result.proxyUsed).toBe('http://proxy:8080');
+    });
+  });
+
+  describe('explicit proxyUrl parameter', () => {
+    let originalEnv: NodeJS.ProcessEnv;
+
+    beforeEach(() => {
+      originalEnv = { ...process.env };
+      vi.useRealTimers();
+    });
+
+    afterEach(() => {
+      process.env = originalEnv;
+      vi.useFakeTimers();
+    });
+
+    function setupLayer34Success() {
+      vi.mocked(dns.resolve4).mockImplementation((host, callback) => {
+        (callback as (err: NodeJS.ErrnoException | null, addresses: string[]) => void)(null, ['1.2.3.4']);
+      });
+
+      const mockSocket = createMockSocket();
+      vi.mocked(net.createConnection).mockImplementation(() => {
+        process.nextTick(() => mockSocket.emit('connect'));
+        return mockSocket;
+      });
+    }
+
+    function createHttpMock(statusCode: number, body: string = '') {
+      const mockReq = createMockHttpRequest();
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = statusCode;
+
+      vi.mocked(https.request).mockImplementation((options, callback) => {
+        process.nextTick(() => {
+          (callback as (res: any) => void)(mockRes);
+          process.nextTick(() => {
+            if (body) {
+              mockRes.emit('data', Buffer.from(body));
+            }
+            mockRes.emit('end');
+          });
+        });
+        return mockReq;
+      });
+
+      return mockReq;
+    }
+
+    it('should use explicit proxyUrl over env var', async () => {
+      process.env.https_proxy = 'http://env-proxy:8080';
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude', {
+        proxyUrl: 'http://explicit-proxy:9090',
+      });
+
+      expect(result.proxyUsed).toBe('http://explicit-proxy:9090');
+    });
+
+    it('should sanitize explicit proxyUrl', async () => {
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude', {
+        proxyUrl: 'http://user:secret@proxy:8080',
+      });
+
+      expect(result.proxyUsed).toBe('http://proxy:8080');
+    });
+
+    it('should skip Layer 3-4 checks when explicit proxyUrl is provided', async () => {
+      setupLayer34Success();
+      createHttpMock(401);
+
+      await checkConnectivity('claude', {
+        proxyUrl: 'http://explicit-proxy:8080',
+      });
+
+      // Should skip DNS and TCP checks
+      expect(vi.mocked(dns.resolve4)).not.toHaveBeenCalled();
+      expect(vi.mocked(net.createConnection)).not.toHaveBeenCalled();
+      // Should still make HTTP request
+      expect(vi.mocked(https.request)).toHaveBeenCalled();
+    });
+
+    it('should handle https proxy URL', async () => {
+      setupLayer34Success();
+      createHttpMock(401);
+
+      const result = await checkConnectivity('claude', {
+        proxyUrl: 'https://user:pass@proxy.example.com:3128',
+      });
+
+      expect(result.proxyUsed).toBe('https://proxy.example.com:3128');
+    });
+  });
 });

@@ -219,6 +219,16 @@ export interface ConnectivityResult {
 
   /** HTTP response body snippet (only for HTTP layer errors, for diagnosis) */
   httpResponseHint?: string;
+
+  /**
+   * Proxy URL used for connectivity check (sanitized)
+   *
+   * @remarks
+   * - Only present when a proxy is detected or explicitly provided
+   * - Authentication information (user:pass@) is removed for security
+   * - Example: "http://proxy.example.com:8080"
+   */
+  proxyUsed?: string;
 }
 
 // ===== AuthCheckResult =====

@@ -89,6 +89,17 @@ export interface ConnectivityCheckerOptions {
   skipHttpCheck?: boolean;
 
   /**
+   * Explicit proxy URL
+   *
+   * @remarks
+   * - Takes precedence over environment variables
+   * - Supports http:// and https:// protocols
+   * - Authentication format: http://user:pass@proxy:8080
+   * - If not provided, will auto-detect from environment variables
+   */
+  proxyUrl?: string;
+
+  /**
    * Logger for diagnostic messages
    */
   logger?: ILogger;
@@ -143,10 +154,12 @@ export async function checkConnectivity(
 
   const startTime = Date.now();
 
-  // Detect proxy configuration
-  const proxyUrl = detectProxy();
+  // Resolve proxy configuration (explicit parameter takes precedence)
+  const proxyUrl = resolveProxy(options?.proxyUrl);
+  const sanitizedProxy = proxyUrl ? sanitizeProxyUrl(proxyUrl) : undefined;
+
   if (proxyUrl) {
-    logger.debug(`Proxy detected: ${proxyUrl}`);
+    logger.debug(`Proxy detected: ${sanitizedProxy}`);
     logger.debug(`Skipping DNS and TCP checks (Layer 3-4) when using proxy`);
   }
 
@@ -185,6 +198,7 @@ export async function checkConnectivity(
         return {
           ...httpResult,
           latencyMs: Date.now() - startTime,
+          proxyUsed: sanitizedProxy,
         };
       }
       logger.debug(`[Layer 7] HTTP check passed (${Date.now() - startTime}ms)`);
@@ -196,16 +210,41 @@ export async function checkConnectivity(
     return {
       reachable: true,
       latencyMs: Date.now() - startTime,
+      proxyUsed: sanitizedProxy,
     };
   } catch (error: unknown) {
     logger.debug(`Connectivity check failed with error: ${error}`);
     const result = classifyError(error, endpoint.host);
     logger.debug(`Classified error result: ${JSON.stringify(result)}`);
-    return result;
+    return {
+      ...result,
+      proxyUsed: sanitizedProxy,
+    };
   }
 }
 
 // ===== Private Methods =====
+
+/**
+ * Resolve proxy URL from explicit parameter or environment variables
+ *
+ * @param explicitUrl - Explicitly provided proxy URL
+ * @returns Proxy URL if configured, otherwise undefined
+ *
+ * @remarks
+ * Resolution priority:
+ * 1. Explicit proxyUrl parameter (if provided)
+ * 2. https_proxy (lowercase, preferred for HTTPS endpoints)
+ * 3. HTTPS_PROXY (uppercase)
+ * 4. http_proxy (lowercase)
+ * 5. HTTP_PROXY (uppercase)
+ */
+function resolveProxy(explicitUrl?: string): string | undefined {
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+  return detectProxy();
+}
 
 /**
  * Detect proxy configuration from environment variables
@@ -226,6 +265,37 @@ function detectProxy(): string | undefined {
     process.env.http_proxy ||
     process.env.HTTP_PROXY
   );
+}
+
+/**
+ * Sanitize proxy URL by removing authentication credentials
+ *
+ * @param proxyUrl - Original proxy URL
+ * @returns Sanitized proxy URL with credentials removed
+ *
+ * @remarks
+ * Security measure to prevent leaking credentials in logs or results.
+ * Removes user:pass@ portion from URLs like http://user:pass@proxy:8080
+ *
+ * @example
+ * sanitizeProxyUrl("http://user:pass@proxy:8080")
+ * // => "http://proxy:8080"
+ *
+ * sanitizeProxyUrl("http://proxy:8080")
+ * // => "http://proxy:8080"
+ */
+function sanitizeProxyUrl(proxyUrl: string): string {
+  try {
+    const url = new URL(proxyUrl);
+    // Clear authentication information
+    url.username = '';
+    url.password = '';
+    return url.toString().replace(/\/$/, ''); // Remove trailing slash
+  } catch {
+    // URL parsing failed, fallback to regex
+    // Remove user:pass@ pattern
+    return proxyUrl.replace(/\/\/[^@]+@/, '//');
+  }
 }
 
 /**

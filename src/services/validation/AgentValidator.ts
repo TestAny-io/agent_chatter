@@ -104,6 +104,17 @@ export interface AgentValidatorOptions {
   authCheckerOptions?: AuthCheckerOptions;
 
   /**
+   * Explicit proxy URL
+   *
+   * @remarks
+   * - Passed to ConnectivityChecker
+   * - Takes precedence over environment variables
+   * - Supports http:// and https:// protocols
+   * - Authentication format: http://user:pass@proxy:8080
+   */
+  proxyUrl?: string;
+
+  /**
    * Executable file check timeout (ms)
    * @default 5000
    */
@@ -140,7 +151,7 @@ export interface AgentValidatorOptions {
 // ===== Implementation =====
 
 export class AgentValidator {
-  private readonly options: Required<Omit<AgentValidatorOptions, 'logger'>>;
+  private readonly options: Required<Omit<AgentValidatorOptions, 'logger' | 'proxyUrl'>> & { proxyUrl?: string };
   private readonly logger: ILogger;
 
   constructor(options?: AgentValidatorOptions) {
@@ -153,6 +164,7 @@ export class AgentValidator {
       dnsTimeout: options?.dnsTimeout ?? 3000,
       httpTimeout: options?.httpTimeout ?? 10000,
       authCheckerOptions: options?.authCheckerOptions ?? {},
+      proxyUrl: options?.proxyUrl,
       executableCheckTimeout: options?.executableCheckTimeout ?? 5000,
       env: options?.env ?? (process.env as Record<string, string | undefined>),
       homeDir: options?.homeDir ?? os.homedir(),
@@ -518,6 +530,7 @@ export class AgentValidator {
       dnsTimeout: this.options.dnsTimeout,
       httpTimeout: this.options.httpTimeout,
       skipHttpCheck: this.options.skipHttpCheck,
+      proxyUrl: this.options.proxyUrl,
       logger: this.logger,
     });
 

@@ -53,6 +53,27 @@ export interface SendOptions {
 }
 
 /**
+ * AgentManager options
+ */
+export interface AgentManagerOptions {
+  /**
+   * Proxy URL to use for Agent CLI processes
+   *
+   * @remarks
+   * - Will be injected as https_proxy environment variable when spawning agents
+   * - Takes precedence over existing https_proxy in the environment
+   * - Supports http:// and https:// protocols
+   * - Authentication format: http://user:pass@proxy:8080
+   */
+  proxyUrl?: string;
+
+  /**
+   * Logger for diagnostic messages
+   */
+  logger?: ILogger;
+}
+
+/**
  * AgentManager 类
  *
  * Core 层：仅依赖 IExecutionEnvironment 和 IAdapterFactory 接口
@@ -64,6 +85,7 @@ export class AgentManager {
   // Track cancellation flags for agents
   private cancellations: Map<string, boolean> = new Map();
   private logger: ILogger;
+  private proxyUrl?: string;
   // Event bus for streaming events
   private eventEmitter: EventEmitter = new EventEmitter();
 
@@ -71,9 +93,10 @@ export class AgentManager {
     private executionEnv: IExecutionEnvironment,
     private adapterFactory: IAdapterFactory,
     private agentConfigManager: AgentConfigManager,
-    logger?: ILogger
+    options?: AgentManagerOptions
   ) {
-    this.logger = logger ?? new SilentLogger();
+    this.logger = options?.logger ?? new SilentLogger();
+    this.proxyUrl = options?.proxyUrl;
   }
 
   getEventEmitter(): EventEmitter {
@@ -169,6 +192,21 @@ export class AgentManager {
       systemInstruction: agent.systemInstruction
     };
 
+    // Inject proxy URL as environment variables if configured
+    // This ensures Agent CLI processes use the same proxy as the connectivity check
+    // Set all standard proxy environment variables for maximum compatibility
+    let envWithProxy = spawnConfig.env;
+    if (this.proxyUrl) {
+      envWithProxy = {
+        ...spawnConfig.env,
+        https_proxy: this.proxyUrl,
+        HTTPS_PROXY: this.proxyUrl,
+        http_proxy: this.proxyUrl,
+        HTTP_PROXY: this.proxyUrl,
+      };
+      this.logger.debug(`[AgentManager] Injecting proxy for ${roleId}: ${this.proxyUrl}`);
+    }
+
     // Clear any previous cancellation flag
     this.cancellations.delete(roleId);
 
@@ -178,7 +216,7 @@ export class AgentManager {
       // Use IExecutionEnvironment for spawning process
       const iProcess = this.executionEnv.spawn(agent.adapter.command, args, {
         cwd: spawnConfig.workDir,
-        env: spawnConfig.env,
+        env: envWithProxy,
         inheritEnv: true
       });
       const parser = StreamParserFactory.create(agent.adapter.agentType, roleId, teamContext);
