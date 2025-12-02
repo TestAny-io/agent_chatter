@@ -38,7 +38,9 @@ export interface ConversationMessage {
  * Routing information parsed from message content
  *
  * v3 extension: Added parentMessageId and intent for causal tracking
+ * v3.1 extension: Added dropTargets for Queue Cleaning Protocol
  * @see docs/design/route_rule/V3/detail/01-data-model.md
+ * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
  */
 export interface MessageRouting {
   /** Original [NEXT: ...] markers */
@@ -79,6 +81,20 @@ export interface MessageRouting {
    * - P3_EXTEND: Extension/new topic, lowest priority
    */
   intent?: 'P1_INTERRUPT' | 'P2_REPLY' | 'P3_EXTEND';
+
+  // === v3.1 New Fields (Queue Cleaning Protocol) ===
+
+  /**
+   * DROP targets from [DROP: ...] markers (v3.1)
+   *
+   * @remarks
+   * - 'ALL' means clear entire queue
+   * - Member names for targeted removal
+   * - Empty array or undefined means no DROP instruction
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  dropTargets?: string[];
 }
 
 /**
@@ -137,6 +153,7 @@ export interface ParsedAddressee {
  * Return value of MessageRouter.parseMessage()
  *
  * v3 extension: Added parsedAddressees with intent information
+ * v3.1 extension: Added dropTargets for Queue Cleaning Protocol
  */
 export interface ParseResult {
   /** Parsed addressee identifiers (legacy, for backward compatibility) */
@@ -158,6 +175,18 @@ export interface ParseResult {
 
   /** Team task from [TEAM_TASK: xxx] marker */
   teamTask?: string;
+
+  /**
+   * DROP targets parsed from [DROP: ...] markers (v3.1)
+   *
+   * @remarks
+   * - 'ALL' means clear entire queue
+   * - Member names indicate targeted removal (raw, pre-normalization)
+   * - Empty array means no DROP instruction
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  dropTargets: string[];
 }
 
 /**

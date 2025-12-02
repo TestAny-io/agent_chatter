@@ -392,5 +392,178 @@ describe('RoutingQueue', () => {
       expect(queue.size()).toBe(0);
       expect(queue.isEmpty()).toBe(true);
     });
+
+    it('clears dedupe set and allows re-enqueue', () => {
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      queue.clear();
+
+      const result = queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+
+      expect(result.enqueued).toHaveLength(1);
+    });
+
+    it('preserves lastCompletedMessageId after clear', () => {
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      queue.markCompleted('completed-msg');
+      queue.clear();
+
+      expect(queue.getLastCompletedMessageId()).toBe('completed-msg');
+    });
+
+    it('emits queue update event with empty state', () => {
+      const onQueueUpdate = vi.fn<[QueueUpdateEvent], void>();
+      const queueWithCallback = new RoutingQueue({
+        memberLookup: mockMemberLookup,
+        callbacks: { onQueueUpdate },
+      });
+
+      queueWithCallback.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      onQueueUpdate.mockClear();
+
+      queueWithCallback.clear();
+
+      expect(onQueueUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [],
+          isEmpty: true,
+        })
+      );
+    });
+  });
+
+  // v3.1: Queue Cleaning Protocol - removeByTarget tests
+  describe('removeByTarget', () => {
+    it('removes all items for specified member', () => {
+      queue.enqueue(
+        [
+          { targetMemberId: 'member-1', intent: 'P2_REPLY' },
+          { targetMemberId: 'member-2', intent: 'P2_REPLY' },
+          { targetMemberId: 'member-1', intent: 'P3_EXTEND' },
+        ],
+        'msg-1'
+      );
+      // Add another member-1 from different parent to bypass adjacent duplicate check
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-2'
+      );
+
+      const removed = queue.removeByTarget('member-1');
+
+      // 2 items from msg-1 (P2_REPLY, P3_EXTEND was skipped as adjacent duplicate)
+      // + 1 item from msg-2
+      // But P3_EXTEND was adjacent duplicate, so only 2 member-1 items
+      expect(removed).toBe(2);
+      expect(queue.size()).toBe(1);
+      expect(queue.peek()[0].targetMemberId).toBe('member-2');
+    });
+
+    it('returns 0 when member has no items', () => {
+      queue.enqueue(
+        [{ targetMemberId: 'member-2', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+
+      const removed = queue.removeByTarget('member-1');
+
+      expect(removed).toBe(0);
+      expect(queue.size()).toBe(1);
+    });
+
+    it('rebuilds dedupe set correctly after removal', () => {
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      queue.removeByTarget('member-1');
+
+      // Should be able to enqueue same item again (dedupe key was removed)
+      const result = queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+
+      expect(result.enqueued).toHaveLength(1);
+    });
+
+    it('preserves lastCompletedMessageId after removal', () => {
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      queue.markCompleted('completed-msg');
+      queue.removeByTarget('member-1');
+
+      expect(queue.getLastCompletedMessageId()).toBe('completed-msg');
+    });
+
+    it('emits queue update event with V3 structure', () => {
+      const onQueueUpdate = vi.fn<[QueueUpdateEvent], void>();
+      const queueWithCallback = new RoutingQueue({
+        callbacks: { onQueueUpdate },
+        memberLookup: mockMemberLookup,
+      });
+
+      queueWithCallback.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      onQueueUpdate.mockClear();
+
+      queueWithCallback.removeByTarget('member-1');
+
+      expect(onQueueUpdate).toHaveBeenCalledTimes(1);
+      expect(onQueueUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: [],
+          stats: expect.objectContaining({ totalPending: 0 }),
+        })
+      );
+    });
+
+    it('does not emit event when no items removed', () => {
+      const onQueueUpdate = vi.fn<[QueueUpdateEvent], void>();
+      const queueWithCallback = new RoutingQueue({
+        callbacks: { onQueueUpdate },
+        memberLookup: mockMemberLookup,
+      });
+
+      queueWithCallback.removeByTarget('nonexistent');
+
+      expect(onQueueUpdate).not.toHaveBeenCalled();
+    });
+
+    it('removes multiple items for same member from different parents', () => {
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-1'
+      );
+      queue.enqueue(
+        [{ targetMemberId: 'member-2', intent: 'P2_REPLY' }],
+        'msg-2'
+      );
+      queue.enqueue(
+        [{ targetMemberId: 'member-1', intent: 'P2_REPLY' }],
+        'msg-3'
+      );
+
+      const removed = queue.removeByTarget('member-1');
+
+      expect(removed).toBe(2);
+      expect(queue.size()).toBe(1);
+      expect(queue.peek()[0].targetMemberId).toBe('member-2');
+    });
   });
 });

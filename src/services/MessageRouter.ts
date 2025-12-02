@@ -31,6 +31,7 @@ export interface ParsedAddressee {
  * 消息解析结果
  *
  * v3 extension: Added parsedAddressees with intent information
+ * v3.1 extension: Added dropTargets for Queue Cleaning Protocol
  */
 export interface ParseResult {
   /** Parsed addressee identifiers (legacy, for backward compatibility) */
@@ -52,6 +53,18 @@ export interface ParseResult {
 
   /** Team task from [TEAM_TASK: xxx] marker */
   teamTask?: string;
+
+  /**
+   * DROP targets parsed from [DROP: ...] markers (v3.1)
+   *
+   * @remarks
+   * - 'ALL' means clear entire queue
+   * - Member names indicate targeted removal (raw, pre-normalization)
+   * - Empty array means no DROP instruction
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  dropTargets: string[];
 }
 
 /**
@@ -66,6 +79,14 @@ export class MessageRouter {
   private readonly TEAM_TASK_PATTERN = /\[TEAM_TASK:\s*([^\]]*)\]/gi;
   // 匹配 [NEXT: addressee1, addressee2, ...] 的正则表达式（忽略大小写）
   private readonly NEXT_PATTERN = /\[NEXT:\s*([^\]]*)\]/gi;
+  /**
+   * v3.1: DROP pattern for Queue Cleaning Protocol
+   * Matches [DROP: ALL] or [DROP: name1, name2, ...]
+   * Case-insensitive
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  private readonly DROP_PATTERN = /\[DROP:\s*([^\]]*)\]/gi;
 
   /**
    * v3: Single addressee segment parsing regex
@@ -95,6 +116,7 @@ export class MessageRouter {
    * 解析消息，提取标记和清理内容
    *
    * v3 extension: Now returns parsedAddressees with intent information
+   * v3.1 extension: Now returns dropTargets for Queue Cleaning Protocol
    */
   parseMessage(message: string): ParseResult {
     const addressees: string[] = [];           // Legacy, backward compatible
@@ -131,7 +153,10 @@ export class MessageRouter {
       }
     }
 
-    // 清理内容（移除 NEXT 标记，保留 FROM 和 TEAM_TASK）
+    // 4. 提取 DROP 标记（v3.1: Queue Cleaning Protocol）
+    const dropTargets = this.parseDropTargets(message);
+
+    // 清理内容（移除 NEXT 和 DROP 标记，保留 FROM 和 TEAM_TASK）
     const cleanContent = this.stripNextMarkers(message);
 
     return {
@@ -139,7 +164,8 @@ export class MessageRouter {
       parsedAddressees,
       cleanContent,
       fromMember,
-      teamTask
+      teamTask,
+      dropTargets,
     };
   }
 
@@ -187,22 +213,59 @@ export class MessageRouter {
   }
 
   /**
-   * 仅移除 [NEXT] 标记
+   * v3.1: Parse DROP targets from message
+   *
+   * @param content - Raw message content
+   * @returns Array of drop targets ('ALL' or raw member names)
+   *
+   * @remarks
+   * - Returns raw names, normalization happens in ConversationCoordinator
+   * - If 'ALL' appears anywhere, returns ['ALL'] immediately
+   * - Strips intent suffixes (!P1, !P2, !P3) from names via parseAddresseeList
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  private parseDropTargets(content: string): string[] {
+    const dropTargets: string[] = [];
+    this.DROP_PATTERN.lastIndex = 0;
+
+    let match;
+    while ((match = this.DROP_PATTERN.exec(content)) !== null) {
+      const raw = match[1]?.trim();
+      if (!raw) continue;
+
+      if (raw.toUpperCase() === 'ALL') {
+        // ALL priority: once ALL appears, return ['ALL'] immediately
+        return ['ALL'];
+      }
+
+      // Parse comma-separated name list, reuse parseAddresseeList to strip intent suffixes
+      const parsed = this.parseAddresseeList(raw);
+      // Only take name, ignore intent (DROP doesn't need intent)
+      dropTargets.push(...parsed.map(p => p.name));
+    }
+
+    return dropTargets;
+  }
+
+  /**
+   * 移除 [NEXT] 和 [DROP] 标记
    * 保留 [FROM] 和 [TEAM_TASK] 用于历史记录上下文
    */
   stripNextMarkers(message: string): string {
     let result = message;
 
-    // 移除 [NEXT:xxx] 标记
     this.NEXT_PATTERN.lastIndex = 0;
-    result = result.replace(this.NEXT_PATTERN, '');
+    this.DROP_PATTERN.lastIndex = 0;
 
-    // 清理多余的空白字符，保留行结构
+    result = result.replace(this.NEXT_PATTERN, '');
+    result = result.replace(this.DROP_PATTERN, '');
+
     return this.cleanupWhitespace(result);
   }
 
   /**
-   * 移除所有标记（包括 FROM 和 TEAM_TASK）
+   * 移除所有标记（包括 FROM、TEAM_TASK、NEXT、DROP）
    * 用于构建 prompt 上下文，避免重复
    */
   stripAllMarkersForContext(message: string): string {
@@ -211,10 +274,12 @@ export class MessageRouter {
     this.FROM_PATTERN.lastIndex = 0;
     this.TEAM_TASK_PATTERN.lastIndex = 0;
     this.NEXT_PATTERN.lastIndex = 0;
+    this.DROP_PATTERN.lastIndex = 0;
 
     result = result.replace(this.FROM_PATTERN, '');
     result = result.replace(this.TEAM_TASK_PATTERN, '');
     result = result.replace(this.NEXT_PATTERN, '');
+    result = result.replace(this.DROP_PATTERN, '');
 
     return this.cleanupWhitespace(result);
   }

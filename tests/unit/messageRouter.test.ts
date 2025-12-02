@@ -176,4 +176,85 @@ describe('MessageRouter', () => {
       ]);
     });
   });
+
+  // v3.1: DROP parsing tests (Queue Cleaning Protocol)
+  describe('v3.1 DROP parsing', () => {
+    it('parses [DROP: ALL]', () => {
+      const result = router.parseMessage('结束讨论 [DROP: ALL]');
+      expect(result.dropTargets).toEqual(['ALL']);
+    });
+
+    it('parses [DROP: Sarah]', () => {
+      const result = router.parseMessage('[DROP: Sarah] 继续');
+      expect(result.dropTargets).toEqual(['Sarah']);
+    });
+
+    it('parses [DROP: Sarah, Max]', () => {
+      const result = router.parseMessage('[DROP: Sarah, Max]');
+      expect(result.dropTargets).toEqual(['Sarah', 'Max']);
+    });
+
+    it('handles case insensitivity for ALL', () => {
+      expect(router.parseMessage('[drop: all]').dropTargets).toEqual(['ALL']);
+      expect(router.parseMessage('[DROP: All]').dropTargets).toEqual(['ALL']);
+      expect(router.parseMessage('[Drop: ALL]').dropTargets).toEqual(['ALL']);
+    });
+
+    it('preserves case for member names', () => {
+      const result = router.parseMessage('[DROP: Sarah]');
+      expect(result.dropTargets).toEqual(['Sarah']);
+    });
+
+    it('strips intent suffix from DROP targets', () => {
+      const result = router.parseMessage('[DROP: Sarah!P1, Max!P2]');
+      expect(result.dropTargets).toEqual(['Sarah', 'Max']);
+    });
+
+    it('prioritizes ALL over individual names', () => {
+      const result = router.parseMessage('[DROP: Sarah] [DROP: ALL]');
+      expect(result.dropTargets).toEqual(['ALL']);
+    });
+
+    it('returns ALL immediately when found', () => {
+      const result = router.parseMessage('[DROP: ALL] [DROP: Max]');
+      expect(result.dropTargets).toEqual(['ALL']);
+    });
+
+    it('handles [DROP: ALL] with [NEXT:]', () => {
+      const result = router.parseMessage('[DROP: ALL] [NEXT: Max]');
+      expect(result.dropTargets).toEqual(['ALL']);
+      expect(result.addressees).toEqual(['Max']);
+    });
+
+    it('handles [DROP: Sarah] with [NEXT: Max]', () => {
+      const result = router.parseMessage('[DROP: Sarah] [NEXT: Max]');
+      expect(result.dropTargets).toEqual(['Sarah']);
+      expect(result.addressees).toEqual(['Max']);
+    });
+
+    it('strips DROP markers from cleanContent', () => {
+      const result = router.parseMessage('Hello [DROP: ALL] World');
+      expect(result.cleanContent).toBe('Hello World');
+    });
+
+    it('strips both DROP and NEXT markers', () => {
+      const result = router.parseMessage('Hi [DROP: Sarah] there [NEXT: Max]');
+      expect(result.cleanContent).toBe('Hi there');
+    });
+
+    it('handles empty DROP', () => {
+      const result = router.parseMessage('[DROP: ]');
+      expect(result.dropTargets).toEqual([]);
+    });
+
+    it('handles whitespace in DROP', () => {
+      const result = router.parseMessage('[DROP:   Sarah  ,  Max  ]');
+      expect(result.dropTargets).toEqual(['Sarah', 'Max']);
+    });
+
+    it('returns empty array when no DROP marker', () => {
+      const result = router.parseMessage('Hello [NEXT: Max]');
+      expect(result.dropTargets).toEqual([]);
+    });
+  });
 });
