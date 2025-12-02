@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.2",
+  "team": {
+    "name": "test-team",
+    "description": "Test team with invalid systemInstruction",
+    "members": [
+      {
+        "name": "ai-member",
+        "displayName": "AI Member",
+        "role": "dev",
+        "type": "ai",
+        "agentType": "claude-code",
+        "baseDir": "/tmp",
+        "systemInstruction": ["valid string", 123, "another string"]
+      },
+      {
+        "name": "human",
+        "displayName": "Human",
+        "role": "reviewer",
+        "type": "human",
+        "baseDir": "/tmp",
+        "systemInstruction": "valid"
+      }
+    ]
+  }
+}

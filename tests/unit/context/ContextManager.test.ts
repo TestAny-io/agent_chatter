@@ -292,6 +292,17 @@ describe('ContextManager', () => {
       expect(input.instructionFileText).toBe('Be helpful');
     });
 
+    it('passes systemInstruction as array (schema 1.2+)', () => {
+      manager.addMessage(createTestMessage({ content: 'Hello' }));
+
+      const input = manager.getContextForAgent('agent-1', 'claude-code', {
+        systemInstruction: ['Line 1', 'Line 2', 'Line 3'],
+      });
+
+      // Should pass through as-is (normalization happens in assembler)
+      expect(input.systemInstruction).toEqual(['Line 1', 'Line 2', 'Line 3']);
+    });
+
     it('passes maxBytes to output', () => {
       const mgr = new ContextManager({ maxBytes: 100000 });
       mgr.addMessage(createTestMessage({ content: 'Hello' }));

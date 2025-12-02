@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.2",
   "agents": [
     {
       "name": "claude",
@@ -50,7 +50,12 @@
         "themeColor": "red",
         "roleDir": "./teams/multi-role-demo/security/alice",
         "workDir": "./teams/multi-role-demo/security/alice/work",
-        "instructionFile": "./teams/multi-role-demo/security/alice/AGENTS.md"
+        "instructionFile": "./teams/multi-role-demo/security/alice/AGENTS.md",
+        "systemInstruction": [
+          "You are Alice, a security expert with deep knowledge of OWASP Top 10.",
+          "Focus on identifying security vulnerabilities and attack vectors.",
+          "Always explain the potential impact and provide remediation suggestions."
+        ]
       },
       {
         "displayName": "Bob - Performance Expert",

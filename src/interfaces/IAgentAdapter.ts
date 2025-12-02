@@ -34,8 +34,9 @@ export interface AgentSpawnConfig {
 
   /**
    * System instruction/prompt to pass to the agent (if supported)
+   * Can be a string or array of strings (will be normalized at use site)
    */
-  systemInstruction?: string;
+  systemInstruction?: string | string[];
 }
 
 /**

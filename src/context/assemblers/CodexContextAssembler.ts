@@ -13,6 +13,7 @@ import type {
   AssemblerOutput,
   PromptContextMessage,
 } from '../types.js';
+import { normalizeSystemInstruction } from '../../utils/normalizeSystemInstruction.js';
 
 export class CodexContextAssembler implements IContextAssembler {
   getAgentType(): AgentType {
@@ -106,13 +107,14 @@ export class CodexContextAssembler implements IContextAssembler {
    * Builds the [SYSTEM] section body.
    */
   private buildSystemBody(
-    systemInstruction?: string,
+    systemInstruction?: string | string[],
     instructionFileText?: string
   ): string | null {
     const parts: string[] = [];
 
-    if (systemInstruction?.trim()) {
-      parts.push(systemInstruction.trim());
+    const normalizedSystem = normalizeSystemInstruction(systemInstruction);
+    if (normalizedSystem) {
+      parts.push(normalizedSystem);
     }
 
     if (instructionFileText?.trim()) {

@@ -139,8 +139,11 @@ export const TeamConfigSchema = {
                 }
               },
               systemInstruction: {
-                type: "string",
-                description: "Member-specific system instruction/prompt"
+                oneOf: [
+                  { type: "string" },
+                  { type: "array", items: { type: "string" } }
+                ],
+                description: "Member-specific system instruction/prompt (string or array of strings)"
               },
               additionalArgs: {
                 type: "array",
@@ -344,11 +347,17 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
       }
     }
 
-    if (member.systemInstruction !== undefined && typeof member.systemInstruction !== 'string') {
-      errors.push({
-        path: `${basePath}.systemInstruction`,
-        message: 'Member systemInstruction must be a string'
-      });
+    if (member.systemInstruction !== undefined) {
+      const isString = typeof member.systemInstruction === 'string';
+      const isStringArray = Array.isArray(member.systemInstruction) &&
+        member.systemInstruction.every((item: unknown) => typeof item === 'string');
+
+      if (!isString && !isStringArray) {
+        errors.push({
+          path: `${basePath}.systemInstruction`,
+          message: 'Member systemInstruction must be a string or array of strings'
+        });
+      }
     }
   });
 

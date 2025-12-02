@@ -75,6 +75,26 @@ All wrappers in this directory follow the same pattern:
 
 When Agent Chatter sets a system instruction (via `member.systemInstruction` in team config), it passes it through the `AGENT_SYSTEM_INSTRUCTION` environment variable.
 
+**Schema 1.2+: Array Support**
+
+Starting from schema version 1.2, `systemInstruction` can be a string or an array of strings for improved readability:
+
+```json
+{
+  "systemInstruction": "Single line instruction"
+}
+// OR
+{
+  "systemInstruction": [
+    "You are a helpful code reviewer.",
+    "Focus on security and performance.",
+    "Provide actionable suggestions."
+  ]
+}
+```
+
+When using an array, lines are joined with newlines before being passed to the wrapper.
+
 Wrappers prepend this to the prompt in the format:
 ```
 [SYSTEM]

@@ -16,6 +16,7 @@ import type {
   AssemblerOutput,
   PromptContextMessage,
 } from '../types.js';
+import { normalizeSystemInstruction } from '../../utils/normalizeSystemInstruction.js';
 
 export class ClaudeContextAssembler implements IContextAssembler {
   getAgentType(): AgentType {
@@ -116,13 +117,14 @@ export class ClaudeContextAssembler implements IContextAssembler {
    * Builds the system flag string for --append-system-prompt.
    */
   private buildSystemFlag(
-    systemInstruction?: string,
+    systemInstruction?: string | string[],
     instructionFileText?: string
   ): string | undefined {
     const parts: string[] = [];
 
-    if (systemInstruction?.trim()) {
-      parts.push(systemInstruction.trim());
+    const normalizedSystem = normalizeSystemInstruction(systemInstruction);
+    if (normalizedSystem) {
+      parts.push(normalizedSystem);
     }
 
     if (instructionFileText?.trim()) {

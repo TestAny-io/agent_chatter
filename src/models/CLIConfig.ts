@@ -28,7 +28,7 @@ export interface TeamMemberConfig {
   baseDir: string;
   instructionFile?: string;
   env?: Record<string, string>;
-  systemInstruction?: string; // Schema 1.2+
+  systemInstruction?: string | string[]; // Schema 1.2+, supports array for multi-line
 }
 
 export interface TeamConfig {

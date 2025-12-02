@@ -125,8 +125,14 @@
           "description": "Environment variables for this member"
         },
         "systemInstruction": {
-          "type": "string",
-          "description": "System instruction text (schema 1.2+)"
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          ],
+          "description": "System instruction text or array of lines (schema 1.2+)"
         }
       },
       "additionalProperties": true,
