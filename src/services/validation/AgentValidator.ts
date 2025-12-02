@@ -724,6 +724,15 @@ export class AgentValidator {
       delete execEnv.DEBUG;
     }
 
+    // Add proxy environment variables if proxyUrl is configured
+    if (this.options.proxyUrl) {
+      execEnv.https_proxy = this.options.proxyUrl;
+      execEnv.http_proxy = this.options.proxyUrl;
+      execEnv.HTTPS_PROXY = this.options.proxyUrl;
+      execEnv.HTTP_PROXY = this.options.proxyUrl;
+      this.logger.debug(`[checkDryRun] Proxy configured: ${this.options.proxyUrl}`);
+    }
+
     this.logger.debug(`[checkDryRun] Env keys: ${Object.keys(execEnv).slice(0, 5).join(', ')}...`);
 
     // Use spawn with stdin ignored to prevent TTY/raw mode issues (especially for Claude CLI)
