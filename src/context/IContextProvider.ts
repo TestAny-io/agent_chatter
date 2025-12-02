@@ -59,7 +59,7 @@ export interface IContextProvider {
     agentType: AgentType,
     options?: {
       windowSizeOverride?: number;
-      systemInstruction?: string;
+      systemInstruction?: string | string[];
       instructionFileText?: string;
     }
   ): AssemblerInput;

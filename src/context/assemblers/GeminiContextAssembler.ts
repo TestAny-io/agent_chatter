@@ -13,6 +13,7 @@ import type {
   AssemblerOutput,
   PromptContextMessage,
 } from '../types.js';
+import { normalizeSystemInstruction } from '../../utils/normalizeSystemInstruction.js';
 
 export class GeminiContextAssembler implements IContextAssembler {
   getAgentType(): AgentType {
@@ -102,13 +103,14 @@ export class GeminiContextAssembler implements IContextAssembler {
    * Builds the Instructions section body.
    */
   private buildInstructionsBody(
-    systemInstruction?: string,
+    systemInstruction?: string | string[],
     instructionFileText?: string
   ): string | null {
     const parts: string[] = [];
 
-    if (systemInstruction?.trim()) {
-      parts.push(systemInstruction.trim());
+    const normalizedSystem = normalizeSystemInstruction(systemInstruction);
+    if (normalizedSystem) {
+      parts.push(normalizedSystem);
     }
 
     if (instructionFileText?.trim()) {

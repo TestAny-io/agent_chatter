@@ -33,6 +33,7 @@ export function createMember(overrides: Partial<Role>): Role {
     type: overrides.type ?? 'ai',
     order: overrides.order ?? 0,
     agentConfigId: overrides.agentConfigId ?? `${overrides.id}-config`,
+    // systemInstruction can be string | string[] (schema 1.2+)
     systemInstruction: overrides.systemInstruction ?? 'Follow the plan.',
     ...overrides
   };

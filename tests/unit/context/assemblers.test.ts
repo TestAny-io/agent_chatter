@@ -326,6 +326,135 @@ describe('PlainTextAssembler', () => {
 });
 
 // =============================================================================
+// systemInstruction Array Support Tests
+// =============================================================================
+
+describe('systemInstruction array support', () => {
+  describe('ClaudeContextAssembler', () => {
+    const assembler = new ClaudeContextAssembler();
+
+    it('handles string array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: ['Line 1', 'Line 2', 'Line 3'],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).toContain('Line 1\nLine 2\nLine 3');
+      expect(output.systemFlag).toBe('Line 1\nLine 2\nLine 3');
+    });
+
+    it('filters empty strings from array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: ['Line 1', '', '  ', 'Line 2'],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).toContain('Line 1\nLine 2');
+      expect(output.prompt).not.toContain('\n\n\n');
+      expect(output.systemFlag).toBe('Line 1\nLine 2');
+    });
+
+    it('handles empty array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: [],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).not.toContain('[SYSTEM]');
+      expect(output.systemFlag).toBeUndefined();
+    });
+
+    it('backward compatible with string', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: 'Single line instruction',
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).toContain('Single line instruction');
+      expect(output.systemFlag).toBe('Single line instruction');
+    });
+
+    it('trims each array element', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: ['  Line 1  ', '  Line 2  '],
+      });
+      const output = assembler.assemble(input);
+      expect(output.systemFlag).toBe('Line 1\nLine 2');
+    });
+  });
+
+  describe('CodexContextAssembler', () => {
+    const assembler = new CodexContextAssembler();
+
+    it('handles string array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: ['Line 1', 'Line 2'],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).toContain('[SYSTEM]');
+      expect(output.prompt).toContain('Line 1\nLine 2');
+    });
+
+    it('handles empty array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: [],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).not.toContain('[SYSTEM]');
+    });
+  });
+
+  describe('GeminiContextAssembler', () => {
+    const assembler = new GeminiContextAssembler();
+
+    it('handles string array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: ['Line 1', 'Line 2'],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).toContain('Instructions:');
+      expect(output.prompt).toContain('Line 1\nLine 2');
+    });
+
+    it('handles empty array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: [],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).not.toContain('Instructions:');
+    });
+  });
+
+  describe('PlainTextAssembler', () => {
+    const assembler = new PlainTextAssembler();
+
+    it('handles string array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: ['Line 1', 'Line 2'],
+      });
+      const output = assembler.assemble(input);
+      expect(output.prompt).toContain('Line 1\nLine 2');
+    });
+
+    it('handles empty array', () => {
+      const input = createInput({
+        currentMessage: 'Hi',
+        systemInstruction: [],
+      });
+      const output = assembler.assemble(input);
+      // Should not include empty system instruction
+      expect(output.prompt).toBe('Hi');
+    });
+  });
+});
+
+// =============================================================================
 // Byte Budget Tests (common across assemblers)
 // =============================================================================
 

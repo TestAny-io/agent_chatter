@@ -29,7 +29,7 @@ interface AgentInstance {
   processId: string;
   cleanup?: () => Promise<void>;  // Adapter cleanup function
   adapter: IAgentAdapter;
-  systemInstruction?: string;  // Store for use in sendAndReceive()
+  systemInstruction?: string | string[];  // Store for use in sendAndReceive()
   currentStatelessProcess?: IProcess;  // For cancellation
 }
 
@@ -40,7 +40,7 @@ interface AgentInstance {
 export interface MemberSpawnConfig {
   env?: Record<string, string>;
   additionalArgs?: string[];
-  systemInstruction?: string;
+  systemInstruction?: string | string[];
 }
 
 /**

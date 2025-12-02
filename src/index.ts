@@ -178,6 +178,7 @@ export {
 export { detectAllTools, type ToolStatus } from './utils/ToolDetector.js';
 export { getDefaultAgentConfig, type AgentType } from './utils/AgentDefaults.js';
 export { colorize, colors, type ColorName } from './utils/colors.js';
+export { normalizeSystemInstruction } from './utils/normalizeSystemInstruction.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Stream Parsers

@@ -37,7 +37,11 @@
         "env": {
           "DEBUG": "true"
         },
-        "systemInstruction": "You are a helpful coding assistant."
+        "systemInstruction": [
+          "You are a helpful coding assistant.",
+          "Follow best practices for code quality.",
+          "Always explain your reasoning."
+        ]
       },
       {
         "displayName": "Human User",

@@ -563,6 +563,25 @@ describe('v3 Prompt Assembly Integration', () => {
     expect(assembled.prompt).toContain('You are a helpful assistant');
   });
 
+  it('passes systemInstruction array through to assembled prompt (schema 1.2+)', () => {
+    const cm = new ContextManager({ contextWindowSize: 10 });
+
+    const parent = cm.addMessage(makeMessage('human', 'Human', 'Task', { type: 'human' }));
+
+    const route = makeRoute('ai-target', parent.id);
+    const contextResult = cm.getContextForRoute('ai-target', 'claude-code', route, {
+      systemInstruction: ['Line 1', 'Line 2', 'Line 3'],
+    });
+
+    // Should pass through as array
+    expect(contextResult.systemInstruction).toEqual(['Line 1', 'Line 2', 'Line 3']);
+
+    // Assemble and verify - array should be joined with newlines
+    const assembled = cm.assemblePrompt('claude-code', contextResult);
+    expect(assembled.prompt).toContain('Line 1\nLine 2\nLine 3');
+    expect(assembled.systemFlag).toBe('Line 1\nLine 2\nLine 3');
+  });
+
   it('passes instructionFileText through to assembled prompt', () => {
     const cm = new ContextManager({ contextWindowSize: 10 });
 

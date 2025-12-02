@@ -45,7 +45,7 @@ export interface AssemblerInput {
   contextMessages: PromptContextMessage[];
   currentMessage: string;
   teamTask: string | null;
-  systemInstruction?: string;
+  systemInstruction?: string | string[];
   instructionFileText?: string;
   maxBytes: number;
 
@@ -148,8 +148,8 @@ export interface RouteContextOptions {
   /** Override default window size */
   windowSizeOverride?: number;
 
-  /** System instruction */
-  systemInstruction?: string;
+  /** System instruction (string or array of strings) */
+  systemInstruction?: string | string[];
 
   /** Instruction file content */
   instructionFileText?: string;

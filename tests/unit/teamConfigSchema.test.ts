@@ -366,6 +366,102 @@ describe('TeamConfigSchema', () => {
     });
   });
 
+  describe('systemInstruction validation', () => {
+    it('accepts string', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: 'Test instruction' },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts string array', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: ['Line 1', 'Line 2'] },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts empty array', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: [] },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects number', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: 123 },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('systemInstruction'))).toBe(true);
+    });
+
+    it('rejects mixed array (string + number)', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: ['valid', 123] },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('systemInstruction'))).toBe(true);
+    });
+
+    it('rejects object', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: { text: 'hello' } },
+            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('systemInstruction'))).toBe(true);
+    });
+
+    it('accepts systemInstruction on human members', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0 },
+            { name: 'bob', role: 'dev', type: 'human', order: 1, systemInstruction: ['Human instruction'] }
+          ]
+        }
+      });
+      expect(result.valid).toBe(true);
+    });
+  });
+
   describe('Complete valid configurations', () => {
     it('accepts minimal valid config', () => {
       const result = validateTeamConfig({
