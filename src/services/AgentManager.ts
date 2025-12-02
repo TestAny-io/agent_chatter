@@ -19,6 +19,7 @@ import type { AgentEvent, AgentType } from '../events/AgentEvent.js';
 import { randomUUID } from 'crypto';
 import type { ILogger } from '../interfaces/ILogger.js';
 import { SilentLogger } from '../interfaces/ILogger.js';
+import { sanitizeProxyUrl } from './validation/ConnectivityChecker.js';
 
 /**
  * Agent 实例信息
@@ -197,6 +198,20 @@ export class AgentManager {
     // Set all standard proxy environment variables for maximum compatibility
     let envWithProxy = spawnConfig.env;
     if (this.proxyUrl) {
+      // Check if we're overriding existing proxy settings
+      const existingProxy = spawnConfig.env?.https_proxy ||
+                           spawnConfig.env?.HTTPS_PROXY ||
+                           spawnConfig.env?.http_proxy ||
+                           spawnConfig.env?.HTTP_PROXY;
+
+      if (existingProxy && existingProxy !== this.proxyUrl) {
+        const sanitizedExisting = sanitizeProxyUrl(existingProxy);
+        const sanitizedNew = sanitizeProxyUrl(this.proxyUrl);
+        this.logger.debug(
+          `[AgentManager] Overriding existing proxy (${sanitizedExisting}) with new proxy (${sanitizedNew}) for ${roleId}`
+        );
+      }
+
       envWithProxy = {
         ...spawnConfig.env,
         https_proxy: this.proxyUrl,
@@ -204,7 +219,10 @@ export class AgentManager {
         http_proxy: this.proxyUrl,
         HTTP_PROXY: this.proxyUrl,
       };
-      this.logger.debug(`[AgentManager] Injecting proxy for ${roleId}: ${this.proxyUrl}`);
+
+      // Use sanitized URL in log to avoid leaking credentials
+      const sanitizedProxyUrl = sanitizeProxyUrl(this.proxyUrl);
+      this.logger.debug(`[AgentManager] Injecting proxy for ${roleId}: ${sanitizedProxyUrl}`);
     }
 
     // Clear any previous cancellation flag

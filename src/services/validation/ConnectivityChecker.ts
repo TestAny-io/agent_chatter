@@ -223,6 +223,42 @@ export async function checkConnectivity(
   }
 }
 
+// ===== Public Utilities =====
+
+/**
+ * Sanitize proxy URL by removing authentication credentials
+ *
+ * @param proxyUrl - Original proxy URL
+ * @returns Sanitized proxy URL with credentials removed
+ *
+ * @remarks
+ * Security measure to prevent leaking credentials in logs or results.
+ * Removes user:pass@ portion from URLs like http://user:pass@proxy:8080
+ *
+ * Exported for use in other modules (e.g., AgentManager) to ensure
+ * consistent sanitization across the codebase.
+ *
+ * @example
+ * sanitizeProxyUrl("http://user:pass@proxy:8080")
+ * // => "http://proxy:8080"
+ *
+ * sanitizeProxyUrl("http://proxy:8080")
+ * // => "http://proxy:8080"
+ */
+export function sanitizeProxyUrl(proxyUrl: string): string {
+  try {
+    const url = new URL(proxyUrl);
+    // Clear authentication information
+    url.username = '';
+    url.password = '';
+    return url.toString().replace(/\/$/, ''); // Remove trailing slash
+  } catch {
+    // URL parsing failed, fallback to regex
+    // Remove user:pass@ pattern
+    return proxyUrl.replace(/\/\/[^@]+@/, '//');
+  }
+}
+
 // ===== Private Methods =====
 
 /**
@@ -265,37 +301,6 @@ function detectProxy(): string | undefined {
     process.env.http_proxy ||
     process.env.HTTP_PROXY
   );
-}
-
-/**
- * Sanitize proxy URL by removing authentication credentials
- *
- * @param proxyUrl - Original proxy URL
- * @returns Sanitized proxy URL with credentials removed
- *
- * @remarks
- * Security measure to prevent leaking credentials in logs or results.
- * Removes user:pass@ portion from URLs like http://user:pass@proxy:8080
- *
- * @example
- * sanitizeProxyUrl("http://user:pass@proxy:8080")
- * // => "http://proxy:8080"
- *
- * sanitizeProxyUrl("http://proxy:8080")
- * // => "http://proxy:8080"
- */
-function sanitizeProxyUrl(proxyUrl: string): string {
-  try {
-    const url = new URL(proxyUrl);
-    // Clear authentication information
-    url.username = '';
-    url.password = '';
-    return url.toString().replace(/\/$/, ''); // Remove trailing slash
-  } catch {
-    // URL parsing failed, fallback to regex
-    // Remove user:pass@ pattern
-    return proxyUrl.replace(/\/\/[^@]+@/, '//');
-  }
 }
 
 /**
