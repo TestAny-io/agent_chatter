@@ -134,11 +134,13 @@ export type {
 } from './services/validation/types.js';
 
 export { AgentValidator } from './services/validation/AgentValidator.js';
+export { sanitizeProxyUrl } from './services/validation/ConnectivityChecker.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Registry
 // ═══════════════════════════════════════════════════════════════
 export { AgentRegistry } from './registry/AgentRegistry.js';
+export type { AgentRegistryOptions } from './registry/AgentRegistry.js';
 export type { AgentDefinition, AgentDefinition as RegistryAgentDefinition } from './registry/RegistryStorage.js';
 export { RegistryStorage } from './registry/RegistryStorage.js';
 export type { ScannedAgent } from './registry/AgentScanner.js';

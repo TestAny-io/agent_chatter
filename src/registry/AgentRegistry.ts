@@ -18,16 +18,25 @@ import type { VerificationResult, CheckResult } from '../services/validation/typ
 export type { VerificationResult, CheckResult };
 
 /**
+ * AgentRegistry options
+ */
+export interface AgentRegistryOptions {
+  proxyUrl?: string;
+}
+
+/**
  * AgentRegistry 类
  */
 export class AgentRegistry {
   private storage: RegistryStorage;
   private agents: Map<string, AgentDefinition>;
   private loaded: boolean = false;
+  private proxyUrl?: string;
 
-  constructor(registryPath?: string) {
+  constructor(registryPath?: string, options?: AgentRegistryOptions) {
     this.storage = new RegistryStorage(registryPath);
     this.agents = new Map();
+    this.proxyUrl = options?.proxyUrl;
   }
 
   /**
@@ -291,7 +300,13 @@ export class AgentRegistry {
       };
     }
 
-    const validator = new AgentValidator(options);
+    // Merge proxyUrl from registry options with explicit options (explicit takes precedence)
+    const validatorOptions: AgentValidatorOptions = {
+      proxyUrl: this.proxyUrl,
+      ...options
+    };
+
+    const validator = new AgentValidator(validatorOptions);
     const result = await validator.verify(agent);
 
     // 更新最后验证时间
