@@ -277,13 +277,68 @@ export class RoutingQueue {
 
   /**
    * Clear the queue
+   *
+   * @remarks
+   * Used by [DROP: ALL] instruction.
+   * - Clears items[] and dedupeSet
+   * - Resets localSeqCount to 0
+   * - Does NOT clear lastCompletedMessageId (preserves local context for future routing)
+   * - Emits V3 queue update event
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
    */
   clear(): void {
+    const count = this.items.length;
+
     this.items = [];
     this.dedupeSet.clear();
     this.localSeqCount = 0;
     // Note: lastCompletedMessageId is intentionally NOT cleared
+
+    if (count > 0) {
+      this.logger.info(`[RoutingQueue] Cleared all ${count} items via DROP: ALL`);
+    }
+
     this.emitQueueUpdate();
+  }
+
+  /**
+   * Remove all items for a specific member (v3.1 Queue Cleaning Protocol)
+   *
+   * @param memberId - Member ID to remove
+   * @returns Number of items removed
+   *
+   * @remarks
+   * - Rebuilds dedupeSet after removal
+   * - Resets localSeqCount to 0
+   * - Preserves lastCompletedMessageId
+   * - Emits queue update event with itemsDetail and stats
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  removeByTarget(memberId: string): number {
+    const initialLength = this.items.length;
+
+    // Filter out items targeting this member
+    this.items = this.items.filter(item => item.targetMemberId !== memberId);
+
+    const removedCount = initialLength - this.items.length;
+
+    if (removedCount > 0) {
+      // Rebuild dedupe set
+      this.rebuildDedupeSet();
+      // Reset local sequence count
+      this.localSeqCount = 0;
+
+      this.logger.info(
+        `[RoutingQueue] Dropped ${removedCount} items for member ${memberId}`
+      );
+
+      // Emit V3 queue update event (with itemsDetail and stats)
+      this.emitQueueUpdate();
+    }
+
+    return removedCount;
   }
 
   /**
@@ -341,6 +396,22 @@ export class RoutingQueue {
    */
   private getDedupeKey(item: RoutingItem): string {
     return `${item.parentMessageId}:${item.targetMemberId}:${item.intent}`;
+  }
+
+  /**
+   * Rebuild dedupe set from current items (v3.1 Queue Cleaning Protocol)
+   *
+   * @remarks
+   * Called after removing items to maintain consistency.
+   * O(n) but acceptable since queue is typically small (<50 items).
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  private rebuildDedupeSet(): void {
+    this.dedupeSet.clear();
+    for (const item of this.items) {
+      this.dedupeSet.add(this.getDedupeKey(item));
+    }
   }
 
   /**

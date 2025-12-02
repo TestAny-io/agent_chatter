@@ -258,6 +258,7 @@ export class ConversationCoordinator {
 
     // Create and store message
     // v3: Save parsedAddressees to preserve intent markers (!P1/!P2/!P3)
+    // v3.1: Save dropTargets for Queue Cleaning Protocol
     const message: ConversationMessage = MessageUtils.createMessage(
       sender.id,
       sender.name,
@@ -268,6 +269,7 @@ export class ConversationCoordinator {
         rawNextMarkers: parsed.addressees,
         resolvedAddressees: [],
         parsedAddressees: parsed.parsedAddressees,
+        dropTargets: parsed.dropTargets,
       }
     );
 
@@ -387,6 +389,7 @@ export class ConversationCoordinator {
     const parsed = this.messageRouter.parseMessage(formatted.text);
 
     // v3: Build routing with parentMessageId, intent, and parsedAddressees
+    // v3.1: Include dropTargets for Queue Cleaning Protocol
     const routing = {
       rawNextMarkers: parsed.addressees,
       resolvedAddressees: [],
@@ -394,6 +397,8 @@ export class ConversationCoordinator {
       parsedAddressees: parsed.parsedAddressees,
       parentMessageId: this.currentRoutingItem?.parentMessageId,
       intent: this.currentRoutingItem?.intent,
+      // v3.1 fields
+      dropTargets: parsed.dropTargets,
     };
 
     // 创建 ConversationMessage
@@ -435,6 +440,7 @@ export class ConversationCoordinator {
 
     // 创建消息
     // v3: Save parsedAddressees to preserve intent markers
+    // v3.1: Save dropTargets for Queue Cleaning Protocol
     const message: ConversationMessage = MessageUtils.createMessage(
       member.id,
       member.name,
@@ -445,6 +451,7 @@ export class ConversationCoordinator {
         rawNextMarkers: parsed.addressees,
         resolvedAddressees: [],
         parsedAddressees: parsed.parsedAddressees,
+        dropTargets: parsed.dropTargets,
       }
     );
 
@@ -466,6 +473,7 @@ export class ConversationCoordinator {
    * 路由消息到下一个接收者
    *
    * v3: Also enqueues items into routingQueueV3 with intent parsing
+   * v3.1: Executes DROP before NEXT (Queue Cleaning Protocol)
    */
   private async routeToNext(message: ConversationMessage): Promise<void> {
     if (!this.session || !this.team) {
@@ -473,7 +481,17 @@ export class ConversationCoordinator {
     }
 
     const addressees = message.routing?.rawNextMarkers || [];
-    this.logger.debug(`[Routing] From ${message.speaker.name} addressees=${JSON.stringify(addressees)}`);
+    const dropTargets = message.routing?.dropTargets || [];
+    this.logger.debug(`[Routing] From ${message.speaker.name} addressees=${JSON.stringify(addressees)} dropTargets=${JSON.stringify(dropTargets)}`);
+
+    // ==========================================
+    // Step 1: 执行 DROP（必须在 NEXT 之前）
+    // 仅清理 routingQueueV3，不影响 currentRoutingItem
+    // v3.1: Queue Cleaning Protocol
+    // ==========================================
+    if (dropTargets.length > 0) {
+      this.executeDropTargets(dropTargets);
+    }
 
     // v3: Use saved parsedAddressees from message.routing (preserved from original parse)
     // Do NOT re-parse message.content as it's already cleaned (NEXT markers stripped)
@@ -849,6 +867,72 @@ export class ConversationCoordinator {
       this.currentExecutingMember = null;
     }
   }
+
+  // --------------------------------------------------------------------------
+  // v3.1: Queue Cleaning Protocol - DROP Execution
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute DROP targets (v3.1 Queue Cleaning Protocol)
+   *
+   * @param dropTargets - Array of targets ('ALL' or raw member names)
+   *
+   * @remarks
+   * - Uses same normalization rules as resolveAddressees (id/name/displayName)
+   * - Only affects routingQueueV3, NOT currentRoutingItem
+   * - Unresolved targets are logged as warnings and ignored
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  private executeDropTargets(dropTargets: string[]): void {
+    if (dropTargets.includes('ALL')) {
+      // DROP: ALL - clear entire pending queue
+      this.logger.info('[Routing] Executing DROP: ALL (clearing pending queue, current task unaffected)');
+      this.routingQueueV3.clear();
+      return;
+    }
+
+    // DROP: specific members
+    for (const targetName of dropTargets) {
+      // Reuse existing normalizeIdentifier and member resolution logic
+      const member = this.resolveMemberForDrop(targetName);
+      if (member) {
+        this.logger.info(`[Routing] Executing DROP: ${member.name} (${member.id})`);
+        this.routingQueueV3.removeByTarget(member.id);
+      } else {
+        this.logger.warn(`[Routing] DROP target not found: "${targetName}" (ignored)`);
+      }
+    }
+  }
+
+  /**
+   * Resolve member for DROP instruction (v3.1 Queue Cleaning Protocol)
+   *
+   * @param rawName - Raw name from [DROP: ...] marker
+   * @returns Member if found, undefined otherwise
+   *
+   * @remarks
+   * Uses same normalization rules as resolveAddressees:
+   * - Case-insensitive matching
+   * - Matches against id, name, or displayName
+   *
+   * @see docs/design/route_rule/V3/queue-cleaning-protocol-engineering.md
+   */
+  private resolveMemberForDrop(rawName: string): Member | undefined {
+    if (!this.team) return undefined;
+
+    const normalized = this.normalizeIdentifier(rawName);
+
+    return this.team.members.find(m =>
+      this.normalizeIdentifier(m.id) === normalized ||
+      this.normalizeIdentifier(m.name) === normalized ||
+      this.normalizeIdentifier(m.displayName) === normalized
+    );
+  }
+
+  // --------------------------------------------------------------------------
+  // Addressee Resolution
+  // --------------------------------------------------------------------------
 
   /**
    * 解析接收者标识为 Member 对象
