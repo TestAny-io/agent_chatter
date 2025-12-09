@@ -20,6 +20,7 @@ import { randomUUID } from 'crypto';
 import type { ILogger } from '../interfaces/ILogger.js';
 import { SilentLogger } from '../interfaces/ILogger.js';
 import { sanitizeProxyUrl } from './validation/ConnectivityChecker.js';
+import { loadGeminiApiKeyFromStorage } from '../utils/GeminiApiKeyLoader.js';
 
 /**
  * Agent 实例信息
@@ -223,6 +224,22 @@ export class AgentManager {
       // Use sanitized URL in log to avoid leaking credentials
       const sanitizedProxyUrl = sanitizeProxyUrl(this.proxyUrl);
       this.logger.debug(`[AgentManager] Injecting proxy for ${roleId}: ${sanitizedProxyUrl}`);
+    }
+
+    // Gemini CLI 近期版本在 USE_GEMINI 模式下会优先检查 GEMINI_API_KEY 环境变量。
+    // 为避免用户未显式 export 时运行失败，尝试从 gemini-cli 本地存储加载 API Key 并注入子进程 env。
+    if (agent.adapter.agentType === 'google-gemini') {
+      const hasEnvKey = envWithProxy?.GEMINI_API_KEY || envWithProxy?.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!hasEnvKey) {
+        const storedKey = loadGeminiApiKeyFromStorage();
+        if (storedKey) {
+          envWithProxy = {
+            ...envWithProxy,
+            GEMINI_API_KEY: storedKey,
+          };
+          this.logger.debug('[AgentManager] Injected GEMINI_API_KEY from local gemini-cli storage for google-gemini');
+        }
+      }
     }
 
     // Clear any previous cancellation flag
