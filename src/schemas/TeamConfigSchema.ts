@@ -85,7 +85,7 @@ export const TeamConfigSchema = {
           description: "Team members (at least 2 required)",
           items: {
             type: "object",
-            required: ["name", "role", "type", "order"],
+            required: ["name", "role", "type"],
             properties: {
               name: {
                 type: "string",
@@ -158,21 +158,14 @@ export const TeamConfigSchema = {
                 description: "Member order in round-robin rotation"
               }
             },
-            // Conditional validation: AI members must have agentConfigId
-            if: {
-              properties: { type: { const: "ai" } }
-            },
-            then: {
-              required: ["agentConfigId"]
-            }
           }
         }
       }
     },
     maxRounds: {
       type: "number",
-      minimum: 1,
-      description: "Maximum conversation rounds"
+      minimum: 0,
+      description: "Maximum conversation rounds (0 = unlimited)"
     }
   }
 };
@@ -294,18 +287,11 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
       });
     }
 
-    if (typeof member.order !== 'number' || member.order < 0) {
+    // order is optional, but if present must be a non-negative number
+    if (member.order !== undefined && (typeof member.order !== 'number' || member.order < 0)) {
       errors.push({
         path: `${basePath}.order`,
-        message: 'Member order is required and must be a non-negative number'
-      });
-    }
-
-    // AI members must have agentConfigId
-    if (member.type === 'ai' && !member.agentConfigId) {
-      errors.push({
-        path: `${basePath}.agentConfigId`,
-        message: `AI member "${member.name}" must have agentConfigId`
+        message: 'Member order must be a non-negative number if provided'
       });
     }
 
@@ -380,12 +366,12 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
     }
   }
 
-  // Validate maxRounds if present
+  // Validate maxRounds if present (0 = unlimited)
   if (config.maxRounds !== undefined) {
-    if (typeof config.maxRounds !== 'number' || config.maxRounds < 1) {
+    if (typeof config.maxRounds !== 'number' || config.maxRounds < 0) {
       errors.push({
         path: 'maxRounds',
-        message: 'maxRounds must be a number >= 1'
+        message: 'maxRounds must be a number >= 0 (0 = unlimited)'
       });
     }
   }
