@@ -84,12 +84,25 @@ describe('TeamConfigSchema', () => {
       expect(result.errors.some(e => e.path.includes('[0].type'))).toBe(true);
     });
 
-    it('requires member.order', () => {
+    it('accepts member without order (optional)', () => {
       const result = validateTeamConfig({
         team: {
           name: 'test',
           members: [
             { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human' }
+          ]
+        }
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects negative order', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human', order: -1 },
             { name: 'bob', role: 'dev', type: 'human', order: 1 }
           ]
         }
@@ -126,18 +139,17 @@ describe('TeamConfigSchema', () => {
       expect(result.errors.some(e => e.message.includes('invalid characters'))).toBe(true);
     });
 
-    it('requires agentConfigId for AI members', () => {
+    it('accepts AI member without agentConfigId (optional, can use agentType)', () => {
       const result = validateTeamConfig({
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', order: 0 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
-      expect(result.valid).toBe(false);
-      expect(result.errors.some(e => e.path.includes('[0].agentConfigId'))).toBe(true);
+      expect(result.valid).toBe(true);
     });
 
     it('accepts AI member with agentConfigId', () => {
@@ -145,8 +157,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', order: 0, agentConfigId: 'claude' },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -303,16 +315,30 @@ describe('TeamConfigSchema', () => {
   });
 
   describe('Optional top-level fields', () => {
-    it('validates maxRounds if present', () => {
+    it('accepts maxRounds: 0 (unlimited)', () => {
       const result = validateTeamConfig({
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         },
         maxRounds: 0
+      });
+      expect(result.valid).toBe(true);
+    });
+
+    it('rejects negative maxRounds', () => {
+      const result = validateTeamConfig({
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human' }
+          ]
+        },
+        maxRounds: -1
       });
       expect(result.valid).toBe(false);
       expect(result.errors.some(e => e.path === 'maxRounds')).toBe(true);
@@ -323,8 +349,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         },
         maxRounds: 10
@@ -340,8 +366,8 @@ describe('TeamConfigSchema', () => {
             { description: 'Missing name' }
           ],
           members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -357,8 +383,8 @@ describe('TeamConfigSchema', () => {
             { name: 'developer', displayName: 'Developer', description: 'Writes code' }
           ],
           members: [
-            { name: 'alice', role: 'developer', type: 'human', order: 0 },
-            { name: 'bob', role: 'developer', type: 'human', order: 1 }
+            { name: 'alice', role: 'developer', type: 'human' },
+            { name: 'bob', role: 'developer', type: 'human' }
           ]
         }
       });
@@ -372,8 +398,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: 'Test instruction' },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: 'Test instruction' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -385,8 +411,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: ['Line 1', 'Line 2'] },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: ['Line 1', 'Line 2'] },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -398,8 +424,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: [] },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: [] },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -411,8 +437,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: 123 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: 123 },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -425,8 +451,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: ['valid', 123] },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: ['valid', 123] },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -439,8 +465,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0, systemInstruction: { text: 'hello' } },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: { text: 'hello' } },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -453,8 +479,8 @@ describe('TeamConfigSchema', () => {
         team: {
           name: 'test',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude', order: 0 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1, systemInstruction: ['Human instruction'] }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude' },
+            { name: 'bob', role: 'dev', type: 'human', systemInstruction: ['Human instruction'] }
           ]
         }
       });
@@ -463,13 +489,13 @@ describe('TeamConfigSchema', () => {
   });
 
   describe('Complete valid configurations', () => {
-    it('accepts minimal valid config', () => {
+    it('accepts minimal valid config (no order)', () => {
       const result = validateTeamConfig({
         team: {
           name: 'minimal-team',
           members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0 },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human' }
           ]
         }
       });
@@ -477,9 +503,69 @@ describe('TeamConfigSchema', () => {
       expect(result.errors).toHaveLength(0);
     });
 
-    it('accepts full-featured valid config', () => {
+    it('accepts config matching phoenix-prd.json format', () => {
+      // This test validates that phoenix-prd.json format is accepted
       const result = validateTeamConfig({
-        schemaVersion: '1.1',
+        schemaVersion: '1.2',
+        agents: [
+          { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false },
+          { name: 'codex', args: ['exec', '--json', '--full-auto'], usePty: false }
+        ],
+        team: {
+          name: 'phoenix-prd-team',
+          displayName: 'Project Phoenix - PRD Team',
+          description: 'A collaborative team',
+          instructionFile: './teams/phoenix-prd/team_instruction.md',
+          roleDefinitions: [
+            { name: 'tech-lead', displayName: 'Tech Lead', description: 'Technical leadership' },
+            { name: 'business-analyst', displayName: 'Business Analyst', description: 'Business analysis' }
+          ],
+          members: [
+            {
+              name: 'max',
+              displayName: 'Max',
+              displayRole: 'Business Analyst',
+              role: 'business-analyst',
+              type: 'ai',
+              agentType: 'claude',  // Using agentType instead of agentConfigId
+              themeColor: 'cyan',
+              baseDir: './teams/phoenix-prd/max',
+              instructionFile: 'CLAUDE.md',
+              systemInstruction: ['You are Max, a Lead Business Analyst.']
+            },
+            {
+              name: 'sarah',
+              displayName: 'Sarah',
+              displayRole: 'Tech Lead',
+              role: 'tech-lead',
+              type: 'ai',
+              agentType: 'codex',
+              themeColor: 'yellow',
+              baseDir: './teams/phoenix-prd/sarah',
+              instructionFile: 'AGENT.md',
+              systemInstruction: ['You are Sarah, a Tech Lead.']
+            },
+            {
+              name: 'kailai',
+              displayName: 'Kailai',
+              displayRole: 'Product Director',
+              role: 'product-director',
+              type: 'human',
+              themeColor: 'green',
+              baseDir: './teams/phoenix-prd/human',
+              instructionFile: 'README.md'
+            }
+          ]
+        },
+        maxRounds: 0  // 0 = unlimited
+      });
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('accepts full-featured valid config with order', () => {
+      const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'full-featured-team',
           displayName: 'Full Featured Team',

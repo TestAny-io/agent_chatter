@@ -159,7 +159,11 @@ export class ConversationCoordinator {
     if (!this.team || !this.team.members || this.team.members.length === 0) {
       return null;
     }
-    const members = [...this.team.members].sort((a, b) => a.order - b.order);
+    // Sort by order if defined, otherwise maintain original array position
+    const members = this.team.members
+      .map((m, idx) => ({ member: m, defaultOrder: idx }))
+      .sort((a, b) => (a.member.order ?? a.defaultOrder) - (b.member.order ?? b.defaultOrder))
+      .map(x => x.member);
     const idx = members.findIndex(m => m.id === currentId);
     if (idx === -1) {
       return null;
@@ -545,10 +549,11 @@ export class ConversationCoordinator {
         this.waitingForMemberId = message.speaker.id;
         this.notifyStatusChange();
       } else {
-        // AI 发送的消息全部解析失败 → fallback 到首个 Human（按 order）
+        // AI 发送的消息全部解析失败 → fallback 到首个 Human（按 order，无 order 则按数组位置）
         const firstHuman = this.team!.members
-          .slice()
-          .sort((a, b) => a.order - b.order)
+          .map((m, idx) => ({ member: m, defaultOrder: idx }))
+          .sort((a, b) => (a.member.order ?? a.defaultOrder) - (b.member.order ?? b.defaultOrder))
+          .map(x => x.member)
           .find(m => m.type === 'human');
 
         if (firstHuman) {
@@ -830,10 +835,11 @@ export class ConversationCoordinator {
       }
 
       // Fallback: 路由到首个 Human（替换 round-robin）
-      // 按 order 排序找到第一个 human
+      // 按 order 排序找到第一个 human（无 order 则按数组位置）
       const firstHuman = this.team!.members
-        .slice()
-        .sort((a, b) => a.order - b.order)
+        .map((m, idx) => ({ member: m, defaultOrder: idx }))
+        .sort((a, b) => (a.member.order ?? a.defaultOrder) - (b.member.order ?? b.defaultOrder))
+        .map(x => x.member)
         .find(m => m.type === 'human');
 
       if (firstHuman) {

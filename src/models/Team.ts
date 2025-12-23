@@ -40,7 +40,7 @@ export interface Member {
   systemInstruction?: string | string[];
   instructionFileText?: string; // Resolved content of instructionFile for prompt assembly
   additionalArgs?: string[];  // 成员特定的额外 CLI 参数（用于 Adapter）
-  order: number;
+  order?: number;  // Optional: member order for fallback routing (default: array index)
 }
 
 // TeamContext - 用于流式事件元数据
@@ -88,11 +88,6 @@ export class TeamUtils {
     }
 
     for (const member of team.members) {
-      // Validate AI members have agentConfigId
-      if (member.type === 'ai' && !member.agentConfigId) {
-        errors.push(`AI 成员 "${member.name}" 缺少 agentConfigId`);
-      }
-
       // Validate member name pattern
       if (!/^[a-zA-Z0-9_-]+$/.test(member.name)) {
         errors.push(`成员名称 "${member.name}" 包含无效字符。仅允许字母、数字、下划线和连字符`);
@@ -126,8 +121,8 @@ export class TeamUtils {
         }
       }
 
-      // Validate order
-      if (typeof member.order !== 'number' || member.order < 0) {
+      // Validate order (optional, but must be non-negative if provided)
+      if (member.order !== undefined && (typeof member.order !== 'number' || member.order < 0)) {
         errors.push(`成员 "${member.name}" 的 order 必须是非负数`);
       }
     }

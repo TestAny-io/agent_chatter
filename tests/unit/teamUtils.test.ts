@@ -9,9 +9,7 @@ function buildRole(overrides: Partial<Role> = {}): Role {
     displayRole: 'Reviewer',
     role: 'reviewer',
     type: 'ai',
-    agentConfigId: 'config-1',
-    agentType: 'codex',
-    order: 0,
+    agentType: 'codex',  // agentConfigId is now optional
     ...overrides
   };
 }
@@ -32,7 +30,7 @@ describe('TeamUtils', () => {
     const team = TeamUtils.createTeam(
       'code-review',
       'test',
-      [buildRole(), buildRole({ id: 'human', name: 'human', type: 'human', order: 1 })],
+      [buildRole(), buildRole({ id: 'human', name: 'human', type: 'human' })],
       '/tmp/team.md'
     );
 
@@ -57,34 +55,33 @@ describe('TeamUtils', () => {
   });
 
   it('detects duplicate member names', () => {
-    const roleA = buildRole({ name: 'duplicate', order: 0 });
-    const roleB = buildRole({ name: 'duplicate', id: 'role-b', order: 1 });
+    const roleA = buildRole({ name: 'duplicate' });
+    const roleB = buildRole({ name: 'duplicate', id: 'role-b' });
     const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain('成员名称不能重复');
   });
 
-  it('requires agentConfigId for ai roles', () => {
-    const roleA = buildRole({ agentConfigId: undefined });
-    const roleB = buildRole({ id: 'human', name: 'human', type: 'human', order: 1 });
+  it('accepts AI member without agentConfigId (can use agentType)', () => {
+    const roleA = buildRole({ agentConfigId: undefined, agentType: 'claude' });
+    const roleB = buildRole({ id: 'human', name: 'human', type: 'human' });
     const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
-    expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain('缺少 agentConfigId');
+    expect(result.valid).toBe(true);
   });
 
   it('accepts valid human-only team when size >= 2', () => {
-    const humanA = buildRole({ id: 'h1', name: 'human1', type: 'human', order: 0 });
-    const humanB = buildRole({ id: 'h2', name: 'human2', type: 'human', order: 1 });
+    const humanA = buildRole({ id: 'h1', name: 'human1', type: 'human' });
+    const humanB = buildRole({ id: 'h2', name: 'human2', type: 'human' });
     const result = TeamUtils.validateTeam(buildTeam([humanA, humanB]));
 
     expect(result.valid).toBe(true);
   });
 
   it('rejects team with no human members', () => {
-    const aiA = buildRole({ id: 'ai1', name: 'ai1', type: 'ai', agentConfigId: 'claude', order: 0 });
-    const aiB = buildRole({ id: 'ai2', name: 'ai2', type: 'ai', agentConfigId: 'codex', order: 1 });
+    const aiA = buildRole({ id: 'ai1', name: 'ai1', type: 'ai', agentType: 'claude' });
+    const aiB = buildRole({ id: 'ai2', name: 'ai2', type: 'ai', agentType: 'codex' });
     const result = TeamUtils.validateTeam(buildTeam([aiA, aiB]));
 
     expect(result.valid).toBe(false);
@@ -93,8 +90,8 @@ describe('TeamUtils', () => {
 
   describe('New Member fields validation', () => {
     it('validates additionalArgs must be an array', () => {
-      const roleA = buildRole({ additionalArgs: 'not-an-array' as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ additionalArgs: 'not-an-array' as any });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -102,8 +99,8 @@ describe('TeamUtils', () => {
     });
 
     it('validates additionalArgs must contain strings', () => {
-      const roleA = buildRole({ additionalArgs: ['--flag', 123 as any], order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ additionalArgs: ['--flag', 123 as any] });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -111,16 +108,16 @@ describe('TeamUtils', () => {
     });
 
     it('accepts valid additionalArgs', () => {
-      const roleA = buildRole({ additionalArgs: ['--flag', '--option=value'], order: 0 });
-      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
+      const roleA = buildRole({ additionalArgs: ['--flag', '--option=value'] });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
     });
 
     it('validates env must be an object', () => {
-      const roleA = buildRole({ env: 'not-an-object' as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ env: 'not-an-object' as any });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -128,8 +125,8 @@ describe('TeamUtils', () => {
     });
 
     it('rejects env as null', () => {
-      const roleA = buildRole({ env: null as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ env: null as any });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -137,8 +134,8 @@ describe('TeamUtils', () => {
     });
 
     it('rejects env as array', () => {
-      const roleA = buildRole({ env: ['FOO=bar'] as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ env: ['FOO=bar'] as any });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -146,8 +143,8 @@ describe('TeamUtils', () => {
     });
 
     it('rejects env with non-string values (number)', () => {
-      const roleA = buildRole({ env: { FOO: 123 } as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ env: { FOO: 123 } as any });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -155,8 +152,8 @@ describe('TeamUtils', () => {
     });
 
     it('rejects env with non-string values (boolean)', () => {
-      const roleA = buildRole({ env: { DEBUG: true } as any, order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleA = buildRole({ env: { DEBUG: true } as any });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -164,16 +161,16 @@ describe('TeamUtils', () => {
     });
 
     it('accepts valid env', () => {
-      const roleA = buildRole({ env: { FOO: 'bar', BAZ: 'qux' }, order: 0 });
-      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
+      const roleA = buildRole({ env: { FOO: 'bar', BAZ: 'qux' } });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
     });
 
     it('validates member name pattern', () => {
-      const roleA = buildRole({ name: 'invalid name!', order: 0 });
-      const roleB = buildRole({ id: 'role2', name: 'valid-name', order: 1 });
+      const roleA = buildRole({ name: 'invalid name!' });
+      const roleB = buildRole({ id: 'role2', name: 'valid-name' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -181,16 +178,24 @@ describe('TeamUtils', () => {
     });
 
     it('accepts valid member names with alphanumeric, underscore, and hyphen', () => {
-      const roleA = buildRole({ name: 'valid_name-123', order: 0 });
-      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
+      const roleA = buildRole({ name: 'valid_name-123' });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
     });
 
-    it('validates order must be a non-negative number', () => {
+    it('accepts member without order (optional)', () => {
+      const roleA = buildRole({});
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human' });
+      const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('validates order must be a non-negative number if provided', () => {
       const roleA = buildRole({ order: -1 });
-      const roleB = buildRole({ id: 'role2', name: 'role2', order: 1 });
+      const roleB = buildRole({ id: 'role2', name: 'role2' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(false);
@@ -203,7 +208,7 @@ describe('TeamUtils', () => {
         env: { DEBUG: 'true', LOG_LEVEL: 'info' },
         order: 0
       });
-      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human', order: 1 });
+      const roleB = buildRole({ id: 'human1', name: 'human1', type: 'human' });
       const result = TeamUtils.validateTeam(buildTeam([roleA, roleB]));
 
       expect(result.valid).toBe(true);
