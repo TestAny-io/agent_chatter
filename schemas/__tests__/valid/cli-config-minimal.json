@@ -3,6 +3,7 @@
   "team": {
     "name": "test-team",
     "description": "A minimal test team configuration",
+    "instructionContent": "",
     "members": [
       {
         "displayName": "Claude",
@@ -11,6 +12,7 @@
         "type": "ai",
         "agentType": "claude-code",
         "baseDir": "./roles/claude",
+        "instructionContent": "",
         "systemInstruction": "You are Claude, write code."
       },
       {
@@ -19,6 +21,7 @@
         "role": "reviewer",
         "type": "human",
         "baseDir": "./roles/human",
+        "instructionContent": "",
         "systemInstruction": "You are the human reviewer."
       }
     ]

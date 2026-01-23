@@ -10,6 +10,7 @@ function buildRole(overrides: Partial<Role> = {}): Role {
     role: 'reviewer',
     type: 'ai',
     agentType: 'codex',  // agentConfigId is now optional
+    instructionContent: '',
     ...overrides
   };
 }
@@ -19,6 +20,7 @@ function buildTeam(members: Role[]): Team {
     id: 'team-id',
     name: 'team',
     description: 'desc',
+    instructionContent: '',
     createdAt: new Date(),
     updatedAt: new Date(),
     members
@@ -31,6 +33,7 @@ describe('TeamUtils', () => {
       'code-review',
       'test',
       [buildRole(), buildRole({ id: 'human', name: 'human', type: 'human' })],
+      '',
       '/tmp/team.md'
     );
 

@@ -20,11 +20,12 @@ describe('Sample configuration smoke tests', () => {
       const config = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
 
       expect(config.agents?.length).toBeGreaterThan(0);
-    expect(config.team?.members?.length).toBeGreaterThan(0);
-    for (const member of config.team.members) {
-      expect(member.workDir ?? member.baseDir, 'workDir/baseDir required').toBeTruthy();
-      expect(member.instructionFile, 'instructionFile required').toBeTruthy();
-    }
+      expect(config.team?.members?.length).toBeGreaterThan(0);
+      for (const member of config.team.members) {
+        expect(member.workDir ?? member.baseDir, 'workDir/baseDir required').toBeTruthy();
+        expect(member.instructionContent, 'instructionContent required').not.toBeUndefined();
+        expect(typeof member.instructionContent, 'instructionContent must be string').toBe('string');
+      }
     });
   }
 });

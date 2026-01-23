@@ -30,7 +30,7 @@ export interface CoreConversationConfig {
  */
 export interface CoreTeamConfig {
   /** 配置 schema 版本 */
-  schemaVersion?: string;
+  schemaVersion: '1.2';
 
   /** Agent 定义列表 */
   agents?: AgentDefinition[];

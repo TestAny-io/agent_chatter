@@ -10,6 +10,7 @@
     "name": "full-team",
     "displayName": "Full Feature Team",
     "description": "A team configuration with all optional fields",
+    "instructionContent": "",
     "instructionFile": "./team-instruction.md",
     "roleDefinitions": [
       {
@@ -33,6 +34,7 @@
         "agentType": "claude-code",
         "themeColor": "#7C3AED",
         "baseDir": "./roles/claude",
+        "instructionContent": "",
         "instructionFile": "instruction.md",
         "env": {
           "DEBUG": "true"
@@ -51,6 +53,7 @@
         "type": "human",
         "themeColor": "#10B981",
         "baseDir": "./roles/human",
+        "instructionContent": "",
         "systemInstruction": "You are the project manager, provide decisions and context."
       }
     ]

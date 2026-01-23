@@ -9,6 +9,7 @@ import * as path from 'path';
 import { initializeServices } from '../../src/services/ServiceInitializer.js';
 import type { CLIConfig } from '../../src/models/CLIConfig.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
+import type { AgentDefinition } from '../../src/registry/RegistryStorage.js';
 import type { IExecutionEnvironment, IProcess, SpawnOptions } from '../../src/interfaces/IExecutionEnvironment.js';
 import type { IAdapterFactory } from '../../src/interfaces/IAdapterFactory.js';
 import type { IAgentAdapter, AgentConfig } from '../../src/interfaces/IAgentAdapter.js';
@@ -102,9 +103,15 @@ describe('Verification Cache Integration', () => {
     // Create temporary registry and register claude agent for tests
     tempRegistryPath = path.join(tempDir, 'test-registry.json');
     const registry = new AgentRegistry(tempRegistryPath);
-
-    // Register claude agent pointing to echo (for testing purposes)
-    await registry.registerAgent('claude', 'echo');
+    const agentDefinition: AgentDefinition = {
+      name: 'claude',
+      displayName: 'Claude Code',
+      command: 'echo',
+      args: ['--output-format=stream-json'],
+      usePty: false,
+      installedAt: new Date().toISOString()
+    };
+    await registry.register(agentDefinition);
 
     // Create mock implementations
     mockExecutionEnv = createMockExecutionEnv();
@@ -133,14 +140,15 @@ describe('Verification Cache Integration', () => {
     fs.writeFileSync(path.join(humanDir, 'README.md'), 'Human instructions');
 
     const config: CLIConfig = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       agents: [
-        // Schema 1.1: Reference agent from registry, can override args/usePty
+        // Schema 1.2: Reference agent from registry, can override args/usePty
         { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false }
       ],
       team: {
         name: 'cache-test',
         description: 'Team with 3 AI members using same agent + 1 human',
+        instructionContent: '',
         members: [
           {
             displayName: 'Member 1',
@@ -149,6 +157,7 @@ describe('Verification Cache Integration', () => {
             role: 'developer',
             agentType: 'claude',
             baseDir: member1Dir,
+            instructionContent: '',
             instructionFile: path.join(member1Dir, 'AGENTS.md')
           },
           {
@@ -158,6 +167,7 @@ describe('Verification Cache Integration', () => {
             role: 'developer',
             agentType: 'claude',
             baseDir: member2Dir,
+            instructionContent: '',
             instructionFile: path.join(member2Dir, 'AGENTS.md')
           },
           {
@@ -167,6 +177,7 @@ describe('Verification Cache Integration', () => {
             role: 'developer',
             agentType: 'claude',
             baseDir: member3Dir,
+            instructionContent: '',
             instructionFile: path.join(member3Dir, 'AGENTS.md')
           },
           {
@@ -174,7 +185,8 @@ describe('Verification Cache Integration', () => {
             name: 'human-observer',
             type: 'human',
             role: 'observer',
-            baseDir: humanDir
+            baseDir: humanDir,
+            instructionContent: ''
           }
         ]
       }

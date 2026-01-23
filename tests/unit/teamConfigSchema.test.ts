@@ -21,6 +21,21 @@ describe('TeamConfigSchema', () => {
       expect(result.errors.some(e => e.path === 'team.name')).toBe(true);
     });
 
+    it('requires team.instructionContent', () => {
+      const result = validateTeamConfig({
+        schemaVersion: '1.2',
+        team: {
+          name: 'test',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path === 'team.instructionContent')).toBe(true);
+    });
+
     it('requires team.members to be an array', () => {
       const result = validateTeamConfig({ team: { name: 'test', members: 'not-array' } });
       expect(result.valid).toBe(false);
@@ -70,6 +85,22 @@ describe('TeamConfigSchema', () => {
       expect(result.errors.some(e => e.path.includes('[0].role'))).toBe(true);
     });
 
+    it('requires member.instructionContent', () => {
+      const result = validateTeamConfig({
+        schemaVersion: '1.2',
+        team: {
+          name: 'test',
+          instructionContent: '',
+          members: [
+            { name: 'alice', role: 'dev', type: 'human' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
+          ]
+        }
+      });
+      expect(result.valid).toBe(false);
+      expect(result.errors.some(e => e.path.includes('[0].instructionContent'))).toBe(true);
+    });
+
     it('requires member.type to be "ai" or "human"', () => {
       const result = validateTeamConfig({
         team: {
@@ -86,11 +117,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts member without order (optional)', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'human' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'human', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -141,11 +174,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts AI member without agentConfigId (optional, can use agentType)', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -154,11 +189,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts AI member with agentConfigId', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentConfigId: 'claude' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', agentConfigId: 'claude', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -197,11 +234,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts valid additionalArgs', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0, additionalArgs: ['--verbose', '--debug'] },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'human', order: 0, additionalArgs: ['--verbose', '--debug'], instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', order: 1, instructionContent: '' }
           ]
         }
       });
@@ -280,11 +319,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts valid env', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'human', order: 0, env: { FOO: 'bar', BAZ: 'qux' } },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'alice', role: 'dev', type: 'human', order: 0, env: { FOO: 'bar', BAZ: 'qux' }, instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', order: 1, instructionContent: '' }
           ]
         }
       });
@@ -293,20 +334,24 @@ describe('TeamConfigSchema', () => {
 
     it('accepts all new fields together', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
             {
               name: 'alice',
               role: 'dev',
               type: 'ai',
+              agentType: 'claude',
               agentConfigId: 'claude',
               order: 0,
               additionalArgs: ['--verbose', '--debug'],
               env: { DEBUG: 'true', LOG_LEVEL: 'info' },
-              systemInstruction: 'You are Alice, a helpful developer.'
+              systemInstruction: 'You are Alice, a helpful developer.',
+              instructionContent: ''
             },
-            { name: 'bob', role: 'dev', type: 'human', order: 1 }
+            { name: 'bob', role: 'dev', type: 'human', order: 1, instructionContent: '' }
           ]
         }
       });
@@ -317,11 +362,13 @@ describe('TeamConfigSchema', () => {
   describe('Optional top-level fields', () => {
     it('accepts maxRounds: 0 (unlimited)', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'human' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'human', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         },
         maxRounds: 0
@@ -346,11 +393,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts valid maxRounds', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'human' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'human', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         },
         maxRounds: 10
@@ -377,14 +426,16 @@ describe('TeamConfigSchema', () => {
 
     it('accepts valid roleDefinitions', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           roleDefinitions: [
             { name: 'developer', displayName: 'Developer', description: 'Writes code' }
           ],
           members: [
-            { name: 'alice', role: 'developer', type: 'human' },
-            { name: 'bob', role: 'developer', type: 'human' }
+            { name: 'alice', role: 'developer', type: 'human', instructionContent: '' },
+            { name: 'bob', role: 'developer', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -395,11 +446,13 @@ describe('TeamConfigSchema', () => {
   describe('systemInstruction validation', () => {
     it('accepts string', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: 'Test instruction' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: 'Test instruction', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -408,11 +461,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts string array', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: ['Line 1', 'Line 2'] },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: ['Line 1', 'Line 2'], instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -421,11 +476,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts empty array', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: [] },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', systemInstruction: [], instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -476,11 +533,13 @@ describe('TeamConfigSchema', () => {
 
     it('accepts systemInstruction on human members', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'test',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude' },
-            { name: 'bob', role: 'dev', type: 'human', systemInstruction: ['Human instruction'] }
+            { name: 'alice', role: 'dev', type: 'ai', agentType: 'claude', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', systemInstruction: ['Human instruction'], instructionContent: '' }
           ]
         }
       });
@@ -491,11 +550,13 @@ describe('TeamConfigSchema', () => {
   describe('Complete valid configurations', () => {
     it('accepts minimal valid config (no order)', () => {
       const result = validateTeamConfig({
+        schemaVersion: '1.2',
         team: {
           name: 'minimal-team',
+          instructionContent: '',
           members: [
-            { name: 'alice', role: 'dev', type: 'human' },
-            { name: 'bob', role: 'dev', type: 'human' }
+            { name: 'alice', role: 'dev', type: 'human', instructionContent: '' },
+            { name: 'bob', role: 'dev', type: 'human', instructionContent: '' }
           ]
         }
       });
@@ -515,6 +576,7 @@ describe('TeamConfigSchema', () => {
           name: 'phoenix-prd-team',
           displayName: 'Project Phoenix - PRD Team',
           description: 'A collaborative team',
+          instructionContent: '',
           instructionFile: './teams/phoenix-prd/team_instruction.md',
           roleDefinitions: [
             { name: 'tech-lead', displayName: 'Tech Lead', description: 'Technical leadership' },
@@ -530,6 +592,7 @@ describe('TeamConfigSchema', () => {
               agentType: 'claude',  // Using agentType instead of agentConfigId
               themeColor: 'cyan',
               baseDir: './teams/phoenix-prd/max',
+              instructionContent: '',
               instructionFile: 'CLAUDE.md',
               systemInstruction: ['You are Max, a Lead Business Analyst.']
             },
@@ -542,6 +605,7 @@ describe('TeamConfigSchema', () => {
               agentType: 'codex',
               themeColor: 'yellow',
               baseDir: './teams/phoenix-prd/sarah',
+              instructionContent: '',
               instructionFile: 'AGENT.md',
               systemInstruction: ['You are Sarah, a Tech Lead.']
             },
@@ -553,6 +617,7 @@ describe('TeamConfigSchema', () => {
               type: 'human',
               themeColor: 'green',
               baseDir: './teams/phoenix-prd/human',
+              instructionContent: '',
               instructionFile: 'README.md'
             }
           ]
@@ -570,6 +635,7 @@ describe('TeamConfigSchema', () => {
           name: 'full-featured-team',
           displayName: 'Full Featured Team',
           description: 'A team with all features',
+          instructionContent: '',
           instructionFile: '/path/to/instructions.md',
           roleDefinitions: [
             { name: 'tech-lead', displayName: 'Tech Lead', description: 'Technical leadership' },
@@ -582,9 +648,11 @@ describe('TeamConfigSchema', () => {
               displayRole: 'Tech Lead',
               role: 'tech-lead',
               type: 'ai',
+              agentType: 'claude',
               agentConfigId: 'claude',
               themeColor: 'blue',
               baseDir: '/teams/max',
+              instructionContent: '',
               instructionFile: '/teams/max/AGENT.md',
               env: { DEBUG: 'true' },
               systemInstruction: 'You are Max, an innovative tech lead.',
@@ -597,14 +665,25 @@ describe('TeamConfigSchema', () => {
               displayRole: 'Business Analyst',
               role: 'analyst',
               type: 'ai',
+              agentType: 'codex',
               agentConfigId: 'codex',
               themeColor: 'green',
               baseDir: '/teams/sarah',
+              instructionContent: '',
               instructionFile: '/teams/sarah/AGENT.md',
               env: { LOG_LEVEL: 'info' },
               systemInstruction: 'You are Sarah, a conservative business analyst.',
               additionalArgs: ['--json', '--full-auto'],
               order: 1
+            },
+            {
+              name: 'human',
+              displayName: 'Human Owner',
+              displayRole: 'Owner',
+              role: 'tech-lead',
+              type: 'human',
+              baseDir: '/teams/human',
+              instructionContent: ''
             }
           ]
         },

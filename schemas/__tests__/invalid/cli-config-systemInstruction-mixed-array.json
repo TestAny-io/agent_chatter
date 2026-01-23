@@ -3,6 +3,7 @@
   "team": {
     "name": "test-team",
     "description": "Test team with invalid systemInstruction",
+    "instructionContent": "",
     "members": [
       {
         "name": "ai-member",
@@ -11,6 +12,7 @@
         "type": "ai",
         "agentType": "claude-code",
         "baseDir": "/tmp",
+        "instructionContent": "",
         "systemInstruction": ["valid string", 123, "another string"]
       },
       {
@@ -19,6 +21,7 @@
         "role": "reviewer",
         "type": "human",
         "baseDir": "/tmp",
+        "instructionContent": "",
         "systemInstruction": "valid"
       }
     ]

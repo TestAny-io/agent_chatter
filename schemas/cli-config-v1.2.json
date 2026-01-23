@@ -8,8 +8,8 @@
   "properties": {
     "schemaVersion": {
       "type": "string",
-      "enum": ["1.1", "1.2"],
-      "description": "Schema version. Must be '1.1' or '1.2'"
+      "enum": ["1.2"],
+      "description": "Schema version. Must be '1.2'"
     },
     "agents": {
       "type": "array",
@@ -78,7 +78,7 @@
     },
     "TeamMemberConfig": {
       "type": "object",
-      "required": ["displayName", "name", "role", "type", "baseDir", "systemInstruction"],
+      "required": ["displayName", "name", "role", "type", "baseDir", "instructionContent"],
       "properties": {
         "displayName": {
           "type": "string",
@@ -119,6 +119,10 @@
           "type": "string",
           "description": "Path to instruction file (relative to baseDir)"
         },
+        "instructionContent": {
+          "type": "string",
+          "description": "Member instruction content (memory direct; empty allowed)"
+        },
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" },
@@ -145,7 +149,7 @@
     },
     "TeamConfig": {
       "type": "object",
-      "required": ["name", "description", "members"],
+      "required": ["name", "description", "members", "instructionContent"],
       "properties": {
         "name": {
           "type": "string",
@@ -164,6 +168,10 @@
           "type": "string",
           "description": "Path to team-level instruction file"
         },
+        "instructionContent": {
+          "type": "string",
+          "description": "Team instruction content (memory direct; empty allowed)"
+        },
         "roleDefinitions": {
           "type": "array",
           "items": {
@@ -174,10 +182,17 @@
         "members": {
           "type": "array",
           "minItems": 2,
+          "contains": {
+            "type": "object",
+            "properties": {
+              "type": { "const": "human" }
+            },
+            "required": ["type"]
+          },
           "items": {
             "$ref": "#/definitions/TeamMemberConfig"
           },
-          "description": "Team members (minimum 2 required)"
+          "description": "Team members (minimum 2 required, must include at least 1 human)"
         }
       },
       "additionalProperties": false

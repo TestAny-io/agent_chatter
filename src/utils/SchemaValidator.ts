@@ -98,7 +98,7 @@ interface VersionConfig {
 }
 
 const VERSION_CONFIGS: Record<string, VersionConfig> = {
-  cliConfig: { name: 'team-config', min: '1.1', max: '1.2' },
+  cliConfig: { name: 'team-config', min: '1.2', max: '1.2' },
   agentRegistry: { name: 'agent-registry', min: '1.1', max: '1.1' },
   sessionSnapshot: { name: 'session-snapshot', min: '1.0', max: '1.0' },
 };

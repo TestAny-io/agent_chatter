@@ -1,22 +1,29 @@
-name: Publish Package
+name: Release Package
 
 on:
   push:
-    tags:
-      - 'v*'  # 触发条件: 推送 v1.0.0 等标签
+    branches:
+      - dev
+      - main
 
 jobs:
-  build-and-publish:
+  build-and-release:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ matrix.node-version }}
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -25,28 +32,17 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run tests
-        run: npm test
+      - name: Lint
+        run: npm run lint
 
-      - name: Package verification (smoke test)
-        run: |
-          # 打包
-          PACKAGE_FILE=$(npm pack | tail -1)
-          echo "Created package: $PACKAGE_FILE"
+      - name: Typecheck
+        run: npm run typecheck
 
-          # 查看包内容
-          echo "Package contents:"
-          tar -tzf "$PACKAGE_FILE"
+      - name: Run tests with coverage
+        run: npm test -- --coverage
 
-          # 核心包内容检查
-          tar -tzf "$PACKAGE_FILE" | grep -q "package/out/index.js" || exit 1
-          tar -tzf "$PACKAGE_FILE" | grep -q "package/out/index.d.ts" || exit 1
-          tar -tzf "$PACKAGE_FILE" | grep -q "package/package.json" || exit 1
-          tar -tzf "$PACKAGE_FILE" | grep -q "package/README.md" || exit 1
-
-          echo "✓ Core package contents verified"
-
-      - name: Publish to npm
-        run: npm publish
+      - name: Release to npm (semantic-release)
+        if: matrix.node-version == 22
+        run: npm run release
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
