@@ -15,6 +15,7 @@ export interface CreateTeamInput {
   name: string;
   description: string;
   displayName?: string;
+  instructionContent?: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
   members: Array<Omit<Member, 'id'> & { id?: string }>;
@@ -24,6 +25,7 @@ export interface UpdateTeamInput {
   name?: string;
   description?: string;
   displayName?: string;
+  instructionContent?: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
   members?: Array<Partial<Member> & { id?: string }>;
@@ -52,6 +54,7 @@ export class TeamManager {
       input.name,
       input.description,
       membersWithIds,
+      input.instructionContent,
       input.instructionFile,
       input.roleDefinitions
     );
@@ -164,6 +167,7 @@ export class TeamManager {
       name: input.name ?? existingTeam.name,
       description: input.description ?? existingTeam.description,
       displayName: input.displayName ?? existingTeam.displayName,
+      instructionContent: input.instructionContent ?? existingTeam.instructionContent,
       instructionFile: input.instructionFile ?? existingTeam.instructionFile,
       roleDefinitions: input.roleDefinitions ?? existingTeam.roleDefinitions,
       members: updatedMembers,

@@ -4,17 +4,17 @@
  * Validates team configuration files to ensure:
  * - Required fields are present
  * - Field types are correct
- * - AI members have agentConfigId
+ * - AI members have agentType
  * - Member names are unique
  * - At least 2 members in the team
  *
- * Schema Version: 1.1 and 1.2 supported
+ * Schema Version: 1.2 supported
  */
 
 export const TeamConfigSchema = {
   $schema: "http://json-schema.org/draft-07/schema#",
   type: "object",
-  required: ["team"],
+  required: ["schemaVersion", "team"],
   properties: {
     schemaVersion: {
       type: "string",
@@ -37,7 +37,7 @@ export const TeamConfigSchema = {
     },
     team: {
       type: "object",
-      required: ["name", "members"],
+      required: ["name", "members", "instructionContent"],
       properties: {
         name: {
           type: "string",
@@ -51,6 +51,10 @@ export const TeamConfigSchema = {
         description: {
           type: "string",
           description: "Team description"
+        },
+        instructionContent: {
+          type: "string",
+          description: "Team instruction content (memory direct; empty allowed)"
         },
         instructionFile: {
           type: "string",
@@ -85,7 +89,7 @@ export const TeamConfigSchema = {
           description: "Team members (at least 2 required)",
           items: {
             type: "object",
-            required: ["name", "role", "type", "order"],
+            required: ["name", "role", "type", "instructionContent"],
             properties: {
               name: {
                 type: "string",
@@ -113,7 +117,7 @@ export const TeamConfigSchema = {
               },
               agentType: {
                 type: "string",
-                description: "Agent type (deprecated, use agentConfigId)"
+                description: "Agent type"
               },
               agentConfigId: {
                 type: "string",
@@ -126,6 +130,10 @@ export const TeamConfigSchema = {
               baseDir: {
                 type: "string",
                 description: "Base directory for member's files"
+              },
+              instructionContent: {
+                type: "string",
+                description: "Member instruction content (memory direct; empty allowed)"
               },
               instructionFile: {
                 type: "string",
@@ -158,21 +166,24 @@ export const TeamConfigSchema = {
                 description: "Member order in round-robin rotation"
               }
             },
-            // Conditional validation: AI members must have agentConfigId
-            if: {
-              properties: { type: { const: "ai" } }
-            },
-            then: {
-              required: ["agentConfigId"]
-            }
+            allOf: [
+              {
+                if: {
+                  properties: { type: { const: "ai" } }
+                },
+                then: {
+                  required: ["agentType"]
+                }
+              }
+            ]
           }
         }
       }
     },
     maxRounds: {
       type: "number",
-      minimum: 1,
-      description: "Maximum conversation rounds"
+      minimum: 0,
+      description: "Maximum conversation rounds (0 = unlimited)"
     }
   }
 };
@@ -224,6 +235,18 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
     return { valid: false, errors };
   }
 
+  if (!config.schemaVersion || typeof config.schemaVersion !== 'string') {
+    errors.push({
+      path: 'schemaVersion',
+      message: 'schemaVersion is required and must be a string'
+    });
+  } else if (config.schemaVersion !== '1.2') {
+    errors.push({
+      path: 'schemaVersion',
+      message: 'schemaVersion must be "1.2"'
+    });
+  }
+
   const team = config.team;
 
   // Validate team.name
@@ -243,10 +266,25 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
     return { valid: false, errors };
   }
 
+  if (team.instructionContent === undefined || typeof team.instructionContent !== 'string') {
+    errors.push({
+      path: 'team.instructionContent',
+      message: 'team.instructionContent is required and must be a string (empty allowed)'
+    });
+  }
+
   if (team.members.length < 2) {
     errors.push({
       path: 'team.members',
       message: 'Team must have at least 2 members'
+    });
+  }
+
+  const humanCount = team.members.filter((member: any) => member?.type === 'human').length;
+  if (humanCount === 0) {
+    errors.push({
+      path: 'team.members',
+      message: 'Team must include at least 1 human member'
     });
   }
 
@@ -294,18 +332,25 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
       });
     }
 
-    if (typeof member.order !== 'number' || member.order < 0) {
+    if (member.type === 'ai' && (!member.agentType || typeof member.agentType !== 'string')) {
       errors.push({
-        path: `${basePath}.order`,
-        message: 'Member order is required and must be a non-negative number'
+        path: `${basePath}.agentType`,
+        message: 'AI member agentType is required and must be a string'
       });
     }
 
-    // AI members must have agentConfigId
-    if (member.type === 'ai' && !member.agentConfigId) {
+    if (member.instructionContent === undefined || typeof member.instructionContent !== 'string') {
       errors.push({
-        path: `${basePath}.agentConfigId`,
-        message: `AI member "${member.name}" must have agentConfigId`
+        path: `${basePath}.instructionContent`,
+        message: 'Member instructionContent is required and must be a string (empty allowed)'
+      });
+    }
+
+    // order is optional, but if present must be a non-negative number
+    if (member.order !== undefined && (typeof member.order !== 'number' || member.order < 0)) {
+      errors.push({
+        path: `${basePath}.order`,
+        message: 'Member order must be a non-negative number if provided'
       });
     }
 
@@ -380,12 +425,12 @@ export function validateTeamConfig(config: any): SchemaValidationResult {
     }
   }
 
-  // Validate maxRounds if present
+  // Validate maxRounds if present (0 = unlimited)
   if (config.maxRounds !== undefined) {
-    if (typeof config.maxRounds !== 'number' || config.maxRounds < 1) {
+    if (typeof config.maxRounds !== 'number' || config.maxRounds < 0) {
       errors.push({
         path: 'maxRounds',
-        message: 'maxRounds must be a number >= 1'
+        message: 'maxRounds must be a number >= 0 (0 = unlimited)'
       });
     }
   }

@@ -190,6 +190,24 @@ export function loadInstructionContent(filePath?: string): string | undefined {
 }
 
 /**
+ * Resolve instruction text with memory-first priority.
+ *
+ * Rules:
+ * - If instructionContent is provided (including empty string), use it directly.
+ * - If instructionContent is undefined, fall back to instructionFile content.
+ */
+export function resolveInstructionText(
+  instructionContent: string | undefined,
+  instructionFile?: string
+): string | undefined {
+  if (instructionContent !== undefined) {
+    return instructionContent;
+  }
+
+  return loadInstructionContent(instructionFile);
+}
+
+/**
  * Load and merge agents from global registry with team config
  */
 async function loadAndMergeAgents(
@@ -222,7 +240,7 @@ async function loadAndMergeAgents(
     for (const teamAgent of teamAgents) {
       const registryAgent = registryMap.get(teamAgent.name);
 
-      // Schema 1.1 reference mode: Agent must exist in registry, command cannot be overridden
+      // Schema 1.2 reference mode: Agent must exist in registry, command cannot be overridden
       if (registryAgent) {
         if (teamAgent.command && teamAgent.command !== registryAgent.command) {
           throw new Error(
@@ -239,7 +257,7 @@ async function loadAndMergeAgents(
           usePty: teamAgent.usePty !== undefined ? teamAgent.usePty : registryAgent.usePty
         });
       } else {
-        // Schema 1.0 complete definition mode: Agent not in registry, must provide full definition
+        // Legacy complete definition mode: Agent not in registry, must provide full definition
         if (!teamAgent.command) {
           throw new Error(
             `Agent "${teamAgent.name}" referenced in team config but not found in global registry. ` +
@@ -298,24 +316,25 @@ export async function initializeServices(
     throw new Error('initializeServices requires adapterFactory to be provided in options');
   }
 
-  // Enforce Schema 1.1+: Reject older versions
-  if (config.schemaVersion !== '1.1' && config.schemaVersion !== '1.2') {
+  // Enforce Schema 1.2+: Reject older versions
+  if (config.schemaVersion !== '1.2') {
     const foundVersion = config.schemaVersion || 'missing';
     throw new Error(
       `Unsupported configuration schema version.\n\n` +
       `  Found: schemaVersion = "${foundVersion}"\n` +
-      `  Required: schemaVersion = "1.1" or "1.2"\n\n` +
-      `Schema 1.0 is no longer supported. Please migrate your configuration to Schema 1.1 or 1.2.\n` +
+      `  Required: schemaVersion = "1.2"\n\n` +
+      `Schema 1.0/1.1 are no longer supported. Please migrate your configuration to Schema 1.2.\n` +
       `Migration guide: design/team-configuration.md\n\n` +
-      `Key changes in Schema 1.1/1.2:\n` +
+      `Key changes in Schema 1.2:\n` +
       `  - Agents must be registered in global registry (~/.agent-chatter/agents/config.json)\n` +
       `  - Team config only references agent names, not full definitions\n` +
       `  - Team config can override args/usePty, but NOT command path\n` +
-      `  - Schema 1.2: Members can have systemInstruction field (overrides agent args)\n\n` +
+      `  - Members can have systemInstruction field (overrides agent args)\n` +
+      `  - instructionContent is required (empty string allowed)\n\n` +
       `Quick migration steps:\n` +
       `  1. Run: agent-chatter agents register <agent-name>\n` +
       `  2. Update config: Remove 'command' field from config.agents[]\n` +
-      `  3. Set: "schemaVersion": "1.1" or "1.2"`
+      `  3. Set: "schemaVersion": "1.2"`
     );
   }
 
@@ -425,8 +444,12 @@ export async function initializeServices(
       agentConfigId,
       themeColor: member.themeColor,
       baseDir: normalizedPaths.baseDir,
+      instructionContent: member.instructionContent,
       instructionFile: normalizedPaths.instructionFile,
-      instructionFileText: loadInstructionContent(normalizedPaths.instructionFile),
+      instructionFileText: resolveInstructionText(
+        member.instructionContent,
+        normalizedPaths.instructionFile
+      ),
       env,
       systemInstruction: member.systemInstruction,
       order: index
@@ -438,6 +461,7 @@ export async function initializeServices(
     name: config.team.name,
     description: config.team.description,
     displayName: config.team.displayName,
+    instructionContent: config.team.instructionContent,
     instructionFile: config.team.instructionFile,
     roleDefinitions: config.team.roleDefinitions,
     members: teamMembers

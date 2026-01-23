@@ -1,0 +1,31 @@
+{
+  "tagFormat": "v${version}",
+  "branches": [
+    "main",
+    {
+      "name": "dev",
+      "channel": "staging",
+      "prerelease": "dev"
+    }
+  ],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits"
+      }
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        "npmPublish": true
+      }
+    ]
+  ]
+}

@@ -7,6 +7,7 @@ import {
   resolveInstructionFile,
   normalizeMemberPaths,
   loadInstructionContent,
+  resolveInstructionText,
   hasFlag,
   withBypassArgs
 } from '../../src/services/ServiceInitializer.js';
@@ -18,14 +19,15 @@ function createMember(partial: Partial<TeamMemberConfig> = {}): TeamMemberConfig
   return {
     displayName: 'Member',
     name: 'member-1',
-  role: 'role',
-  type: 'ai',
-  agentType: partial.agentType ?? 'codex',
-  baseDir: partial.baseDir ?? tempDir,
-  instructionFile: partial.instructionFile,
-  env: partial.env,
-  themeColor: partial.themeColor,
-  displayRole: partial.displayRole
+    role: 'role',
+    type: 'ai',
+    agentType: partial.agentType ?? 'codex',
+    baseDir: partial.baseDir ?? tempDir,
+    instructionContent: partial.instructionContent ?? '',
+    instructionFile: partial.instructionFile,
+    env: partial.env,
+    themeColor: partial.themeColor,
+    displayRole: partial.displayRole
   };
 }
 
@@ -82,6 +84,32 @@ describe('ServiceInitializer helpers', () => {
 
     expect(loadInstructionContent(filePath)).toBe('Hello');
     expect(loadInstructionContent(path.join(tempDir, 'missing.md'))).toBeUndefined();
+  });
+
+  it('resolveInstructionText uses instructionContent when provided', () => {
+    const filePath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(filePath, 'From file');
+
+    expect(resolveInstructionText('From memory', filePath)).toBe('From memory');
+  });
+
+  it('resolveInstructionText returns empty string when instructionContent is empty even if file exists', () => {
+    const filePath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(filePath, 'From file');
+
+    expect(resolveInstructionText('', filePath)).toBe('');
+  });
+
+  it('resolveInstructionText falls back to file when instructionContent is undefined', () => {
+    const filePath = path.join(tempDir, 'AGENTS.md');
+    fs.writeFileSync(filePath, 'From file');
+
+    expect(resolveInstructionText(undefined, filePath)).toBe('From file');
+  });
+
+  it('resolveInstructionText returns empty string when instructionContent is empty and file missing', () => {
+    const filePath = path.join(tempDir, 'MISSING.md');
+    expect(resolveInstructionText('', filePath)).toBe('');
   });
 });
 

@@ -19,7 +19,7 @@ Requires Node.js 20+.
 ```bash
 npm ci
 npm run build
-npm test   # passes with no tests by design
+npm test   # run test suite
 ```
 
 ## Layout
@@ -42,9 +42,8 @@ packages/core/
 MPL-2.0 OR Apache-2.0
 
 ## Publish
-1) Ensure `npm run build` / `npm test` pass  
-2) Tag `vX.Y.Z` and push  
-3) `npm publish` (requires `NPM_TOKEN`)  
+Publishing is automated via semantic-release on `dev` (staging) and `main` (production).
+See `docs/misc/versioning-and-release.md` for the full process.
 
 ## Relationship to CLI
 - Core: `@testany/agent-chatter-core` (this repo)  

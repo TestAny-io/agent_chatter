@@ -16,6 +16,7 @@
     "name": "multi-perspective-code-review",
     "displayName": "Multi-Perspective Code Review Team",
     "description": "Three AI experts reviewing code from different angles",
+    "instructionContent": "",
     "instructionFile": "./teams/multi-role-demo/team_instruction.md",
     "roleDefinitions": [
       {
@@ -48,6 +49,7 @@
         "role": "security-reviewer",
         "agentType": "claude",
         "themeColor": "red",
+        "instructionContent": "",
         "roleDir": "./teams/multi-role-demo/security/alice",
         "workDir": "./teams/multi-role-demo/security/alice/work",
         "instructionFile": "./teams/multi-role-demo/security/alice/AGENTS.md",
@@ -65,6 +67,7 @@
         "role": "performance-optimizer",
         "agentType": "claude",
         "themeColor": "yellow",
+        "instructionContent": "",
         "roleDir": "./teams/multi-role-demo/performance/bob",
         "workDir": "./teams/multi-role-demo/performance/bob/work",
         "instructionFile": "./teams/multi-role-demo/performance/bob/AGENTS.md"
@@ -77,6 +80,7 @@
         "role": "readability-expert",
         "agentType": "claude",
         "themeColor": "cyan",
+        "instructionContent": "",
         "roleDir": "./teams/multi-role-demo/readability/carol",
         "workDir": "./teams/multi-role-demo/readability/carol/work",
         "instructionFile": "./teams/multi-role-demo/readability/carol/AGENTS.md"
@@ -88,6 +92,7 @@
         "type": "human",
         "role": "observer",
         "themeColor": "green",
+        "instructionContent": "",
         "roleDir": "./teams/multi-role-demo/observer/human",
         "workDir": "./teams/multi-role-demo/observer/human/work",
         "instructionFile": "./teams/multi-role-demo/observer/human/README.md"

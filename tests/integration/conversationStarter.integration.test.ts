@@ -5,6 +5,7 @@ import * as path from 'path';
 import { initializeServices } from '../../src/services/ServiceInitializer.js';
 import type { CLIConfig } from '../../src/models/CLIConfig.js';
 import { AgentRegistry } from '../../src/registry/AgentRegistry.js';
+import type { AgentDefinition } from '../../src/registry/RegistryStorage.js';
 import type { IOutput } from '../../src/outputs/IOutput.js';
 import type { IExecutionEnvironment, IProcess, SpawnOptions } from '../../src/interfaces/IExecutionEnvironment.js';
 import type { IAdapterFactory } from '../../src/interfaces/IAdapterFactory.js';
@@ -99,7 +100,15 @@ describe.sequential('ServiceInitializer integration', () => {
     // Create temporary registry and register claude agent for tests
     tempRegistryPath = path.join(tempDir, 'test-registry.json');
     const registry = new AgentRegistry(tempRegistryPath);
-    await registry.registerAgent('claude', 'echo');
+    const agentDefinition: AgentDefinition = {
+      name: 'claude',
+      displayName: 'Claude Code',
+      command: 'echo',
+      args: ['--output-format=stream-json'],
+      usePty: false,
+      installedAt: new Date().toISOString()
+    };
+    await registry.register(agentDefinition);
 
     // Create mock implementations
     mockExecutionEnv = createMockExecutionEnv();
@@ -120,9 +129,9 @@ describe.sequential('ServiceInitializer integration', () => {
     fs.writeFileSync(path.join(humanRoleDir, 'README.md'), 'Human instructions.');
 
     const config: CLIConfig = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       agents: [
-        // Schema 1.1: Reference registered agent, override args/usePty
+        // Schema 1.2: Reference registered agent, override args/usePty
         {
           name: 'claude',
           args: ['--output-format=stream-json', '--verbose'],
@@ -132,6 +141,7 @@ describe.sequential('ServiceInitializer integration', () => {
       team: {
         name: 'integration-team',
         description: 'Ensures initializeServices normalizes members',
+        instructionContent: '',
         instructionFile: path.join(tempDir, 'team.md'),
         roleDefinitions: [
           { name: 'developer', displayName: 'Developer' },
@@ -146,6 +156,7 @@ describe.sequential('ServiceInitializer integration', () => {
             role: 'developer',
             agentType: 'claude',
             baseDir: aiRoleDir,
+            instructionContent: '',
             instructionFile: path.join(aiRoleDir, 'AGENTS.md'),
             env: { CUSTOM: '1' }
           },
@@ -156,6 +167,7 @@ describe.sequential('ServiceInitializer integration', () => {
             type: 'human',
             role: 'reviewer',
             baseDir: humanRoleDir,
+            instructionContent: '',
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]
@@ -170,7 +182,7 @@ describe.sequential('ServiceInitializer integration', () => {
     });
 
     expect(team.members).toHaveLength(2);
-    expect(team.members[0].instructionFileText).toContain('integration test agent');
+    expect(team.members[0].instructionFileText).toBe('');
     expect(team.members[0].env?.CUSTOM).toBe('1');
 
     // New API: setTeam() + sendMessage()
@@ -191,13 +203,14 @@ describe.sequential('ServiceInitializer integration', () => {
     fs.mkdirSync(humanRoleDir, { recursive: true });
 
     const config: CLIConfig = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       agents: [
         { name: 'claude', args: ['--output-format=stream-json', '--verbose'], usePty: false }
       ],
       team: {
         name: 'missing-instruction',
         description: 'Should still initialize',
+        instructionContent: '',
         members: [
           {
             displayName: 'Claude Dev',
@@ -206,6 +219,7 @@ describe.sequential('ServiceInitializer integration', () => {
             role: 'developer',
             agentType: 'claude',
             baseDir: aiRoleDir,
+            instructionContent: '',
             instructionFile: path.join(aiRoleDir, 'AGENTS.md')
           },
           {
@@ -214,6 +228,7 @@ describe.sequential('ServiceInitializer integration', () => {
             type: 'human',
             role: 'observer',
             baseDir: humanRoleDir,
+            instructionContent: '',
             instructionFile: path.join(humanRoleDir, 'README.md')
           }
         ]
@@ -238,11 +253,12 @@ describe.sequential('ServiceInitializer integration', () => {
     fs.writeFileSync(path.join(aiRoleDir, 'AGENTS.md'), 'Instructions');
 
     const config: CLIConfig = {
-      schemaVersion: '1.1',
+      schemaVersion: '1.2',
       agents: [{ name: 'claude', args: ['--output-format=stream-json'], usePty: false }],
       team: {
         name: 'output-team',
         description: 'output test',
+        instructionContent: '',
         members: [
           {
             displayName: 'Claude Dev',
@@ -250,14 +266,16 @@ describe.sequential('ServiceInitializer integration', () => {
             type: 'ai',
             role: 'developer',
             agentType: 'claude',
-            baseDir: aiRoleDir
+            baseDir: aiRoleDir,
+            instructionContent: ''
           },
           {
             displayName: 'Observer',
             name: 'obs',
             type: 'human',
             role: 'observer',
-            baseDir: observerDir
+            baseDir: observerDir,
+            instructionContent: ''
           }
         ]
       }
