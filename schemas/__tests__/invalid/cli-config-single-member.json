@@ -3,6 +3,7 @@
   "team": {
     "name": "test-team",
     "description": "Team with only one member (invalid)",
+    "instructionContent": "",
     "members": [
       {
         "displayName": "Claude",
@@ -10,7 +11,8 @@
         "role": "developer",
         "type": "ai",
         "agentType": "claude-code",
-        "baseDir": "./roles/claude"
+        "baseDir": "./roles/claude",
+        "instructionContent": ""
       }
     ]
   }

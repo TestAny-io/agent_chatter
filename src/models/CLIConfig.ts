@@ -26,6 +26,7 @@ export interface TeamMemberConfig {
   agentType?: string;
   themeColor?: string;
   baseDir: string;
+  instructionContent: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string | string[]; // Schema 1.2+, supports array for multi-line
@@ -35,6 +36,7 @@ export interface TeamConfig {
   name: string;
   displayName?: string;
   description: string;
+  instructionContent: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinitionConfig[];
   members: TeamMemberConfig[];
@@ -47,7 +49,7 @@ export interface ConversationConfig {
 }
 
 export interface CLIConfig {
-  schemaVersion?: string;
+  schemaVersion: '1.2';
   agents?: AgentDefinition[]; // Optional in schema 1.1+, agents loaded from global registry
   team: TeamConfig;
   maxRounds?: number;

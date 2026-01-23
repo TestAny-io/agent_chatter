@@ -135,6 +135,11 @@ export type {
 
 export { AgentValidator } from './services/validation/AgentValidator.js';
 export { sanitizeProxyUrl } from './services/validation/ConnectivityChecker.js';
+export {
+  DefaultLogSanitizer,
+  type LogSanitizer,
+  SENSITIVE_FIELDS,
+} from './utils/LogSanitizer.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Registry

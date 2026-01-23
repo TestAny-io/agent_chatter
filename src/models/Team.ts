@@ -7,6 +7,7 @@ export interface Team {
   name: string;
   displayName?: string;
   description: string;
+  instructionContent?: string;
   instructionFile?: string;
   roleDefinitions?: RoleDefinition[];
   members: Member[];
@@ -35,6 +36,7 @@ export interface Member {
   agentConfigId?: string;
   themeColor?: string;
   baseDir?: string;
+  instructionContent?: string;
   instructionFile?: string;
   env?: Record<string, string>;
   systemInstruction?: string | string[];
@@ -71,6 +73,10 @@ export class TeamUtils {
       errors.push('团队名称不能为空');
     }
 
+    if (team.instructionContent === undefined || typeof team.instructionContent !== 'string') {
+      errors.push('团队 instructionContent 必须提供（允许空字符串）');
+    }
+
     if (!team.members || team.members.length < 2) {
       errors.push('团队至少需要 2 个成员');
     }
@@ -91,6 +97,10 @@ export class TeamUtils {
       // Validate member name pattern
       if (!/^[a-zA-Z0-9_-]+$/.test(member.name)) {
         errors.push(`成员名称 "${member.name}" 包含无效字符。仅允许字母、数字、下划线和连字符`);
+      }
+
+      if (member.instructionContent === undefined || typeof member.instructionContent !== 'string') {
+        errors.push(`成员 "${member.name}" 的 instructionContent 必须提供（允许空字符串）`);
       }
 
       // Validate additionalArgs if present
@@ -137,6 +147,7 @@ export class TeamUtils {
     name: string,
     description: string,
     members: Member[] = [],
+    instructionContent?: string,
     instructionFile?: string,
     roleDefinitions?: RoleDefinition[]
   ): Team {
@@ -146,6 +157,7 @@ export class TeamUtils {
       name,
       description,
       members,
+      instructionContent,
       instructionFile,
       roleDefinitions,
       createdAt: now,

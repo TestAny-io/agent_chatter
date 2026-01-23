@@ -203,13 +203,16 @@ describe('Team Config Directory Functions', () => {
                 name: 'test-team',
                 displayName: 'Test Team',
                 description: 'A test team',
+                instructionContent: '',
                 members: [
                     {
                         name: 'alice',
                         displayName: 'Alice',
                         role: 'developer',
                         type: 'ai',
+                        agentType: 'claude',
                         agentConfigId: 'claude-config',
+                        instructionContent: '',
                         order: 0
                     },
                     {
@@ -217,6 +220,7 @@ describe('Team Config Directory Functions', () => {
                         displayName: 'Bob',
                         role: 'reviewer',
                         type: 'human',
+                        instructionContent: '',
                         order: 1
                     }
                 ],
@@ -371,14 +375,14 @@ describe('Team Config Directory Functions', () => {
             const teamConfigDir = getTeamConfigDir();
             fs.mkdirSync(teamConfigDir, { recursive: true });
 
-            // Create team with 3 AI members
+            // Create team with 2 AI members + 1 human (human required)
             const team1 = createValidTeamConfig({
                 name: 'ai-heavy',
                 displayName: 'AI Heavy Team',
                 members: [
-                    { name: 'ai1', role: 'dev', type: 'ai', agentConfigId: 'config1', order: 0 },
-                    { name: 'ai2', role: 'dev', type: 'ai', agentConfigId: 'config2', order: 1 },
-                    { name: 'ai3', role: 'dev', type: 'ai', agentConfigId: 'config3', order: 2 }
+                    { name: 'ai1', role: 'dev', type: 'ai', agentType: 'claude', agentConfigId: 'config1', instructionContent: '', order: 0 },
+                    { name: 'ai2', role: 'dev', type: 'ai', agentType: 'codex', agentConfigId: 'config2', instructionContent: '', order: 1 },
+                    { name: 'h1', role: 'dev', type: 'human', instructionContent: '', order: 2 }
                 ]
             });
             fs.writeFileSync(
@@ -391,9 +395,9 @@ describe('Team Config Directory Functions', () => {
                 name: 'human-heavy',
                 displayName: 'Human Heavy Team',
                 members: [
-                    { name: 'h1', role: 'dev', type: 'human', order: 0 },
-                    { name: 'h2', role: 'dev', type: 'human', order: 1 },
-                    { name: 'h3', role: 'dev', type: 'human', order: 2 }
+                    { name: 'h1', role: 'dev', type: 'human', instructionContent: '', order: 0 },
+                    { name: 'h2', role: 'dev', type: 'human', instructionContent: '', order: 1 },
+                    { name: 'h3', role: 'dev', type: 'human', instructionContent: '', order: 2 }
                 ]
             });
             fs.writeFileSync(
@@ -405,8 +409,8 @@ describe('Team Config Directory Functions', () => {
             expect(result).toHaveLength(2);
 
             const aiTeam = result.find(c => c.filename === 'ai-heavy.json');
-            expect(aiTeam?.aiCount).toBe(3);
-            expect(aiTeam?.humanCount).toBe(0);
+            expect(aiTeam?.aiCount).toBe(2);
+            expect(aiTeam?.humanCount).toBe(1);
             expect(aiTeam?.memberCount).toBe(3);
 
             const humanTeam = result.find(c => c.filename === 'human-heavy.json');

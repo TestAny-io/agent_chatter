@@ -3,6 +3,7 @@
   "team": {
     "name": "test-team",
     "description": "Test team",
+    "instructionContent": "",
     "members": [
       {
         "displayName": "Claude",
@@ -10,14 +11,16 @@
         "role": "developer",
         "type": "ai",
         "agentType": "claude-code",
-        "baseDir": "./roles/claude"
+        "baseDir": "./roles/claude",
+        "instructionContent": ""
       },
       {
         "displayName": "Human",
         "name": "human",
         "role": "reviewer",
         "type": "human",
-        "baseDir": "./roles/human"
+        "baseDir": "./roles/human",
+        "instructionContent": ""
       }
     ]
   }
