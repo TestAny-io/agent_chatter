@@ -19,7 +19,7 @@ Requires Node.js 20+.
 ```bash
 npm ci
 npm run build
-npm test   # passes with no tests by design
+npm test   # run test suite
 ```
 
 ## Layout
