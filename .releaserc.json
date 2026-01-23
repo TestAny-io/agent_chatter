@@ -12,13 +12,13 @@
     [
       "@semantic-release/commit-analyzer",
       {
-        "preset": "conventionalcommits"
+        "config": "./scripts/conventionalcommits.cjs"
       }
     ],
     [
       "@semantic-release/release-notes-generator",
       {
-        "preset": "conventionalcommits"
+        "config": "./scripts/conventionalcommits.cjs"
       }
     ],
     [
