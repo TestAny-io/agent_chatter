@@ -111,32 +111,6 @@ semantic-release creates Git tags on publish:
 
 The workflow requires `contents: write` permissions to push these tags.
 
-## Local Sync Automation
-
-We provide git hooks to keep local branches fresh and block stale pushes.
-
-Install once:
-
-```bash
-./scripts/install-githooks.sh
-```
-
-Behavior:
-
-- **post-merge**: auto syncs **dev/main** (fast-forward only).
-- **pre-push**: blocks push if current branch is behind its base.
-
-Default base branch is `dev`. Override per branch:
-
-```bash
-git config branch.<your-branch>.base main
-```
-
-Manual sync command:
-
-```bash
-./scripts/sync-local.sh
-```
 
 ## Operational Notes
 
